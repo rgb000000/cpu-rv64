@@ -1,3 +1,9 @@
 [submodule "rocket-chip"]
 	path = rocket-chip
 	url = https://github.com/chipsalliance/rocket-chip
+[submodule "berkeley-hardfloat"]
+	path = berkeley-hardfloat
+	url = https://github.com/ucb-bar/berkeley-hardfloat
+[submodule "api-config-chipsalliance"]
+	path = api-config-chipsalliance
+	url = https://github.com/chipsalliance/api-config-chipsalliance
