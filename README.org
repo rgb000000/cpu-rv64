@@ -1,0 +1,6 @@
+* CPU RV64
+
+* mill tutorial
+1. =mill resolve _= 显示可用选项
+2. =mill mill.scalalib.GenIDEA/idea= 为 idea 创建工程
+3. =mill __.test.testOnly xxx.xxx= 进行测试
