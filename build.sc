@@ -24,11 +24,11 @@ val chisel = Agg(
 )
 
 object `api-config-chipsalliance` extends CommonModule {
-  override def millSourcePath = os.pwd / "api-config-chipsalliance" / "design" / "craft"
+  override def millSourcePath = os.pwd / "dependency" / "api-config-chipsalliance" / "design" / "craft"
 }
 
 object hardfloat extends SbtModule with CommonModule {
-  override def millSourcePath = os.pwd / "berkeley-hardfloat"
+  override def millSourcePath = os.pwd / "dependency" / "berkeley-hardfloat"
   override def ivyDeps = super.ivyDeps() ++ chisel
 }
 
