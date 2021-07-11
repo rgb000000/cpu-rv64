@@ -1,8 +1,10 @@
 init:
 	git submodule update --init
 
-check_env:
+check_mill:
 	mill -i __.test.testOnly gcd.GCDSpec
+
+check_bazel:
 	bazel run gcd:test
 
 clean:

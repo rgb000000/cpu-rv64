@@ -1,5 +1,8 @@
 * CPU RV64
 
+* init
+=make init=
+
 * mill tutorial
 1. =mill resolve _= 显示可用选项
 2. =mill mill.scalalib.GenIDEA/idea= 为 idea 创建工程
