@@ -28,13 +28,14 @@ _scalacopts = [
 ]
 
 
-def chisel_library(name, srcs, deps = [], visibility = None):
+def chisel_library(name, srcs, deps = [], resources=[], visibility = None):
     scala_library(
         name = name,
         srcs = srcs,
         deps = _chisel_deps + deps,
         plugins = _chisel_plugins,
         scalacopts = _scalacopts,
+        resources = resources,
         visibility = visibility
     )
 

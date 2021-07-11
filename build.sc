@@ -47,8 +47,32 @@ object `rocket-chip` extends SbtModule with CommonModule {
 
 }
 
-object `cpu-rv64` extends SbtModule with CommonModule { m =>
-  override def millSourcePath = os.pwd
+object gcd extends SbtModule with CommonModule { m =>
+  override def millSourcePath = os.pwd / "gcd"
+
+  override def forkArgs = Seq("-Xmx64G")
+
+  override def ivyDeps = super.ivyDeps() ++ chisel
+
+  override def moduleDeps = super.moduleDeps ++ Seq(
+    `rocket-chip`
+  )
+
+  override def scalacPluginIvyDeps = Agg(
+    ivy"edu.berkeley.cs:::chisel3-plugin:3.4.3",
+    ivy"org.scalamacros:::paradise:2.1.1"
+  )
+
+  object test extends Tests with ScalaTest {
+    override def ivyDeps = m.ivyDeps() ++ Agg(
+      ivy"edu.berkeley.cs::chiseltest:0.3.3"
+    )
+  }
+}
+
+
+object cpu extends SbtModule with CommonModule { m =>
+  override def millSourcePath = os.pwd / "cpu"
 
   override def forkArgs = Seq("-Xmx64G")
 
