@@ -1,0 +1,12 @@
+package cpu
+
+import chisel3.util.BitPat
+
+object isa {
+  //                    00     rs2   rs1  000   rd   opcode
+  def add  = BitPat("b0000000_?????_?????_000_?????_0110011")
+
+  //                    imm         rs1  000  rd
+  def nop  = BitPat("b000000000000_00000_000_00000_0010011") // addi x0, x0, 0
+  def addi = BitPat("b????????????_?????_000_?????_0010011")
+}
