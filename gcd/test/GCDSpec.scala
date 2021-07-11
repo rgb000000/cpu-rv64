@@ -4,7 +4,7 @@ package gcd
 
 import chisel3._
 import chisel3.tester._
-import org.scalatest.FreeSpec
+import org.scalatest.{FreeSpec, FlatSpec}
 import chisel3.experimental.BundleLiterals._
 
 /**
@@ -18,9 +18,10 @@ import chisel3.experimental.BundleLiterals._
   * sbt 'testOnly gcd.GcdDecoupledTester'
   * }}}
   */
+
 class GCDSpec extends FreeSpec with ChiselScalatestTester {
 
-  "Gcd should calculate proper greatest common denominator" in {
+  "Gcd calculate proper greatest common denominator" in {
     test(new DecoupledGcd(16)) { dut =>
       dut.input.initSource()
       dut.input.setSourceClock(dut.clock)
@@ -50,3 +51,9 @@ class GCDSpec extends FreeSpec with ChiselScalatestTester {
     }
   }
 }
+
+// class TestSuite extends FlatSpec {
+//   "things" should "work" in {
+//     assert(true == "hello world")
+//   }
+// }

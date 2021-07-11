@@ -6,3 +6,6 @@ check_env:
 
 bsp:
 	mill -i mill.bsp.BSP/install
+
+idea:
+	mill mill.scalalib.GenIDEA/idea
