@@ -2,7 +2,7 @@ package cpu
 
 import chisel3.util.BitPat
 
-object isa {
+object ISA {
   //                    00     rs2   rs1  000   rd   opcode
   def add  = BitPat("b0000000_?????_?????_000_?????_0110011")
 

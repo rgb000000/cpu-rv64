@@ -1,31 +1,31 @@
 package cpu
 
-import chipsalliance.rocketchip.config._
 import chisel3._
 import chisel3.util._
+import chipsalliance.rocketchip.config._
+import Control._
 
-class RegisterFile(implicit p: Parameters) extends Module{
+class ImmGen (implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
-    // read port
-    val radd1 = Input(UInt(log2Ceil(32).W))
-    val radd2 = Input(UInt(log2Ceil(32).W))
-    val rdata1 = Output(UInt(p(XLen).W))
-    val rdata2 = Output(UInt(p(XLen).W))
-
-    // writer port
-    val wen = Input(Bool())
-    val waddr = Input(UInt(log2Ceil(32).W))
-    val wdata = Input(UInt(p(XLen).W))
+    val inst = Input(UInt(p(XLen).W))
+    val sel = Input(UInt(3.W))
+    val out = Output(UInt(p(XLen).W))
   })
+  val Iimm = io.inst(31, 20).asSInt
+  val Simm = Cat(io.inst(31, 25), io.inst(11,7)).asSInt
+  val Bimm = Cat(io.inst(31), io.inst(7), io.inst(30, 25), io.inst(11, 8), 0.U(1.W)).asSInt
+  val Uimm = Cat(io.inst(31, 12), 0.U(12.W)).asSInt
+  val Jimm = Cat(io.inst(31), io.inst(19, 12), io.inst(20), io.inst(30, 25), io.inst(24, 21), 0.U(1.W)).asSInt
+  val Zimm = io.inst(19, 15).zext
 
-  val registers = Mem(32, UInt(p(XLen).W))
-
-  io.rdata1 := Mux(io.radd1.orR() === 0.U, 0.U, registers.read(io.radd1))
-  io.rdata2 := Mux(io.radd2.orR() === 0.U, 0.U, registers.read(io.radd2))
-
-  when(io.wen === 1.U & io.waddr.orR() =/= 0.U){
-    registers.write(io.waddr, io.wdata)
-  }
+  io.out := MuxLookup(io.sel, Iimm & (-2.S), Seq(
+    IMM_I -> Iimm,
+    IMM_S -> Simm,
+    IMM_B -> Bimm,
+    IMM_U -> Uimm,
+    IMM_J -> Jimm,
+    IMM_Z -> Zimm
+  )).asUInt()
 }
 
 class ID (implicit p: Parameters) extends Module{
@@ -33,22 +33,23 @@ class ID (implicit p: Parameters) extends Module{
     val inst = Input(UInt(32.W))
     val pc = Input(UInt(32.W))
 
-    val rs1 = Output(UInt(p(XLen).W))
-    val rs2 = Output(UInt(p(XLen).W))
+    val rd_addr = Output(UInt(5.W))
+    val rs1_addr = Output(UInt(5.W))
+    val rs2_addr = Output(UInt(5.W))
+
+    val imm_sel = Input(UInt(3.W))
+    val imm = Output(UInt(p(XLen).W))
+    val alu_op = Output(UInt(4.W))
   })
 
-  val regs = Module(new RegisterFile)
+  io.rd_addr := WireInit(io.inst(11, 7))
+  io.rs1_addr := WireInit(io.inst(19, 15))
+  io.rs2_addr := WireInit(io.inst(24, 20))
 
-  val rd_addr = WireInit(io.inst(11, 7))
-  val rs1_addr = WireInit(io.inst(19, 15))
-  val rs2_addr = WireInit(io.inst(24, 20))
 
-  regs.io.radd1 := rs1_addr
-  regs.io.radd2 := rs2_addr
 
-  val rs1 = RegNext(regs.io.rdata1)
-  val rs2 = RegNext(regs.io.rdata2)
-
-  io.rs1 := rs1
-  io.rs2 := rs2
+  val immgen = Module(new ImmGen)
+  immgen.io.inst := io.inst
+  immgen.io.sel := io.imm_sel
+  io.imm := immgen.io.out
 }

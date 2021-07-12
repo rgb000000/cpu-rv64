@@ -3,6 +3,7 @@ package cpu
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
+import cpu.ALU.ALU_ADD
 
 object ALU {
   val ALU_ADD    = 0.U(4.W)
@@ -24,14 +25,14 @@ class ALU (implicit p: Parameters) extends Module {
   val io = IO(new Bundle{
     val rs1 = Input(UInt(p(XLen).W))
     val rs2 = Input(UInt(p(XLen).W))
-    val opcode = Input(UInt(p(XLen).W))
+    val alu_op = Input(UInt(4.W))
 
     val out = Output(UInt(p(XLen).W))
   })
   import ALU._
   val shamt = io.rs2(4, 0).asUInt()
 
-  io.out := MuxLookup(io.opcode, io.rs2, Seq(
+  io.out := MuxLookup(io.alu_op, io.rs2, Seq(
     ALU_ADD  -> (io.rs1 + io.rs2),
     ALU_SUB  -> (io.rs1 - io.rs2),
     ALU_SRA  -> (io.rs1.asSInt >> shamt).asUInt,
@@ -51,6 +52,7 @@ class EX(implicit p: Parameters) extends Module {
   val io = IO(new Bundle {
     val rs1 = Input(UInt(p(XLen).W))
     val rs2 = Input(UInt(p(XLen).W))
+    val alu_op = Input(UInt())
 
     val out = Output(UInt(p(XLen).W))
   })
@@ -59,8 +61,9 @@ class EX(implicit p: Parameters) extends Module {
 
   alu.io.rs1 := io.rs1
   alu.io.rs2 := io.rs2
+  alu.io.alu_op := io.alu_op
 
-  io.out := RegNext(alu.io.out)
+  io.out := alu.io.out
 
 
 }
