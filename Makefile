@@ -2,7 +2,7 @@ init:
 	git submodule update --init
 
 check_mill:
-	mill -i __.test.testOnly gcd.GCDSpec
+	mill -i gcd.test.testOnly gcd.GCDSpec
 
 check_bazel:
 	bazel run gcd:test
