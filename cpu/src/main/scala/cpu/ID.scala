@@ -31,7 +31,6 @@ class ImmGen (implicit p: Parameters) extends Module{
 class ID (implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
     val inst = Input(UInt(32.W))
-    val pc = Input(UInt(32.W))
 
     val rd_addr = Output(UInt(5.W))
     val rs1_addr = Output(UInt(5.W))
@@ -39,7 +38,6 @@ class ID (implicit p: Parameters) extends Module{
 
     val imm_sel = Input(UInt(3.W))
     val imm = Output(UInt(p(XLen).W))
-    val alu_op = Output(UInt(4.W))
   })
 
   io.rd_addr := WireInit(io.inst(11, 7))

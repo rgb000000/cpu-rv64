@@ -14,8 +14,8 @@ class DataPath(implicit p: Parameters) extends Module {
   val ifet = Module(new IF)
   val id = Module(new ID)
   val ex = Module(new EX)
-  val mem = Module(new MEM)
-  val wb = Module(new WB)
+//  val mem = Module(new MEM)
+//  val wb = Module(new WB)
 
   val regs = Module(new RegisterFile)
   val ctrl = Module(new Control)
@@ -30,6 +30,7 @@ class DataPath(implicit p: Parameters) extends Module {
   ctrl.io.inst := ifet.io.inst_out.bits
 
   id.io.inst := ifet.io.inst_out.bits
+  id.io.imm_sel := ctrl.io.imm_sel
   regs.io.radd1 := id.io.rs1_addr
   regs.io.radd2 := id.io.rs2_addr
   val rd_addr = id.io.rd_addr
@@ -47,5 +48,7 @@ class DataPath(implicit p: Parameters) extends Module {
   //wb
   regs.io.waddr := rd_addr
   regs.io.wdata := ex.io.out
-  regs.io.wdata := ctrl.io.wen
+  regs.io.wen := ctrl.io.wen
+
+  dontTouch(regs.io.wdata)
 }
