@@ -171,25 +171,25 @@ def _verilator_compile_impl(ctx):
     harness_file = ctx.file.harness_file
     print(v_file)
     print(harness_file)
-    out_dir = ctx.actions.declare_directory("obj_dir")
+    out_dir = ctx.actions.declare_directory("src/obj_dir")
     print(out_dir.path)
-    harness_file_clone = ctx.actions.declare_file("myharness.cpp")
+    harness_file_clone = ctx.actions.declare_file("src/" + harness_file.basename)
+    v_file_clone = ctx.actions.declare_file("src/" + v_file.basename)
     # bin_file = ctx.actions.declare_file("myharness.o")
-    log_file = ctx.actions.declare_file("log.txt")
 
     print(out_dir.root.path)
 
     ctx.actions.run_shell(
-        inputs = [harness_file],
-        outputs = [harness_file_clone, log_file],
-        command = "cp %s %s && tree > %s" % (harness_file.path, harness_file_clone.path, log_file.path),
+        inputs = [v_file, harness_file],
+        outputs = [harness_file_clone, v_file_clone],
+        command = "cp %s %s && cp %s %s" % (harness_file.path, harness_file_clone.path, v_file.path, v_file_clone.path),
         progress_message = "cp harness.cpp"
     )
 
     ctx.actions.run_shell(
-        inputs = [v_file, harness_file_clone],
+        inputs = [v_file_clone, harness_file_clone],
         outputs = [out_dir],
-        command = "verilator --cc %s --trace --exe --build %s --Mdir %s" % (v_file.path, harness_file_clone.basename, out_dir.path),
+        command = "cd %s/.. && verilator --cc ./%s --trace --exe /home/Prj/cpu-rv64/cpu/src/test/resources/DataPath-harness.cpp  --build #-I$PWD" % (out_dir.path, v_file_clone.basename), #, harness_file_clone.basename),
         progress_message = "Compiling .v with .cpp"
     )
 
@@ -200,7 +200,7 @@ def _verilator_compile_impl(ctx):
     #     progress_message = "Compiling .v with .cpp"
     # )
 
-    return [DefaultInfo(files = depset([out_dir, log_file]))]
+    return [DefaultInfo(files = depset([out_dir]))]
 
 _verilator_compile = rule(
     implementation = _verilator_compile_impl,
