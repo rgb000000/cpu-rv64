@@ -169,15 +169,10 @@ def hello(
 def _verilator_compile_impl(ctx):
     v_file = ctx.attr.v_file.files.to_list()[1]
     harness_file = ctx.file.harness_file
-    print(v_file)
-    print(harness_file)
     out_dir = ctx.actions.declare_directory("src/obj_dir")
-    print(out_dir.path)
     harness_file_clone = ctx.actions.declare_file("src/" + harness_file.basename)
     v_file_clone = ctx.actions.declare_file("src/" + v_file.basename)
-    # bin_file = ctx.actions.declare_file("myharness.o")
-
-    print(out_dir.root.path)
+    vcd_file = ctx.actions.declare_file("src/wave.vcd") # define in harness.cpp
 
     ctx.actions.run_shell(
         inputs = [v_file, harness_file],
@@ -185,22 +180,17 @@ def _verilator_compile_impl(ctx):
         command = "cp %s %s && cp %s %s" % (harness_file.path, harness_file_clone.path, v_file.path, v_file_clone.path),
         progress_message = "cp harness.cpp"
     )
+    args = ctx.actions.args()
 
     ctx.actions.run_shell(
         inputs = [v_file_clone, harness_file_clone],
-        outputs = [out_dir],
-        command = "cd %s/.. && verilator --cc ./%s --trace --exe /home/Prj/cpu-rv64/cpu/src/test/resources/DataPath-harness.cpp  --build #-I$PWD" % (out_dir.path, v_file_clone.basename), #, harness_file_clone.basename),
-        progress_message = "Compiling .v with .cpp"
+        outputs = [out_dir, vcd_file],
+        command = "cd %s/.. && verilator --cc %s --trace --exe %s  --build && ./obj_dir/V%s" % (out_dir.path, v_file_clone.basename, harness_file_clone.basename, v_file_clone.basename[:-2]),
+        progress_message = "Compiling .v with .cpp",
+        use_default_shell_env = True 
     )
 
-    # ctx.actions.run_shell(
-    #     inputs = [out_dir, harness_file_clone],
-    #     outputs = [bin_file],
-    #     command = "make -j -C %s -f VDataPath.mk VDataPath" % out_dir.path,
-    #     progress_message = "Compiling .v with .cpp"
-    # )
-
-    return [DefaultInfo(files = depset([out_dir]))]
+    return [DefaultInfo(files = depset([out_dir, vcd_file]))]
 
 _verilator_compile = rule(
     implementation = _verilator_compile_impl,

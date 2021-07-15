@@ -23,7 +23,7 @@ int main(int argc, char **argv)
 
     // tfp初始化工作
     top->trace(tfp, 99);
-    tfp->open("Decoder.vcd");
+    tfp->open("wave.vcd");
 
     int count = 0;
 
