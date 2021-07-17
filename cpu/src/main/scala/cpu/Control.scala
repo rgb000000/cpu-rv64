@@ -10,6 +10,18 @@ object Control {
   val N = false.B
   val Y = true.B
 
+  // PC_sel
+  val PC_4   = 0.U(2.W)
+  val PC_ALU = 1.U(2.W)
+  val PC_0   = 2.U(2.W)
+  val PC_EPC = 3.U(2.W)
+
+  // A_sel
+  val A_XXX  = 0.U(1.W)
+  val A_PC   = 0.U(1.W)
+  val A_RS1  = 1.U(1.W)
+
+
   // B_sel
   val B_XXX  = 0.U(1.W)
   val B_IMM  = 0.U(1.W)
@@ -30,22 +42,23 @@ object Control {
   //            pc_sel  A_sel   B_sel  imm_sel   alu_op   br_type |  st_type ld_type wb_sel  | csr_cmd |
   //              |       |       |     |          |          |   |     |       |       |    |  |      |
   val default =
-            List(              B_XXX, IMM_X,    ALU_XXX,                                     N)
+            List(PC_4, A_XXX,  B_XXX, IMM_X,    ALU_XXX,                                     N)
   val map = Array(
-    addi -> List(              B_IMM, IMM_I,    ALU_ADD,                                     Y)
+    addi -> List(PC_4, A_RS1,  B_IMM, IMM_I,    ALU_ADD,                                     Y)
   )
 }
 
+class ControlIO(implicit p: Parameters) extends Bundle{
+  val inst = Input(UInt(32.W))
+
+  val b_sel = Output(UInt(1.W))
+  val imm_sel = Output(UInt(3.W))
+  val alu_op = Output(UInt(3.W))
+  val wen = Output(Bool())
+}
+
 class Control(implicit p: Parameters) extends Module{
-  val io = IO(new Bundle{
-    val inst = Input(UInt(32.W))
-
-    val b_sel = Output(UInt(1.W))
-    val imm_sel = Output(UInt(3.W))
-    val alu_op = Output(UInt(3.W))
-    val wen = Output(Bool())
-  })
-
+  val io = IO(new ControlIO)
 
 
   val ctrl_signal = ListLookup(io.inst, Control.default, Control.map)

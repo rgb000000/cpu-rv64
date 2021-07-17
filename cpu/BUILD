@@ -48,6 +48,7 @@ verilator_test(
   name = "VV",
   module_name = "DataPath",
   module_code = "cpu.DataPath",
+  inst_file = glob(["src/main/resources/inst.hex"]),
   deps = [
     "cpu",
     "//dependency:config"

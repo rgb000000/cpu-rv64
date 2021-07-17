@@ -3,6 +3,7 @@ package cpu
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
+import chisel3.util.experimental.loadMemoryFromFileInline
 
 class DataPath(implicit p: Parameters) extends Module {
   val io = IO(new Bundle{
@@ -21,6 +22,7 @@ class DataPath(implicit p: Parameters) extends Module {
   val ctrl = Module(new Control)
 
   val i_mem = SyncReadMem(32, UInt(32.W))
+  loadMemoryFromFileInline(i_mem, "inst.hex")
 
   // fetch
   ifet.io.inst_in.bits := i_mem.read(ifet.io.pc.bits)

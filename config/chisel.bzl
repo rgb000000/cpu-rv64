@@ -172,18 +172,21 @@ def _verilator_compile_impl(ctx):
     out_dir = ctx.actions.declare_directory("src/obj_dir")
     harness_file_clone = ctx.actions.declare_file("src/" + harness_file.basename)
     v_file_clone = ctx.actions.declare_file("src/" + v_file.basename)
+    inst_file = ctx.file.inst_file
+    inst_file_clone = ctx.actions.declare_file("src/" + inst_file.basename)
     vcd_file = ctx.actions.declare_file("src/wave.vcd") # define in harness.cpp
 
+
     ctx.actions.run_shell(
-        inputs = [v_file, harness_file],
-        outputs = [harness_file_clone, v_file_clone],
-        command = "cp %s %s && cp %s %s" % (harness_file.path, harness_file_clone.path, v_file.path, v_file_clone.path),
+        inputs = [v_file, harness_file, inst_file],
+        outputs = [harness_file_clone, v_file_clone, inst_file_clone],
+        command = "cp %s %s && cp %s %s && cp %s %s" % (harness_file.path, harness_file_clone.path, v_file.path, v_file_clone.path, inst_file.path, inst_file_clone.path),
         progress_message = "cp harness.cpp"
     )
     args = ctx.actions.args()
 
     ctx.actions.run_shell(
-        inputs = [v_file_clone, harness_file_clone],
+        inputs = [v_file_clone, harness_file_clone, inst_file_clone],
         outputs = [out_dir, vcd_file],
         command = "cd %s/.. && verilator --cc %s --trace --exe %s  --build && ./obj_dir/V%s" % (out_dir.path, v_file_clone.basename, harness_file_clone.basename, v_file_clone.basename[:-2]),
         progress_message = "Compiling .v with .cpp",
@@ -196,7 +199,8 @@ _verilator_compile = rule(
     implementation = _verilator_compile_impl,
     attrs = {
         "v_file": attr.label(),
-        "harness_file": attr.label(allow_single_file=True)
+        "harness_file": attr.label(allow_single_file=True),
+        "inst_file": attr.label(allow_single_file=True)
     }
 )
 
@@ -206,6 +210,7 @@ def verilator_test(
     name,
     module_name,
     module_code,
+    inst_file,
     deps,
     srcs,
     visibility = None
@@ -234,7 +239,8 @@ def verilator_test(
     _verilator_compile(
         name = name,
         v_file = name + "_files",
-        harness_file = srcs[0]
+        harness_file = srcs[0],
+        inst_file = inst_file[0]
     )
 
 # def chisel_verilator_test(
