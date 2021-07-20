@@ -19,4 +19,5 @@ class DefaultConfig extends Config ((site, here, up)=>{
   case IAW => 32
   case DAW => 32
   case PCStart => 0x0
+
 })

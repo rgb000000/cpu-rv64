@@ -6,19 +6,22 @@ import chipsalliance.rocketchip.config._
 import cpu.ALU.ALU_ADD
 
 object ALU {
-  val ALU_ADD    = 0.U(4.W)
-  val ALU_SUB    = 1.U(4.W)
-  val ALU_AND    = 2.U(4.W)
-  val ALU_OR     = 3.U(4.W)
-  val ALU_XOR    = 4.U(4.W)
-  val ALU_SLT    = 5.U(4.W)
-  val ALU_SLL    = 6.U(4.W)
-  val ALU_SLTU   = 7.U(4.W)
-  val ALU_SRL    = 8.U(4.W)
-  val ALU_SRA    = 9.U(4.W)
-  val ALU_COPY_A = 10.U(4.W)
-  val ALU_COPY_B = 11.U(4.W)
-  val ALU_XXX    = 15.U(4.W)
+  val ALU_ADD    = 0.U(4.W) // +
+  val ALU_SUB    = 1.U(4.W) // -
+  val ALU_AND    = 2.U(4.W) // &
+  val ALU_OR     = 3.U(4.W) // |
+  val ALU_XOR    = 4.U(4.W) // ^
+  val ALU_SLT    = 5.U(4.W) // <
+  val ALU_SLL    = 6.U(4.W) // << logic
+  val ALU_SLTU   = 7.U(4.W) // < unsigned
+  val ALU_SRL    = 8.U(4.W) // >> logic
+  val ALU_SRA    = 9.U(4.W) // >> arithmetic
+  val ALU_COPY_A = 10.U(4.W)// rs1
+  val ALU_COPY_B = 11.U(4.W)// rs2
+  val ALU_XXX    = 15.U(4.W)//
+
+  val ALU_ALL    = 0.U(1.W) // return all result
+  val ALU_CUT32  = 1.U(1.W) // return [31:0]
 }
 
 class ALU (implicit p: Parameters) extends Module {
@@ -26,13 +29,14 @@ class ALU (implicit p: Parameters) extends Module {
     val rs1 = Input(UInt(p(XLen).W))
     val rs2 = Input(UInt(p(XLen).W))
     val alu_op = Input(UInt(4.W))
+    val res_cut = Input(UInt(1.W))
 
     val out = Output(UInt(p(XLen).W))
   })
   import ALU._
   val shamt = io.rs2(4, 0).asUInt()
 
-  io.out := MuxLookup(io.alu_op, io.rs2, Seq(
+  val out = MuxLookup(io.alu_op, io.rs2, Seq(
     ALU_ADD  -> (io.rs1 + io.rs2),
     ALU_SUB  -> (io.rs1 - io.rs2),
     ALU_SRA  -> (io.rs1.asSInt >> shamt).asUInt,
@@ -46,6 +50,10 @@ class ALU (implicit p: Parameters) extends Module {
     ALU_COPY_A -> io.rs1
   ))
 
+  io.out := MuxCase(out, Array(
+    (io.res_cut === ALU_ALL) -> out,
+    (io.res_cut === ALU_CUT32) -> out(31,0).asSInt().asUInt()
+  ))
 }
 
 class EX(implicit p: Parameters) extends Module {
