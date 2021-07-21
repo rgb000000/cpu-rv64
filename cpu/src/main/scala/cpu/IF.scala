@@ -8,34 +8,33 @@ import chisel3.util.experimental.loadMemoryFromFileInline
 
 class IF (implicit p: Parameters) extends Module {
   val io = IO(new Bundle{
-    val pc = Valid(UInt(p(IAW).W))
-    val inst_in = Flipped(Valid(UInt(32.W)))
-    val inst_out = Valid(UInt(32.W))
+    val pc = Valid(UInt(p(XLen).W))
+    val icache = Flipped(new CacheCPUIO)
+    val inst = Valid(UInt(32.W))
   })
 
-  val pc = RegInit(p(PCStart).U(p(IAW).W))
+  val pc = RegInit(p(PCStart).U(p(XLen).W))
   val inst = RegInit(BitPat.bitPatToUInt(ISA.nop))
 
+  // always read instructions from icache
+  io.icache.req.valid := 1.U
+  io.icache.req.bits.op := 0.U // must read
+  io.icache.req.bits.addr := pc// pc is addr
+  io.icache.req.bits.mask := Mux(pc(2) === 1.U, "b1111_0000".U, "b0000_1111".U)  // need 32 bit instructions
+  io.icache.req.bits.data := 0.U // nerver use because op is read
+
+  when((io.icache.req.valid === 1.U) & (io.icache.reps.valid === 1.U)){
+    // get reps
+    inst := io.icache.reps.bits.data
+    pc := pc // pc = pc_next
+  }
+
+  inst := Mux(io.icache.req.valid & io.icache.reps.valid, io.icache.reps.bits.data, inst)
+  pc := Mux(io.icache.req.valid & io.icache.reps.valid, pc, pc)
+
+  io.inst.bits := inst
+  io.inst.valid := RegNext(io.icache.reps.valid & io.icache.reps.valid)
+
   io.pc.bits := pc
-  io.pc.valid := true.B
-  inst := Mux(io.inst_in.fire(), io.inst_in.bits, inst)
-
-  io.inst_out.bits := inst
-  io.inst_out.valid := RegNext(io.inst_in.fire())
-}
-
-class IFWrapper (implicit p: Parameters) extends Module {
-  val io = IO(new Bundle{
-    val inst_out = Valid(UInt(32.W))
-  })
-
-  val sim_mem = SyncReadMem(32, UInt(32.W))
-  loadMemoryFromFileInline(sim_mem, "inst.hex")
-
-  val ifet = Module(new IF)
-
-  ifet.io.inst_in.bits := sim_mem.read(ifet.io.pc.bits)
-  ifet.io.inst_in.valid := RegNext(ifet.io.pc.valid)
-
-  io.inst_out <> ifet.io.inst_out
+  io.pc.valid := RegNext(io.icache.reps.valid & io.icache.reps.valid)
 }

@@ -60,7 +60,8 @@ class EX(implicit p: Parameters) extends Module {
   val io = IO(new Bundle {
     val rs1 = Input(UInt(p(XLen).W))
     val rs2 = Input(UInt(p(XLen).W))
-    val alu_op = Input(UInt())
+    val alu_op = Input(UInt(4.W))
+    val alu_cut = Input(UInt(1.W))
 
     val out = Output(UInt(p(XLen).W))
   })
@@ -70,6 +71,7 @@ class EX(implicit p: Parameters) extends Module {
   alu.io.rs1 := io.rs1
   alu.io.rs2 := io.rs2
   alu.io.alu_op := io.alu_op
+  alu.io.res_cut := io.alu_cut
 
   io.out := alu.io.out
 

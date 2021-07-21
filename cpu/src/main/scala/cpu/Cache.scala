@@ -123,17 +123,20 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
 
 ////////////////////  Cache /////////////////////////
 
+class CacheCPUIO (implicit p: Parameters) extends Bundle{
+  val req = Flipped(Valid(new CacheReq))
+  val reps = Valid(new CacheResp)
+}
+
+class CacheMemIO (implicit p: Parameters) extends Bundle{
+  val req = Decoupled(new MemReq)
+  val reps = Flipped(Valid(new MemResp))
+}
+
 class Cache(implicit p: Parameters) extends Module {
   val io = IO(new Bundle{
-    val cpu = new Bundle{
-      val req = Flipped(Valid(new CacheReq))
-      val reps = Valid(new CacheResp)
-    }
-
-    val mem = new Bundle{
-      val req = Decoupled(new MemReq)
-      val reps = Flipped(Valid(new MemResp))
-    }
+    val cpu = new CacheCPUIO
+    val mem = new CacheMemIO
   })
   val offset_width = log2Ceil(p(CacheLineSize))
   val index_width = log2Ceil(p(I$Size) / (p(NWay) * p(CacheLineSize)) )
@@ -256,7 +259,7 @@ class Cache(implicit p: Parameters) extends Module {
     way.io.in.w.bits.data := write_buffer.bits.data
     way.io.in.w.bits.op := 1.U // must write op
   })
-  ways.zip(write_buffer.bits.replace_way.toBools()).foreach(a => {
+  ways.zip(write_buffer.bits.replace_way.asBools()).foreach(a => {
     val (way, way_mask) = a
     way.io.in.w.valid := way_mask & write_buffer.valid
   })

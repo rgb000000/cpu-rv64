@@ -45,18 +45,21 @@ object Control {
   val BR_NE  = 6.U(3.W) // =/=
 
   // st_type
-  val ST_XXX = 0.U(2.W) // nonoe
-  val ST_SW  = 1.U(2.W) // word      (32)
-  val ST_SH  = 2.U(2.W) // half-word (16)
-  val ST_SB  = 3.U(2.W) // byte      (8)
+  val ST_XXX = 0.U(3.W) // nonoe
+  val ST_SD  = 1.U(3.W) // double word (64)
+  val ST_SW  = 2.U(3.W) // word        (32)
+  val ST_SH  = 3.U(3.W) // half-word   (16)
+  val ST_SB  = 4.U(3.W) // byte        ( 8)
 
   // ld_type
   val LD_XXX = 0.U(3.W) // none
-  val LD_LW  = 1.U(3.W) // word        (32)
-  val LD_LH  = 2.U(3.W) // half-word   (16)
-  val LD_LB  = 3.U(3.W) // byte        ( 8)
-  val LD_LHU = 4.U(3.W) // half-word unsigned (16)
-  val LD_LBU = 5.U(3.W) // byte unsigned      ( 8)
+  val LD_LD  = 1.U(3.W) // double word (64)
+  val LD_LW  = 2.U(3.W) // word        (32)
+  val LD_LH  = 3.U(3.W) // half-word   (16)
+  val LD_LB  = 4.U(3.W) // byte        ( 8)
+  val LD_LWU = 5.U(3.W) // word unsigned      (32)
+  val LD_LHU = 6.U(3.W) // half-word unsigned (16)
+  val LD_LBU = 7.U(3.W) // byte unsigned      ( 8)
 
   // wb_sel
   val WB_ALU = 0.U(2.W) // wb alu
@@ -120,6 +123,14 @@ object Control {
     csrrsi -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SUB, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
     csrrci -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SUB, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
 
+
+    // rv64
+
+
+
+
+
+
     slliw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLL, ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
     srliw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SRL, ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
     sraiw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SRA, ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
@@ -130,22 +141,38 @@ object Control {
 class ControlIO(implicit p: Parameters) extends Bundle{
   val inst = Input(UInt(32.W))
 
-  val b_sel = Output(UInt(1.W))
+  val pc_sel  = Output(UInt(2.W))
+  val a_sel   = Output(UInt(1.W))
+  val b_sel   = Output(UInt(1.W))
   val imm_sel = Output(UInt(3.W))
-  val alu_op = Output(UInt(3.W))
-  val wen = Output(Bool())
+  val alu_op  = Output(UInt(4.W))
+  val alu_cut = Output(UInt(1.W))
+  val br_type = Output(UInt(3.W))
+  val kill    = Output(UInt(1.W))
+  val st_type = Output(UInt(2.W))
+  val ld_type = Output(UInt(3.W))
+  val wb_type = Output(UInt(2.W))
+  val wen     = Output(UInt(1.W))
+  val illegal = Output(UInt(1.W))
 }
 
 class Control(implicit p: Parameters) extends Module{
   val io = IO(new ControlIO)
 
-
   val ctrl_signal = ListLookup(io.inst, Control.default, Control.map)
 
-  io.b_sel := ctrl_signal(0)
-  io.imm_sel := ctrl_signal(1)
-  io.alu_op := ctrl_signal(2)
-  io.wen := ctrl_signal(3)
-
-
+  io.pc_sel  := ctrl_signal( 0)
+  io.a_sel   := ctrl_signal( 1)
+  io.b_sel   := ctrl_signal( 2)
+  io.imm_sel := ctrl_signal( 3)
+  io.alu_op  := ctrl_signal( 4)
+  io.alu_cut := ctrl_signal( 5)
+  io.br_type := ctrl_signal( 6)
+  io.kill    := ctrl_signal( 7)
+  io.st_type := ctrl_signal( 8)
+  io.ld_type := ctrl_signal( 9)
+  io.wb_type := ctrl_signal(10)
+  io.wen     := ctrl_signal(11)
+  // todo: csr_cmd
+  io.illegal := ctrl_signal(12)
 }

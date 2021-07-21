@@ -45,7 +45,7 @@ hello(
 )
 
 verilator_test(
-  name = "VV",
+  name = "datapath_vt",
   module_name = "DataPath",
   module_code = "cpu.DataPath",
   inst_file = glob(["src/main/resources/inst.hex"]),
