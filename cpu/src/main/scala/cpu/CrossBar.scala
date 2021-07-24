@@ -4,17 +4,12 @@ import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
 
+
 class InnerCrossBar(val n: Int)(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
-    val in = Flipped(Vec(n, new Bundle{
-      val req = Decoupled(new MemReq)
-      val resp = Flipped(Valid(new MemResp))
-    }))
+    val in = Flipped(Vec(n, new CacheMemIO))
 
-    val out = new Bundle{
-      val req = Decoupled(new MemReq)
-      val resp = Flipped(Valid(new MemResp))
-    }
+    val out = new CacheMemIO
   })
 
   val arbiter = Module(new Arbiter(chiselTypeOf(io.in.head.req.bits), n))

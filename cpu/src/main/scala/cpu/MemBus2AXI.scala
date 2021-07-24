@@ -6,10 +6,7 @@ import chipsalliance.rocketchip.config._
 
 class MemBus2AXI(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
-    val in = Flipped(new Bundle {
-      val req = Decoupled(new MemReq)          //send a cacheline
-      val resp = Flipped(Valid(new MemResp))
-    })
+    val in = Flipped(new CacheMemIO)
 
     val axi4 = new AXI4
   })
