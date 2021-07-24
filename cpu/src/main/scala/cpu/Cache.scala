@@ -6,12 +6,13 @@ import chipsalliance.rocketchip.config._
 import chisel3.util.random.LFSR
 
 // define in bytes
-case object I$Size extends Field[Int]
-case object D$Size extends Field[Int]
-case object L2$Size extends Field[Int]
-case object CacheLineSize extends Field[Int]
-case object NWay extends Field[Int]
-case object NBank extends Field[Int]
+case object I$Size extends Field[Int]           // 256 * 1024 bits  (256 bits * 4 ways * 256 item)
+case object D$Size extends Field[Int]           // 256 * 1024 bits  (256 bits * 4 ways * 256 item)
+case object L2$Size extends Field[Int]          // no L2$
+case object CacheLineSize extends Field[Int]    // 256bit (64 * 4)
+case object NWay extends Field[Int]             // 4
+case object NBank extends Field[Int]            // 4
+case object IDBits extends Field[Int]           // 1bit 0: inst   1: data
 
 
 // ====================== L1 to CPU IO =========================
@@ -35,10 +36,12 @@ class MemReq(implicit p: Parameters) extends Bundle {
   val addr = UInt(p(XLen).W)
   val data = UInt(p(CacheLineSize).W)
   val op = UInt(1.W)  // 0: rd   1: wr
+  val id = UInt(p(IDBits).W)
 }
 
 class MemResp(implicit p: Parameters) extends Bundle{
   val data = UInt(p(CacheLineSize).W)
+  val id = UInt(p(IDBits).W)
 }
 
 
@@ -125,21 +128,33 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
 
 class CacheCPUIO (implicit p: Parameters) extends Bundle{
   val req = Flipped(Valid(new CacheReq))
-  val reps = Valid(new CacheResp)
+  val resp = Valid(new CacheResp)
 }
 
 class CacheMemIO (implicit p: Parameters) extends Bundle{
   val req = Decoupled(new MemReq)
-  val reps = Flipped(Valid(new MemResp))
+  val resp = Flipped(Valid(new MemResp))
 }
 
-class Cache(implicit p: Parameters) extends Module {
+class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   val io = IO(new Bundle{
     val cpu = new CacheCPUIO
     val mem = new CacheMemIO
   })
+
+  val cache_size = cache_type match {
+    case "i" => p(I$Size)
+    case "d" => p(D$Size)
+    case _ => {println("cache type must 'i' or 'd'");System.exit(1);0}
+  }
+  val id = cache_type match {
+    case "i" => 0.U
+    case "d" => 1.U
+    case _ => {println("cache type must 'i' or 'd'");System.exit(1);2.U}
+  }
+
   val offset_width = log2Ceil(p(CacheLineSize))
-  val index_width = log2Ceil(p(I$Size) / (p(NWay) * p(CacheLineSize)) )
+  val index_width = log2Ceil(cache_size / (p(NWay) * p(CacheLineSize)) )
   val tag_width = p(XLen) - offset_width - index_width
 
   val infos = new Bundle{
@@ -268,6 +283,7 @@ class Cache(implicit p: Parameters) extends Module {
   io.mem.req.bits.addr := 0.U
   io.mem.req.bits.op := 0.U
   io.mem.req.bits.data := 0.U
+  io.mem.req.bits.id := id
 
   //  io.mem.req.bits.addr := MuxCase(0.U, Array(
   //    ((state === miss) & (io.mem.req.ready === 1.U)) -> replace_buffer.addr, // write replace_buffer
@@ -293,8 +309,8 @@ class Cache(implicit p: Parameters) extends Module {
     when(!is_miss){
       when(req_reg.op === 0.U){
         // hit, rd, resp to cpu
-        io.cpu.reps.valid := 1.U
-        io.cpu.reps.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
+        io.cpu.resp.valid := 1.U
+        io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
           val (valid, i) = x
           // todo: use MuxCase to generate res
           val res = Mux(valid, select_data.asUInt()(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
@@ -336,6 +352,7 @@ class Cache(implicit p: Parameters) extends Module {
         io.mem.req.bits.addr := replace_buffer.addr
         io.mem.req.bits.op := 1.U // must write
         io.mem.req.bits.data := replace_buffer.data
+        io.mem.req.bits.id := id
       }
     }
   }.elsewhen(state === replace){
@@ -346,11 +363,12 @@ class Cache(implicit p: Parameters) extends Module {
       io.mem.req.bits.addr := miss_info.addr
       io.mem.req.bits.op := 0.U // must read
       io.mem.req.bits.data := 0.U // in reading, req data is dontCare
+      io.mem.req.bits.id := id
     }
   }.elsewhen(state === refill){
-    when(io.mem.reps.valid){
+    when(io.mem.resp.valid){
       // get miss data, fill it in write_buffer
-      write_buffer.bits.data := io.mem.reps.bits.data
+      write_buffer.bits.data := io.mem.resp.bits.data
       write_buffer.bits.tag := miss_info.addr    //TODO: addr to tag and index
       write_buffer.bits.index := miss_info.addr
       write_buffer.bits.offset := miss_info.addr
@@ -404,7 +422,7 @@ class Cache(implicit p: Parameters) extends Module {
     }
 
     is(refill){
-      when(io.mem.reps.valid === 0.U){
+      when(io.mem.resp.valid === 0.U){
         state := idle
       }.otherwise{
         // receive a rd  mem resp, return cpu resp and write cache

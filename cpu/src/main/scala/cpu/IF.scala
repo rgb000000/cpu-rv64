@@ -23,18 +23,18 @@ class IF (implicit p: Parameters) extends Module {
   io.icache.req.bits.mask := Mux(pc(2) === 1.U, "b1111_0000".U, "b0000_1111".U)  // need 32 bit instructions
   io.icache.req.bits.data := 0.U // nerver use because op is read
 
-  when((io.icache.req.valid === 1.U) & (io.icache.reps.valid === 1.U)){
+  when((io.icache.req.valid === 1.U) & (io.icache.resp.valid === 1.U)){
     // get reps
-    inst := io.icache.reps.bits.data
+    inst := io.icache.resp.bits.data
     pc := pc // pc = pc_next
   }
 
-  inst := Mux(io.icache.req.valid & io.icache.reps.valid, io.icache.reps.bits.data, inst)
-  pc := Mux(io.icache.req.valid & io.icache.reps.valid, pc, pc)
+  inst := Mux(io.icache.req.valid & io.icache.resp.valid, io.icache.resp.bits.data, inst)
+  pc := Mux(io.icache.req.valid & io.icache.resp.valid, pc, pc)
 
   io.inst.bits := inst
-  io.inst.valid := RegNext(io.icache.reps.valid & io.icache.reps.valid)
+  io.inst.valid := RegNext(io.icache.resp.valid & io.icache.resp.valid)
 
   io.pc.bits := pc
-  io.pc.valid := RegNext(io.icache.reps.valid & io.icache.reps.valid)
+  io.pc.valid := RegNext(io.icache.resp.valid & io.icache.resp.valid)
 }
