@@ -55,3 +55,15 @@ verilator_test(
   ],
   srcs = glob(["src/test/resources/DataPath-harness.cpp"])
 )
+
+verilator_test(
+  name = "core_vt",
+  module_name = "Core",
+  module_code = "cpu.Core",
+  inst_file = glob(["src/main/resources/inst.hex"]),
+  deps = [
+    "cpu",
+    "//dependency:config"
+  ],
+  srcs = glob(["src/test/resources/Core-harness.cpp"])
+)

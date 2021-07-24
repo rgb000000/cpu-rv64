@@ -91,7 +91,7 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
   // nBank * (n * 8bit)
   val bankn = List.fill(p(NBank))(SyncReadMem(depth, Vec((p(CacheLineSize) / p(NBank)) / 8, UInt(8.W))))
 
-  val result = WireInit(new WayOut(tag_width))
+  val result = WireInit(0.U.asTypeOf(new WayOut(tag_width)))
 
   // read logic
   // TODO: check data order in simulator
@@ -100,7 +100,7 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
     List(dirty_tab.read(io.in.r.bits.index, io.in.r.valid)) ++
     bankn.map(_.read(io.in.r.bits.index, io.in.r.valid).asUInt())).asTypeOf(new WayOut(tag_width))
 
-  io.out.bits := io.out
+  io.out.bits := result
   io.out.valid := RegNext(io.in.r.valid, 0.U)
 
   // write logic
@@ -175,6 +175,19 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   // req_reg.addr view as {tag, index, offset}
   val req_reg_info = req_reg.addr.asTypeOf(infos)
 
+
+  // write buffer, via this to write cache
+  val write_buffer = RegInit(0.U.asTypeOf(Valid(new Bundle{
+    val tag = UInt(tag_width.W)
+    val index = UInt(index_width.W)
+    val offset = UInt(offset_width.W)
+    val v = UInt(1.W)
+    val d = UInt(1.W)
+    val data = UInt(p(XLen).W)
+    val replace_way = UInt(p(NWay).W)
+    val wmask = UInt(((p(CacheLineSize) / p(NBank)) / 8).W)
+  })))
+
   // conflict check (conflict with hit write)
   val conflict_hit_write = WireInit(
     io.cpu.req.valid & (io.cpu.req.bits.op ===  0.U) & (write_buffer.valid === 1.U) // req is read op and write_buffer is valid
@@ -193,27 +206,27 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   }))
 
   // compare ways tag, return one hot such {0,0,0,0} or {0,0,1,0}
-  val ways_compare_res = WireInit(Cat(ways.map((way)=>{
+  val ways_compare_res = Cat(ways.map((way)=>{
       (way.io.out.bits.tag === req_reg_info.tag) & (way.io.out.bits.v === 1.U)
-    })))
+    }))
   // ways_compare_res is all 0, {0, 0, 0, 0} means the current req is miss
   val is_miss = ways_compare_res.orR() === 0.U
   assert((p(CacheLineSize) / p(NBank)) == 64)
 
   // Vec(NWay, (tag_width + v + d + cacheline)bit) tag      v   d      data
 //  val ways_ret_datas = Vec(p(NWay), Wire(UInt(( tag_width + 1 + 1 + p(CacheLineSize) ).W)))
-  val ways_ret_datas = Vec(p(NWay), Wire(new WayOut(tag_width)))
+  val ways_ret_datas = Wire(Vec(p(NWay), new WayOut(tag_width)))
   // get nway out (all info {tag v d data})
   ways_ret_datas.zip(ways).foreach(a => {
     val (datas, way) = a
     datas := way.io.out.bits //.datas(io.cpu.req.bits.addr(log2Ceil((p(CacheLineSize) / p(NBank)) / 8) + log2Ceil(p(NBank)), log2Ceil((p(CacheLineSize) / p(NBank)) / 8)).asUInt())
   })
   // selected data from all way by tag==tag
-  val select_data = Mux1H(for(i <- ways_compare_res.asBools().zipWithIndex) yield (i._1, ways_ret_datas(i._2.asUInt()).datas))
+  val select_data = Mux1H(for(i <- ways_compare_res.asBools().zipWithIndex) yield (i._1, ways_ret_datas(i._2).datas))
   // use LFSR to generate rand in binary, need to be converted to ont-hot to use as mask
   val rand_way = UIntToOH(LFSR(64)(log2Ceil(p(NWay))-1, 0).asUInt())
   // rand way data (tag, v, d, data)
-  val rand_way_data = Mux1H(for(i <- rand_way.asBools().zipWithIndex) yield (i._1, ways_ret_datas(i._2.asUInt())))
+  val rand_way_data = Mux1H(for(i <- rand_way.asBools().zipWithIndex) yield (i._1, ways_ret_datas(i._2)))
 
   // miss info reg
   val miss_info = RegInit(0.U.asTypeOf(new Bundle{
@@ -230,17 +243,6 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     val d = UInt(1.W)
   }))
 
-  // write buffer, via this to write cache
-  val write_buffer = RegInit(0.U.asTypeOf(Valid(new Bundle{
-    val tag = UInt(tag_width.W)
-    val index = UInt(index_width.W)
-    val offset = UInt(offset_width.W)
-    val v = UInt(1.W)
-    val d = UInt(1.W)
-    val data = UInt(p(XLen).W)
-    val replace_way = UInt(p(NWay).W)
-    val wmask = Vec((p(CacheLineSize) / p(NBank)) / 8, UInt(1.W))
-  })))
 
   // write_buffer fsm
   val w_idle :: w_write :: Nil = Enum(2)
@@ -280,25 +282,26 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   })
   // write_buffer fsm END
 
-  io.mem.req.bits.addr := 0.U
-  io.mem.req.bits.op := 0.U
-  io.mem.req.bits.data := 0.U
-  io.mem.req.bits.id := id
 
-  //  io.mem.req.bits.addr := MuxCase(0.U, Array(
-  //    ((state === miss) & (io.mem.req.ready === 1.U)) -> replace_buffer.addr, // write replace_buffer
-  //    ((state === replace) & (io.mem.req.ready === 1.U)) -> miss_info.addr,   // read miss_info
-  //  ))
-  //
-  //  io.mem.req.bits.op := MuxCase(0.U, Array(
-  //    ((state === miss) & (io.mem.req.ready === 1.U)) -> 1.U, // write replace_buffer
-  //    ((state === replace) & (io.mem.req.ready === 1.U)) -> 0.U,   // read miss_info
-  //  ))
-  //
-  //  io.mem.req.bits.data := MuxCase(0.U, Array(
-  //    ((state === miss) & (io.mem.req.ready === 1.U)) -> replace_buffer.data, // write replace_buffer
-  //    ((state === replace) & (io.mem.req.ready === 1.U)) -> miss_info.data,   // read miss_info
-  //  ))
+  // cpu resp
+  io.cpu.resp.valid := (state === lookup) & (!is_miss) & (req_reg.op === 0.U) // read & hit
+  io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
+    val (valid, i) = x
+    // todo: use MuxCase to generate res   ERROR!!!
+    val res = Mux(valid, select_data.asUInt()(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
+    res
+  }))
+
+  // cpu req
+  // None
+
+  // mem req
+  io.mem.req.valid := ((state === miss) & (replace_buffer.d === 1.U)) |
+                      (state === replace)
+  io.mem.req.bits.addr := Mux(state === replace, miss_info.addr, replace_buffer.addr)
+  io.mem.req.bits.op := Mux(state === replace, 0.U, 1.U)
+  io.mem.req.bits.data := replace_buffer.data.asUInt()
+  io.mem.req.bits.id := id
 
   when(state === idle){
     when(io.cpu.req.fire()){
@@ -309,13 +312,13 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     when(!is_miss){
       when(req_reg.op === 0.U){
         // hit, rd, resp to cpu
-        io.cpu.resp.valid := 1.U
-        io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
-          val (valid, i) = x
-          // todo: use MuxCase to generate res
-          val res = Mux(valid, select_data.asUInt()(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
-          res
-        }))
+//        io.cpu.resp.valid := 1.U
+//        io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
+//          val (valid, i) = x
+//          // todo: use MuxCase to generate res
+//          val res = Mux(valid, select_data.asUInt()(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
+//          res
+//        }))
       }.otherwise{
         // hit, wr, fill write_buffer
         write_buffer.valid := 1.U
@@ -348,22 +351,22 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
       // wait l2 is idle
       when(replace_buffer.d === 1.U){
         // if replace is dirty, then send req to write replace_buffer. And goto replace
-        io.mem.req.valid := 1.U
-        io.mem.req.bits.addr := replace_buffer.addr
-        io.mem.req.bits.op := 1.U // must write
-        io.mem.req.bits.data := replace_buffer.data
-        io.mem.req.bits.id := id
+//        io.mem.req.valid := 1.U
+//        io.mem.req.bits.addr := replace_buffer.addr
+//        io.mem.req.bits.op := 1.U // must write
+//        io.mem.req.bits.data := replace_buffer.data.asUInt()
+//        io.mem.req.bits.id := id
       }
     }
   }.elsewhen(state === replace){
     // send rd mem req to rd miss
     when(io.mem.req.ready === 1.U){
       // wait l2 is idle, then send req to read miss data. And got refill
-      io.mem.req.valid := 1.U
-      io.mem.req.bits.addr := miss_info.addr
-      io.mem.req.bits.op := 0.U // must read
-      io.mem.req.bits.data := 0.U // in reading, req data is dontCare
-      io.mem.req.bits.id := id
+//      io.mem.req.valid := 1.U
+//      io.mem.req.bits.addr := miss_info.addr
+//      io.mem.req.bits.op := 0.U // must read
+//      io.mem.req.bits.data := 0.U // in reading, req data is dontCare
+//      io.mem.req.bits.id := id
     }
   }.elsewhen(state === refill){
     when(io.mem.resp.valid){
@@ -375,7 +378,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
       write_buffer.bits.v := 1.U
       write_buffer.bits.d := 0.U
       write_buffer.bits.replace_way := replace_buffer.way_num
-      write_buffer.bits.wmask := Vec(p(CacheLineSize) / p(NBank), 1.U).asUInt()
+      write_buffer.bits.wmask := Cat(Seq.fill(p(CacheLineSize) / p(NBank))(1.U(1.W)))
     }
   }
 
@@ -403,30 +406,30 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     }
 
     is(miss){
-      when(io.mem.req.ready === 0.U){
-        // next level memory not ready
-        state := state
-      }.otherwise{
+      when(io.mem.req.fire()){
         // send a wr mem req, if D == 1 write replace_info
         state := replace
+      }.otherwise{
+        // next level memory not ready
+        state := state
       }
     }
 
     is(replace){
-      when(io.mem.req.ready === 0.U){
-        state := state
-      }.otherwise{
+      when(io.mem.req.fire()){
         // send a rd mem req, read miss_info
         state := refill
+      }.otherwise{
+        state := state
       }
     }
 
     is(refill){
-      when(io.mem.resp.valid === 0.U){
+      when(io.mem.resp.fire()){
+        // receive a rd  mem resp, return cpu resp and write cache
         state := idle
       }.otherwise{
-        // receive a rd  mem resp, return cpu resp and write cache
-        state := refill
+        state := state
       }
     }
   }

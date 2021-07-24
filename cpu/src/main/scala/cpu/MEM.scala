@@ -26,7 +26,7 @@ class MEM (implicit p: Parameters) extends Module {
     io.dcache.req.valid := 1.U
     io.dcache.req.bits.addr := io.alu_res
     io.dcache.req.bits.mask := MuxLookup(io.ld_type, 0.U, Array(
-      LD_LD   -> ("b1111_1111".U),
+      LD_LD  -> ("b1111_1111".U),
       LD_LW  -> ("b0000_1111".U << io.alu_res(2,0).asUInt()), // <<0 or << 4
       LD_LH  -> ("b0000_0011".U << io.alu_res(2,0).asUInt()), // <<0, 2, 4, 6
       LD_LB  -> ("b0000_0001".U << io.alu_res(2,0).asUInt()), // <<0, 1, 2, 3 ... 7

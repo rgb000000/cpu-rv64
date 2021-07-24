@@ -19,6 +19,8 @@ class InnerCrossBar(val n: Int)(implicit p: Parameters) extends Module{
     arb <> in
   })
 
+  io.out.req <> arbiter.io.out
+
   // resp
   io.in.map(_.resp).zipWithIndex.foreach( info => {
     val (resp, i) = info
