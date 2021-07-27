@@ -37,4 +37,6 @@ class IF (implicit p: Parameters) extends Module {
 
   io.pc.bits := pc
   io.pc.valid := RegNext(io.icache.resp.valid & io.icache.resp.valid)
+
+  dontTouch(io.icache)
 }

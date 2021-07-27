@@ -406,8 +406,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     }
 
     is(miss){
-      when(io.mem.req.fire()){
-        // send a wr mem req, if D == 1 write replace_info
+      when(io.mem.req.fire() | ((replace_buffer.v === 0.U) | (replace_buffer.d === 0.U))){
+        // send a wr mem req, if D == 1 write replace_info. if dirty === 0.U | valid === 0.U , do without write
         state := replace
       }.otherwise{
         // next level memory not ready

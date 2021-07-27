@@ -2,6 +2,7 @@ package cpu
 
 import chisel3._
 import chisel3.util._
+import chisel3.util.experimental.loadMemoryFromFile
 import chipsalliance.rocketchip.config._
 
 object AXI4Parameters {
@@ -94,7 +95,7 @@ class AXI4BundleA(override val idBits: Int) extends AXI4LiteBundleA with AXI4Has
   val cache = Output(UInt(AXI4Parameters.cacheBits.W))
   val qos   = Output(UInt(AXI4Parameters.qosBits.W))  // 0=no QoS, bigger = higher priority
   // val region = UInt(width = 4) // optional
-
+import chisel3.util.experimental.loadMemoryFromFile
   override def toPrintable: Printable = p"addr = 0x${Hexadecimal(addr)}, id = ${id}, len = ${len}, size = ${size}"
 }
 
@@ -124,4 +125,116 @@ class AXI4(val dataBits: Int = AXI4Parameters.dataBits, val idBits: Int = AXI4Pa
 //    when (ar.fire()) { printf(p"${GTimer()},[${name}.ar] ${ar.bits}\n") }
 //    when (r.fire()) { printf(p"${GTimer()},[${name}.r] ${r.bits}\n") }
 //  }
+}
+
+
+class AXIMem(val width: Int = 64, val depth: Int = 256) extends Module{
+  val io = IO(Flipped(new AXI4))
+
+
+  val r_idle :: r_burst :: Nil = Enum(2)
+  val r_state = RegInit(r_idle)
+  val r_cnt = Counter(64)
+  val read_req = RegInit(0.U.asTypeOf(io.ar.bits))
+  val r_addr = RegInit(0.U(64.W))
+
+  val w_idle :: w_burst :: w_resp :: Nil = Enum(3)
+  val w_state = RegInit(w_idle)
+  val w_cnt = Counter(64)
+  val write_req = RegInit(0.U.asTypeOf(io.aw.bits))
+  val w_addr = RegInit(0.U(64.W))
+  val w_data = Vec(8, UInt(8.W))
+
+  val mem = SyncReadMem(32, Vec(8, UInt(8.W)))
+  loadMemoryFromFile(mem, "inst.hex")
+
+
+  val r_data = mem.read(r_addr)
+  when(io.w.fire()){
+    mem.write(write_req.addr + (w_cnt.value << 3.U), io.w.bits.data.asTypeOf(w_data), io.w.bits.strb.asBools())
+  }
+
+  io.ar.ready := r_state === r_idle
+
+  io.r.valid := RegNext(r_state === r_burst) & (r_state === r_burst)
+  io.r.bits.data := r_data.asUInt()
+  io.r.bits.id := read_req.id
+  io.r.bits.resp := 1.U
+  io.r.bits.last := r_cnt.value === read_req.len - 1.U
+  io.r.bits.user := 0.U
+
+  io.aw.ready := w_state === w_idle
+
+  io.w.ready := w_state === w_burst
+
+  io.b.valid := w_state === w_resp
+  io.b.bits.id := write_req.id
+  io.b.bits.resp := 1.U
+  io.b.bits.user := 1.U
+
+
+  // get req
+  when(r_state === r_idle){
+    when(io.ar.fire()){
+      read_req := io.ar.bits
+      r_addr := io.ar.bits.addr
+    }
+  }.elsewhen(r_state === r_burst){
+    when(io.r.fire()){
+      when(r_cnt.value === read_req.len - 1.U){
+        r_cnt.value := 0.U
+      }.otherwise(
+        r_cnt.inc()
+      )
+    }
+  }
+
+  when(w_state === w_idle){
+    when(io.aw.fire()){
+      write_req := io.aw.bits
+      w_addr := io.aw.bits.addr
+    }
+  }.elsewhen(w_state === w_burst){
+    when(io.w.fire()){
+      when(w_cnt.value === write_req.len - 1.U){
+        w_cnt.value := 0.U
+      }.otherwise{
+        w_cnt.inc()
+      }
+    }
+  }
+
+  switch(r_state){
+    is(r_idle){
+      when(io.ar.fire()){
+        r_state := r_burst
+      }
+    }
+
+    is(r_burst){
+      when(r_cnt.value === read_req.len - 1.U){
+        r_state := r_idle
+      }
+    }
+  }
+
+
+  switch(w_state){
+    is(w_idle){
+      when(io.aw.fire()){
+        w_state := w_burst
+      }
+    }
+
+    is(w_burst){
+      when(w_cnt.value === write_req.len - 1.U){
+        w_state := w_resp
+      }
+    }
+
+    is(w_resp){
+      w_state := w_idle
+    }
+  }
+
 }

@@ -6,7 +6,7 @@ import chipsalliance.rocketchip.config._
 
 class Core (implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
-    val axi4 = new AXI4
+//    val axi4 = new AXI4
   })
 
   val datapath = Module(new DataPath)
@@ -29,5 +29,7 @@ class Core (implicit p: Parameters) extends Module{
   // crossbar <> mem2ai
   crossbar.io.out <> mem2axi.io.in
   // mem2axi <> io.axi
-  mem2axi.io.axi4 <> io.axi4
+  val aximem = Module(new AXIMem)
+  dontTouch(aximem.io)
+  mem2axi.io.axi4 <> aximem.io
 }

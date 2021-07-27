@@ -11,6 +11,18 @@ VerilatedVcdC* tfp;             // 波形生成对象指针
 vluint64_t main_time = 0;           // 仿真时间戳
 const vluint64_t sim_time = 64;   // 最大仿真时间戳
 
+
+// ================= AXI Mem 
+// class AXIMem{
+//     public:
+//         unsigned long int read(unsigned long int addr, unsigned int len, unsigned int size, unsigned burst);
+//         unsigned long int write(unsigned long int addr, unsigned long int data, unsigned long int mask)
+
+//     private:
+//         unsigned long int mem[256];
+//         VCore* dut;
+// }
+
 void tick() {
     top->clock = 0;
     top->eval();
@@ -37,7 +49,7 @@ int main(int argc, char **argv)
 
     // tfp初始化工作
     top->trace(tfp, 99);
-    tfp->open("wave.vcd");
+    tfp->open("Core_wave.vcd");
 
     top->reset = 0;
     tick();

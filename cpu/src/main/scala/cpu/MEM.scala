@@ -60,7 +60,7 @@ class MEM (implicit p: Parameters) extends Module {
 
   // get reps
   when(io.dcache.resp.valid){
-    io.l_data.bits := io.dcache.resp.bits.data
+    io.l_data.bits := (io.dcache.resp.bits.data) >> io.alu_res(2,0).asUInt()
     io.l_data.valid := 1.U
   }.otherwise{
     io.l_data.bits := 0.U

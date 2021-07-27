@@ -37,7 +37,7 @@ int main(int argc, char **argv)
 
     // tfp初始化工作
     top->trace(tfp, 99);
-    tfp->open("wave.vcd");
+    tfp->open("DataPath_wave.vcd");
 
     top->reset = 0;
     tick();
