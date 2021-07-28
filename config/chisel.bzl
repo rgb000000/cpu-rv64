@@ -173,25 +173,25 @@ def _verilator_compile_impl(ctx):
     harness_file = ctx.file.harness_file
     harness_file_clone = ctx.actions.declare_file(harness_file.basename)
 
-    inst_file = ctx.file.inst_file
-    inst_file_clone = ctx.actions.declare_file(inst_file.basename)
+    inst_file = ctx.files.inst_file
+    inst_file_clone = [ctx.actions.declare_file(f.basename) for f in inst_file]
 
     vcd_file = ctx.actions.declare_file("%s_wave.vcd"%module_name) # define in harness.cpp
     obj_dir = ctx.actions.declare_directory("obj_dir")
 
 
     ctx.actions.run_shell(
-        inputs = [v_dir, harness_file, inst_file],
-        outputs = [harness_file_clone, inst_file_clone],
-        command = "cp %s %s && cp %s %s" % (harness_file.path, harness_file_clone.path, inst_file.path, inst_file_clone.path),
+        inputs = [v_dir, harness_file] + inst_file,
+        outputs = [harness_file_clone] + inst_file_clone,
+        command = "cp %s %s && cp %s/* %s" % (harness_file.path, harness_file_clone.path, inst_file[0].dirname, vcd_file.dirname),
         progress_message = "cp harness.cpp"
     )
     args = ctx.actions.args()
 
     ctx.actions.run_shell(
-        inputs = [v_dir, harness_file_clone, inst_file_clone],
+        inputs = [v_dir, harness_file_clone] + inst_file_clone,
         outputs = [vcd_file, obj_dir],
-        command = "ls -la && verilator --cc %s/*.v --trace --exe %s  --build --Mdir %s && %s/V%s" % (v_dir.path, harness_file_clone.basename, obj_dir.path, obj_dir.path, module_name),
+        command = "ls -la && verilator --cc %s/*.v --trace --exe %s  --build --Mdir %s && cd %s/../ && ./obj_dir/V%s" % (v_dir.path, harness_file_clone.basename, obj_dir.path, obj_dir.path, module_name),
         progress_message = "Compiling .v with .cpp",
         use_default_shell_env = True 
     )
@@ -203,7 +203,7 @@ _verilator_compile = rule(
     attrs = {
         "v_file": attr.label(),
         "harness_file": attr.label(allow_single_file=True),
-        "inst_file": attr.label(allow_single_file=True),
+        "inst_file": attr.label_list(allow_files=True),
         "module_name": attr.string(mandatory = True),
     }
 )
@@ -214,9 +214,9 @@ def verilator_test(
     name,
     module_name,
     module_code,
-    inst_file,
     deps,
     srcs,
+    inst_file = [],
     visibility = None
     ):
     _chisel_verilog_scala_source(
@@ -244,56 +244,6 @@ def verilator_test(
         name = name,
         v_file = name + "_files",
         harness_file = srcs[0],
-        inst_file = inst_file[0],
+        inst_file = inst_file,
         module_name = module_name
     )
-
-# def chisel_verilator_test(
-#         name,
-#         module_name,
-#         module_code,
-#         deps,
-#         srcs,
-#         trace = False,
-#         cpp_deps = []
-#         ):
-
-#     print("my name is " + name)
-#     chisel_verilog(
-#         name = name + "_v",
-#         deps = deps,
-#         module_name = module_name,
-#         module_code = module_code,
-#     )
-#     verilator_cc_library(
-#         name = name + "_verilator",
-#         module = name + "_v",
-#         # vopts = [],
-#         trace = trace,
-#     )
-
-#     _hello(
-#         name = name + "_hello",
-#         depss = name + "_v"
-#     )
-    
-#     # print(">?>>>>")
-#     # native.cc_binary(
-#     #     name = name + "_verilator_bin",
-#     #     srcs = srcs,
-#     #     deps = [name + "_verilator"],
-#     # )
-
-#     # native.cc_test(
-#     #     name = name,
-#     #     deps = [
-#     #         name + ".verilator",
-#     #         # "@catch2//:catch2",
-#     #         # "//config:catch_main",
-#     #         # "//config:testbench",
-#     #     ] + cpp_deps,
-#     #     srcs = srcs,
-#     #     # This needs to be linkstatic since libverilator is statically linked in the verilated code
-#     #     linkstatic = 1,
-#     #     local_defines = ["CHISEL_VERILATOR_TEST_TRACE"] if trace else [],
-#     # )

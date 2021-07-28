@@ -60,7 +60,7 @@ verilator_test(
   name = "core_vt",
   module_name = "Core",
   module_code = "cpu.Core",
-  inst_file = glob(["src/main/resources/inst.hex"]),
+  inst_file = glob(["src/main/resources/inst*.hex"]),
   deps = [
     "cpu",
     "//dependency:config"
