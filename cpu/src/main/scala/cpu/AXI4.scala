@@ -149,9 +149,9 @@ class AXIMem(val width: Int = 64, val depth: Int = 256) extends Module{
   loadMemoryFromFile(mem, "inst.hex")
 
 
-  val r_data = mem.read(r_addr)
+  val r_data = mem.read(read_req.addr + r_cnt.value)
   when(io.w.fire()){
-    mem.write(write_req.addr + (w_cnt.value << 3.U), io.w.bits.data.asTypeOf(w_data), io.w.bits.strb.asBools())
+    mem.write(write_req.addr + w_cnt.value, io.w.bits.data.asTypeOf(w_data), io.w.bits.strb.asBools())
   }
 
   io.ar.ready := r_state === r_idle
@@ -160,7 +160,7 @@ class AXIMem(val width: Int = 64, val depth: Int = 256) extends Module{
   io.r.bits.data := r_data.asUInt()
   io.r.bits.id := read_req.id
   io.r.bits.resp := 1.U
-  io.r.bits.last := r_cnt.value === read_req.len - 1.U
+  io.r.bits.last := r_cnt.value === read_req.len
   io.r.bits.user := 0.U
 
   io.aw.ready := w_state === w_idle
@@ -180,8 +180,8 @@ class AXIMem(val width: Int = 64, val depth: Int = 256) extends Module{
       r_addr := io.ar.bits.addr
     }
   }.elsewhen(r_state === r_burst){
-    when(io.r.fire()){
-      when(r_cnt.value === read_req.len - 1.U){
+    when(io.r.ready === 1.U){
+      when(r_cnt.value === read_req.len){
         r_cnt.value := 0.U
       }.otherwise(
         r_cnt.inc()
@@ -212,7 +212,7 @@ class AXIMem(val width: Int = 64, val depth: Int = 256) extends Module{
     }
 
     is(r_burst){
-      when(r_cnt.value === read_req.len - 1.U){
+      when(r_cnt.value === read_req.len){
         r_state := r_idle
       }
     }

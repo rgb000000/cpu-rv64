@@ -16,7 +16,7 @@ def main(file):
         assert(len(array) == 8)
         res.append(array)
     f.close()
-    files = [file[:-4] + "_" + str(i) + file[-4:] for i in range(8)]
+    files = [file[:-4] + "_" + str(i) + file[-4:] for i in range(7, -1, -1)]
     print(files)
     for i, f in enumerate(files):
         with open(f, "w") as f:

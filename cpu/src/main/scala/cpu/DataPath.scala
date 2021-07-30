@@ -33,12 +33,12 @@ class DataPath(implicit p: Parameters) extends Module {
 
   id.io.inst := ifet.io.inst.bits
   id.io.imm_sel := ctrl.imm_sel
-  regs.io.radd1 := id.io.rs1_addr
-  regs.io.radd2 := id.io.rs2_addr
+  regs.io.raddr1 := id.io.rs1_addr
+  regs.io.raddr2 := id.io.rs2_addr
   val rd_addr = id.io.rd_addr
 
   // ex
-  val A = Mux(ctrl.a_sel === A_PC, ifet.io.inst.bits, regs.io.radd1)
+  val A = Mux(ctrl.a_sel === A_PC, ifet.io.inst.bits, regs.io.rdata1)
   val B = Mux(ctrl.b_sel === B_IMM, id.io.imm, regs.io.rdata2)
 
   ex.io.alu_op := ctrl.alu_op

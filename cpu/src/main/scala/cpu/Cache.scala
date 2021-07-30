@@ -31,16 +31,28 @@ class CacheResp(implicit p: Parameters) extends Bundle{
 }
 
 // ====================== L1 to L2 IO =========================
+object MemCmdConst{
+  def Read        = "b0000".U
+  def ReadBurst   = "b0001".U
+  def ReadLast    = "b0010".U
+
+  def Write       = "b1000".U
+  def WriteBurst  = "b1001".U
+  def WriteLast   = "b1010".U
+  def WriteResp   = "b1011".U
+}
 class MemReq(implicit p: Parameters) extends Bundle {
   //
   val addr = UInt(p(XLen).W)
-  val data = UInt(p(CacheLineSize).W)
-  val op = UInt(1.W)  // 0: rd   1: wr
+  val data = UInt(p(XLen).W)
+  val cmd = UInt(4.W)
+  val len = UInt(2.W)   // 0: 1(64bits)    1: 2   2: 4  3: 8
   val id = UInt(p(IDBits).W)
 }
 
-class MemResp(implicit p: Parameters) extends Bundle{
-  val data = UInt(p(CacheLineSize).W)
+class MemResp(implicit p: Parameters) extends Bundle {
+  val data = UInt(p(XLen).W)
+  val cmd = UInt(4.W)
   val id = UInt(p(IDBits).W)
 }
 
@@ -79,8 +91,8 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
   })
 
   val tag_v = new Bundle{
-    UInt(tag_width.W) // tag
-    UInt(1.W)         // valid
+    val tag = UInt(tag_width.W) // tag
+    val v = UInt(1.W)         // valid
   }
   val dirty = UInt(1.W)
 
@@ -102,6 +114,7 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
 
   io.out.bits := result
   io.out.valid := RegNext(io.in.r.valid, 0.U)
+  dontTouch(io.out.valid)
 
   // write logic
     // write bank data
@@ -133,7 +146,7 @@ class CacheCPUIO (implicit p: Parameters) extends Bundle{
 
 class CacheMemIO (implicit p: Parameters) extends Bundle{
   val req = Decoupled(new MemReq)
-  val resp = Flipped(Valid(new MemResp))
+  val resp = Flipped(Decoupled(new MemResp))
 }
 
 class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
@@ -190,7 +203,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
   // conflict check (conflict with hit write)
   val conflict_hit_write = WireInit(
-    io.cpu.req.valid & (io.cpu.req.bits.op ===  0.U) & (write_buffer.valid === 1.U) // req is read op and write_buffer is valid
+    // req is read op and write_buffer is valid
+    io.cpu.req.valid & (io.cpu.req.bits.op ===  0.U) & (write_buffer.valid === 1.U) &
       (write_buffer.bits.index(
         log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)
       ) === io.cpu.req.bits.addr.asTypeOf(infos).index(
@@ -208,7 +222,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   // compare ways tag, return one hot such {0,0,0,0} or {0,0,1,0}
   val ways_compare_res = Cat(ways.map((way)=>{
       (way.io.out.bits.tag === req_reg_info.tag) & (way.io.out.bits.v === 1.U)
-    }))
+    }))  // Cat(high ... low)
+
   // ways_compare_res is all 0, {0, 0, 0, 0} means the current req is miss
   val is_miss = ways_compare_res.orR() === 0.U
   assert((p(CacheLineSize) / p(NBank)) == 64)
@@ -222,9 +237,11 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     datas := way.io.out.bits //.datas(io.cpu.req.bits.addr(log2Ceil((p(CacheLineSize) / p(NBank)) / 8) + log2Ceil(p(NBank)), log2Ceil((p(CacheLineSize) / p(NBank)) / 8)).asUInt())
   })
   // selected data from all way by tag==tag
-  val select_data = Mux1H(for(i <- ways_compare_res.asBools().zipWithIndex) yield (i._1, ways_ret_datas(i._2).datas))
+  val select_data = Mux1H(for(i <- ways_compare_res.asBools().reverse.zipWithIndex) yield (i._1, ways_ret_datas(i._2).datas)) // todo: check order
+  val select_data_rev = Wire(Vec(p(NBank), UInt((p(CacheLineSize) / p(NBank)).W)))
+  (select_data_rev, select_data.reverse).zipped.foreach(_ := _)
   // use LFSR to generate rand in binary, need to be converted to ont-hot to use as mask
-  val rand_way = UIntToOH(LFSR(64)(log2Ceil(p(NWay))-1, 0).asUInt())
+  val rand_way = UIntToOH(LFSR(64)( log2Ceil(p(NWay))-1 , 0).asUInt())
   // rand way data (tag, v, d, data)
   val rand_way_data = Mux1H(for(i <- rand_way.asBools().zipWithIndex) yield (i._1, ways_ret_datas(i._2)))
 
@@ -239,8 +256,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     val addr = UInt(p(XLen).W)
     val data = Vec(p(NBank), UInt((p(CacheLineSize) / p(NBank)).W))
     val way_num = UInt(p(NWay).W)
-    val v = UInt(1.W)
-    val d = UInt(1.W)
+    val v = Bool()
+    val d = Bool()
   }))
 
 
@@ -267,6 +284,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   }
   // write ways
   ways.foreach(way => {
+    dontTouch(way.io.in.w)
     way.io.in.w.bits.tag := write_buffer.bits.tag
     way.io.in.w.bits.index := write_buffer.bits.index
     way.io.in.w.bits.offset := write_buffer.bits.offset
@@ -278,111 +296,112 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   })
   ways.zip(write_buffer.bits.replace_way.asBools()).foreach(a => {
     val (way, way_mask) = a
-    way.io.in.w.valid := way_mask & write_buffer.valid
+    way.io.in.w.valid := way_mask & Cat(Seq.fill(p(NWay))(write_buffer.valid))
   })
   // write_buffer fsm END
 
 
   // cpu resp
-  io.cpu.resp.valid := (state === lookup) & (!is_miss) & (req_reg.op === 0.U) // read & hit
-  io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
+  io.cpu.resp.valid := ((state === lookup) & (!is_miss) & (req_reg.op === 0.U)) // | ((state === refill) & io.mem.resp.valid) // (read & hit) | (refille & fire)
+  io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => { // todo: check order
     val (valid, i) = x
     // todo: use MuxCase to generate res   ERROR!!!
-    val res = Mux(valid, select_data.asUInt()(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
+    val res = Mux(valid, select_data_rev(req_reg.addr(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8))).asUInt()(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
     res
-  }))
+    }).reverse) >> req_reg.addr(2, 0)
 
   // cpu req
   // None
 
   // mem req
-  io.mem.req.valid := ((state === miss) & (replace_buffer.d === 1.U)) |
-                      (state === replace)
-  io.mem.req.bits.addr := Mux(state === replace, miss_info.addr, replace_buffer.addr)
-  io.mem.req.bits.op := Mux(state === replace, 0.U, 1.U)
-  io.mem.req.bits.data := replace_buffer.data.asUInt()
-  io.mem.req.bits.id := id
+  val w_cnt = Counter(4)
+  val r_cnt = Counter(4)
+
+  when((state === lookup) & is_miss & (replace_buffer.v & replace_buffer.d)){
+    // send write burst cmd
+    io.mem.req.valid := 1.U
+    io.mem.req.bits.addr := replace_buffer.addr
+    io.mem.req.bits.cmd := MemCmdConst.WriteBurst
+    io.mem.req.bits.len := 3.U // 1.U << 3 = 8
+    io.mem.req.bits.data := 0.U
+    io.mem.req.bits.id := id
+  }.elsewhen((state === miss) & (replace_buffer.v & replace_buffer.d)){
+    // send write data 4 times
+    io.mem.req.valid := 1.U
+    io.mem.req.bits.addr := replace_buffer.addr
+    io.mem.req.bits.cmd := Mux(w_cnt.value === 3.U, MemCmdConst.WriteLast, MemCmdConst.Write)
+    io.mem.req.bits.len := 2.U // 1.U << 2 = 4
+    io.mem.req.bits.data := replace_buffer.data(w_cnt.value)
+    io.mem.req.bits.id := id
+    when(io.mem.req.fire()){
+      w_cnt.inc()
+    }
+  }.elsewhen(state === replace){
+    // send read burst cmd
+    io.mem.req.valid := 1.U
+    io.mem.req.bits.addr := miss_info.addr
+    io.mem.req.bits.cmd := MemCmdConst.ReadBurst
+    io.mem.req.bits.len := 2.U // 1.U << 2 = 4
+    io.mem.req.bits.data := 0.U
+    io.mem.req.bits.id := id
+  }.otherwise{
+    // get read data 4 times
+    io.mem.req.valid := 0.U
+    io.mem.req.bits.addr := 0.U
+    io.mem.req.bits.cmd := 0.U
+    io.mem.req.bits.len := 0.U // 1.U << 2 = 4
+    io.mem.req.bits.data := 0.U
+    io.mem.req.bits.id := id
+  }
 
   when(state === idle){
     when(io.cpu.req.fire()){
       // store cpu req and goto lookup
       req_reg := io.cpu.req.bits
     }
-  }.elsewhen(state === lookup){
-    when(!is_miss){
-      when(req_reg.op === 0.U){
-        // hit, rd, resp to cpu
-//        io.cpu.resp.valid := 1.U
-//        io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
-//          val (valid, i) = x
-//          // todo: use MuxCase to generate res
-//          val res = Mux(valid, select_data.asUInt()(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
-//          res
-//        }))
-      }.otherwise{
-        // hit, wr, fill write_buffer
-        write_buffer.valid := 1.U
-        write_buffer.bits.tag := req_reg.addr.asTypeOf(infos).tag
-        write_buffer.bits.index := req_reg.addr.asTypeOf(infos).index
-        write_buffer.bits.offset := req_reg.addr.asTypeOf(infos).offset
-        write_buffer.bits.v := 1.U
-        write_buffer.bits.d := 1.U
-        write_buffer.bits.data := req_reg.data
-        write_buffer.bits.replace_way := ways_compare_res
-        write_buffer.bits.wmask := req_reg.mask
-      }
-    }.otherwise{
-      // miss and goto miss state
-      // miss info
-      miss_info.addr := req_reg.addr
-      miss_info.op := req_reg.op
-      miss_info.data := req_reg.data
-
-      // replace info, use rand way data
-      replace_buffer.addr := Cat(rand_way_data.tag, req_reg.addr.asTypeOf(infos).index, 0.U(offset_width.W))
-      replace_buffer.data := rand_way_data.datas
-      replace_buffer.way_num := rand_way
-      replace_buffer.v := rand_way_data.v
-      replace_buffer.d := rand_way_data.d
-    }
-  }.elsewhen(state === miss){
-    // send wr mem req to write replace_buffer
-    when(io.mem.req.ready === 1.U){
-      // wait l2 is idle
-      when(replace_buffer.d === 1.U){
-        // if replace is dirty, then send req to write replace_buffer. And goto replace
-//        io.mem.req.valid := 1.U
-//        io.mem.req.bits.addr := replace_buffer.addr
-//        io.mem.req.bits.op := 1.U // must write
-//        io.mem.req.bits.data := replace_buffer.data.asUInt()
-//        io.mem.req.bits.id := id
-      }
-    }
-  }.elsewhen(state === replace){
-    // send rd mem req to rd miss
-    when(io.mem.req.ready === 1.U){
-      // wait l2 is idle, then send req to read miss data. And got refill
-//      io.mem.req.valid := 1.U
-//      io.mem.req.bits.addr := miss_info.addr
-//      io.mem.req.bits.op := 0.U // must read
-//      io.mem.req.bits.data := 0.U // in reading, req data is dontCare
-//      io.mem.req.bits.id := id
-    }
-  }.elsewhen(state === refill){
-    when(io.mem.resp.valid){
-      // get miss data, fill it in write_buffer
-      write_buffer.bits.data := io.mem.resp.bits.data
-      write_buffer.bits.tag := miss_info.addr    //TODO: addr to tag and index
-      write_buffer.bits.index := miss_info.addr
-      write_buffer.bits.offset := miss_info.addr
-      write_buffer.bits.v := 1.U
-      write_buffer.bits.d := 0.U
-      write_buffer.bits.replace_way := replace_buffer.way_num
-      write_buffer.bits.wmask := Cat(Seq.fill(p(CacheLineSize) / p(NBank))(1.U(1.W)))
-    }
   }
 
 
+  when((state === lookup) & is_miss){
+    // miss and goto miss state
+    // miss info
+    miss_info.addr := req_reg.addr
+    miss_info.op := req_reg.op
+    miss_info.data := req_reg.data
+
+    // replace info, use rand way data
+    replace_buffer.addr := Cat(rand_way_data.tag, req_reg.addr.asTypeOf(infos).index, 0.U(offset_width.W))
+    replace_buffer.data := rand_way_data.datas
+    replace_buffer.way_num := rand_way
+    replace_buffer.v := rand_way_data.v
+    replace_buffer.d := rand_way_data.d
+  }
+
+  io.mem.resp.ready := (state === refill)
+  write_buffer.valid := Mux(((state === refill) & io.mem.resp.fire()) | ((state === lookup)& !is_miss & req_reg.op =/= 0.U), 1.U, 0.U)
+  when((state === lookup) & (!is_miss) & (req_reg.op === 1.U)){
+      write_buffer.bits.tag := req_reg.addr.asTypeOf(infos).tag
+      write_buffer.bits.index := req_reg.addr.asTypeOf(infos).index
+      write_buffer.bits.offset := req_reg.addr.asTypeOf(infos).offset
+      write_buffer.bits.v := 1.U
+      write_buffer.bits.d := 1.U
+      write_buffer.bits.data := req_reg.data
+      write_buffer.bits.replace_way := ways_compare_res
+      write_buffer.bits.wmask := req_reg.mask
+    }.elsewhen((state === refill) & io.mem.resp.fire()){
+      write_buffer.bits.data := io.mem.resp.bits.data
+      write_buffer.bits.tag := miss_info.addr.asTypeOf(infos).tag
+      write_buffer.bits.index := miss_info.addr.asTypeOf(infos).index
+      write_buffer.bits.offset := miss_info.addr.asTypeOf(infos).offset + (r_cnt.value << log2Ceil(p(XLen) / 8).U)
+      write_buffer.bits.v := 1.U
+      write_buffer.bits.d := 0.U
+      write_buffer.bits.replace_way := replace_buffer.way_num
+      write_buffer.bits.wmask := Cat(Seq.fill((p(CacheLineSize) / p(NBank)) / 8)(1.U))
+      r_cnt.inc()
+    }
+
+
+  // fsm state
   switch(state){
     is(idle){
       when(io.cpu.req.fire() & !conflict_hit_write){
@@ -401,13 +420,15 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
         state := lookup
       }.otherwise{
         // miss   need to prepare miss_info and replace_info
-        state := miss
+        when(io.mem.req.ready === 1.U){
+          // send cmd to write replace
+          state := miss
+        }
       }
     }
 
     is(miss){
-      when(io.mem.req.fire() | ((replace_buffer.v === 0.U) | (replace_buffer.d === 0.U))){
-        // send a wr mem req, if D == 1 write replace_info. if dirty === 0.U | valid === 0.U , do without write
+      when((io.mem.req.fire() & (io.mem.req.bits.cmd === MemCmdConst.WriteLast)) | ((replace_buffer.v === 0.U) | (replace_buffer.d === 0.U))){
         state := replace
       }.otherwise{
         // next level memory not ready
@@ -416,8 +437,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     }
 
     is(replace){
-      when(io.mem.req.fire()){
-        // send a rd mem req, read miss_info
+      when(io.mem.req.fire() & (io.mem.req.bits.cmd === MemCmdConst.ReadBurst)){
+        // send cmd to read miss_info
         state := refill
       }.otherwise{
         state := state
@@ -425,8 +446,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     }
 
     is(refill){
-      when(io.mem.resp.fire()){
-        // receive a rd  mem resp, return cpu resp and write cache
+      when(io.mem.resp.fire() & (io.mem.resp.bits.cmd === MemCmdConst.ReadLast)){
+        // get last read data
         state := idle
       }.otherwise{
         state := state
