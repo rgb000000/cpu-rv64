@@ -149,7 +149,7 @@ class AXIMem(val width: Int = 64, val depth: Int = 256) extends Module{
   loadMemoryFromFile(mem, "inst.hex")
 
 
-  val r_data = mem.read(read_req.addr + r_cnt.value)
+  val r_data = mem.read((read_req.addr >> log2Ceil(64 / 8).U).asUInt() + r_cnt.value)
   when(io.w.fire()){
     mem.write(write_req.addr + w_cnt.value, io.w.bits.data.asTypeOf(w_data), io.w.bits.strb.asBools())
   }

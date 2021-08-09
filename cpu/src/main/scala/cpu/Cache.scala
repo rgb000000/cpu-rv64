@@ -45,7 +45,7 @@ class MemReq(implicit p: Parameters) extends Bundle {
   //
   val addr = UInt(p(XLen).W)
   val data = UInt(p(XLen).W)
-  val cmd = UInt(4.W)
+  val cmd = UInt(4.W)   // MemCmdConst
   val len = UInt(2.W)   // 0: 1(64bits)    1: 2   2: 4  3: 8
   val id = UInt(p(IDBits).W)
 }
@@ -140,7 +140,7 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
 ////////////////////  Cache /////////////////////////
 
 class CacheCPUIO (implicit p: Parameters) extends Bundle{
-  val req = Flipped(Valid(new CacheReq))
+  val req = Flipped(Decoupled(new CacheReq))
   val resp = Valid(new CacheResp)
 }
 
@@ -166,9 +166,11 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     case _ => {println("cache type must 'i' or 'd'");System.exit(1);2.U}
   }
 
-  val offset_width = log2Ceil(p(CacheLineSize))
+  val offset_width = log2Ceil(p(CacheLineSize) / 8)
   val index_width = log2Ceil(cache_size / (p(NWay) * p(CacheLineSize)) )
   val tag_width = p(XLen) - offset_width - index_width
+
+  require((offset_width + index_width + tag_width) == p(XLen))
 
   val infos = new Bundle{
     val tag = UInt(tag_width.W)
@@ -184,6 +186,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   val state = RegInit(idle)
 
   // save cpu req
+//  val req_reg = WireInit(0.U.asTypeOf(new CacheReq))
   val req_reg = RegInit(0.U.asTypeOf(new CacheReq))
   // req_reg.addr view as {tag, index, offset}
   val req_reg_info = req_reg.addr.asTypeOf(infos)
@@ -239,6 +242,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   // selected data from all way by tag==tag
   val select_data = Mux1H(for(i <- ways_compare_res.asBools().reverse.zipWithIndex) yield (i._1, ways_ret_datas(i._2).datas)) // todo: check order
   val select_data_rev = Wire(Vec(p(NBank), UInt((p(CacheLineSize) / p(NBank)).W)))
+  dontTouch(select_data)
+  dontTouch(select_data_rev)
   (select_data_rev, select_data.reverse).zipped.foreach(_ := _)
   // use LFSR to generate rand in binary, need to be converted to ont-hot to use as mask
   val rand_way = UIntToOH(LFSR(64)( log2Ceil(p(NWay))-1 , 0).asUInt())
@@ -302,13 +307,31 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
 
   // cpu resp
-  io.cpu.resp.valid := ((state === lookup) & (!is_miss) & (req_reg.op === 0.U)) // | ((state === refill) & io.mem.resp.valid) // (read & hit) | (refille & fire)
-  io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => { // todo: check order
+  dontTouch(io.cpu.req.bits.mask)
+  dontTouch(io.cpu.resp.bits.data)
+  dontTouch(io.cpu.resp.valid)
+  dontTouch(req_reg)
+
+  val refill_cnt = Counter(p(NWay))
+  //                              resp in lookup stage
+  io.cpu.resp.valid := ((state === lookup) & (!is_miss) & (req_reg.op === 0.U)) |
+    ((state === refill) & (refill_cnt.value === req_reg.addr.asTypeOf(infos).index(log2Ceil(64 / 8) + log2Ceil(p(NBank)), log2Ceil(64 / 8)).asUInt()) & io.mem.resp.valid) // (read & hit) | (refille & fire)
+  io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
     val (valid, i) = x
-    // todo: use MuxCase to generate res   ERROR!!!
-    val res = Mux(valid, select_data_rev(req_reg.addr(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8))).asUInt()(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
+    val res = Wire(UInt(8.W))
+    when(state === lookup){
+      res := Mux(valid, select_data_rev(req_reg.addr(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8))).asUInt()(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
+    }.otherwise{
+      res := Mux(valid, io.mem.resp.bits.data(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
+    }
     res
-    }).reverse) >> req_reg.addr(2, 0)
+    }).reverse) >> (req_reg.addr(2, 0) << 3.U)
+
+  when((state=== refill) & io.mem.resp.fire()){
+    refill_cnt.inc()
+  }.elsewhen(state === idle) {
+    refill_cnt.value := 0.U
+  }
 
   // cpu req
   // None
@@ -354,13 +377,9 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     io.mem.req.bits.id := id
   }
 
-  when(state === idle){
-    when(io.cpu.req.fire()){
-      // store cpu req and goto lookup
-      req_reg := io.cpu.req.bits
-    }
-  }
 
+  io.cpu.req.ready := ((state === idle) | ((state === lookup) & (!is_miss))) & !conflict_hit_write
+  req_reg := Mux(io.cpu.req.fire(), io.cpu.req.bits, req_reg)
 
   when((state === lookup) & is_miss){
     // miss and goto miss state
@@ -412,7 +431,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     }
 
     is(lookup){
-      when( (!is_miss) & ((!io.cpu.req.fire()) | (io.cpu.req.fire() & conflict_hit_write)) ){
+      when( (!is_miss) & ((!io.cpu.req.fire()) | conflict_hit_write) ){
         // (hit and no new req) | (hit and new req is conflicted with hit write)
         state := idle
       }.elsewhen( (!is_miss) & (io.cpu.req.fire() & !conflict_hit_write) ){

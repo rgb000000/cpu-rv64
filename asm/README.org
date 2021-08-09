@@ -1,0 +1,5 @@
+* compile
+=riscv64-unknown-elf-gcc -march=rv64i  addi.s=
+
+* objdump
+=riscv64-unknown-linux-gnu-objdump -d a.out=

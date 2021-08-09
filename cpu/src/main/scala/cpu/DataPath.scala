@@ -25,6 +25,9 @@ class DataPath(implicit p: Parameters) extends Module {
 
   // fetch
   ifet.io.icache <> io.icacahe
+  ifet.io.pc_sel := io.control.pc_sel
+  ifet.io.pc_alu := ex.io.out
+  ifet.io.pc_epc := BitPat.bitPatToUInt(ISA.nop)
 
   // decode
   // control signal

@@ -11,6 +11,10 @@ class IF (implicit p: Parameters) extends Module {
     val pc = Valid(UInt(p(XLen).W))
     val icache = Flipped(new CacheCPUIO)
     val inst = Valid(UInt(32.W))
+
+    val pc_alu = Input(UInt(p(XLen).W))
+    val pc_epc = Input(UInt(p(XLen).W))
+    val pc_sel = Input(UInt(2.W))
   })
 
   val pc = RegInit(p(PCStart).U(p(XLen).W))
@@ -23,17 +27,17 @@ class IF (implicit p: Parameters) extends Module {
   io.icache.req.bits.mask := Mux(pc(2) === 1.U, "b1111_0000".U, "b0000_1111".U)  // need 32 bit instructions
   io.icache.req.bits.data := 0.U // nerver use because op is read
 
-  when((io.icache.req.valid === 1.U) & (io.icache.resp.valid === 1.U)){
-    // get reps
-    inst := io.icache.resp.bits.data
-    pc := pc // pc = pc_next
-  }
+  val pc_next = MuxLookup(io.pc_sel, pc, Array(
+    Control.PC_4   -> (pc + 4.U),
+    Control.PC_ALU -> (io.pc_alu),
+    Control.PC_EPC -> (io.pc_epc)
+  ))
 
-  inst := Mux(io.icache.req.valid & io.icache.resp.valid, io.icache.resp.bits.data, inst)
-  pc := Mux(io.icache.req.valid & io.icache.resp.valid, pc, pc)
+  pc := Mux(io.icache.req.fire(), pc_next, pc)
+  inst := Mux(io.icache.resp.fire(), io.icache.resp.bits.data, inst)
 
   io.inst.bits := inst
-  io.inst.valid := RegNext(io.icache.resp.valid & io.icache.resp.valid)
+  io.inst.valid := RegNext(io.icache.resp.fire())
 
   io.pc.bits := pc
   io.pc.valid := RegNext(io.icache.resp.valid & io.icache.resp.valid)
