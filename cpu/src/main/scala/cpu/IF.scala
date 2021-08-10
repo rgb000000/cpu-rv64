@@ -33,6 +33,11 @@ class IF (implicit p: Parameters) extends Module {
     Control.PC_EPC -> (io.pc_epc)
   ))
 
+  dontTouch(pc_next)
+  dontTouch(io.inst.valid)
+  dontTouch(io.pc.valid)
+  dontTouch(io.pc.bits)
+
   pc := Mux(io.icache.req.fire(), pc_next, pc)
   inst := Mux(io.icache.resp.fire(), io.icache.resp.bits.data, inst)
 
@@ -40,7 +45,7 @@ class IF (implicit p: Parameters) extends Module {
   io.inst.valid := RegNext(io.icache.resp.fire())
 
   io.pc.bits := pc
-  io.pc.valid := RegNext(io.icache.resp.valid & io.icache.resp.valid)
+  io.pc.valid := RegNext(io.icache.resp.fire())
 
   dontTouch(io.icache)
 }

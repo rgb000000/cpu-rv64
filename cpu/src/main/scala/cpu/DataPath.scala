@@ -23,6 +23,8 @@ class DataPath(implicit p: Parameters) extends Module {
 
   val regs = Module(new RegisterFile)
 
+  val stall = !ifet.io.inst.valid
+
   // fetch
   ifet.io.icache <> io.icacahe
   ifet.io.pc_sel := io.control.pc_sel
@@ -63,7 +65,7 @@ class DataPath(implicit p: Parameters) extends Module {
     WB_ALU -> ex.io.out,
     WB_MEM -> l_data.bits,
   ))
-  regs.io.wen := ctrl.wen
+  regs.io.wen := ctrl.wen & !stall
 
   dontTouch(regs.io.wdata)
 }

@@ -47,7 +47,8 @@ class ALU (implicit p: Parameters) extends Module {
     ALU_AND  -> (io.rs1 & io.rs2),
     ALU_OR   -> (io.rs1 | io.rs2),
     ALU_XOR  -> (io.rs1 ^ io.rs2),
-    ALU_COPY_A -> io.rs1
+    ALU_COPY_A -> io.rs1,
+    ALU_COPY_B -> io.rs2
   ))
 
   io.out := MuxCase(out, Array(

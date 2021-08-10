@@ -64,77 +64,97 @@ object Control {
   // wb_sel
   val WB_ALU = 0.U(2.W) // wb alu
   val WB_MEM = 1.U(2.W) // wb mem
-  val WB_PC4 = 2.U(2.W) // wb pc+$
+  val WB_PC4 = 2.U(2.W) // wb pc+4
   val WB_CSR = 3.U(2.W) // wb csr
 
   import ISA._
   import ALU._
 
-  //                                                                          kill                       wb_en  illegal?
-  //             pc_sel    A_sel   B_sel  imm_sel  alu_op   alu_cut    br_type |  st_type ld_type wb_sel  | csr_cmd |
-  //               |         |       |     |         |         |         |     |     |       |       |    |  |      |
+  //                                                                             kill                       wb_en  illegal?
+  //             pc_sel    A_sel   B_sel  imm_sel  alu_op      alu_cut    br_type |  st_type ld_type wb_sel  | csr_cmd |
+  //               |         |       |     |         |            |         |     |     |       |       |    |  |      |
   val default =
-              List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N,        Y)
+              List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N,        Y)
   val map = Array(
     // R type
-    add    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_ADD, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    sub    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SUB, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    sll    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SLL, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    slt    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SLT, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    sltu   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SLTU,ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    xor    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_XOR, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    srl    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SRL, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    sra    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SRA, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    or     -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_OR,  ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    and    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AND, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    and    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AND, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-
-    sllw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SLL, ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    srlw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SRL, ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    sraw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SRA, ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    addw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AND, ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    subw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SUB, ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    add    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    sub    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SUB,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    sll    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SLL,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    slt    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SLT,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    sltu   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SLTU,   ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    xor    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_XOR,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    srl    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SRL,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    sra    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SRA,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    or     -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_OR,     ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    and    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AND,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
 
     // I type
-    jalr   -> List(PC_ALU, A_RS1,  B_IMM, IMM_I,   ALU_ADD, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_PC4, Y,        N),
-    addi   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    slti   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLT, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    sltiu  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLTU,ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    xori   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_XOR, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    ori    -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_OR,  ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    andi   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_AND, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    lb     -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD, ALU_ALL,   BR_XXX, N, ST_XXX, LD_LB,  WB_MEM, Y,        N),
-    lh     -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD, ALU_ALL,   BR_XXX, N, ST_XXX, LD_LH,  WB_MEM, Y,        N),
-    lw     -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD, ALU_ALL,   BR_XXX, N, ST_XXX, LD_LW,  WB_MEM, Y,        N),
-    lbu    -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD, ALU_ALL,   BR_XXX, N, ST_XXX, LD_LBU, WB_MEM, Y,        N),
-    lhu    -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD, ALU_ALL,   BR_XXX, N, ST_XXX, LD_LHU, WB_MEM, Y,        N),
-    slli   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLL, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    srli   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SRL, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    srai   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SRA, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    fence  -> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N,        N),
-    fence_i-> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N,        N),
-    ecall  -> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N,        N),
-    ebreak -> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N,        N),
-    // TODO: CSR aspects need to be improved
-    csrrw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SUB, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    csrrs  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SUB, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    csrrc  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SUB, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    csrrwi -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SUB, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    csrrsi -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SUB, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    csrrci -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SUB, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    jalr   -> List(PC_ALU, A_RS1,  B_IMM, IMM_I,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_PC4, Y,        N),
+    addi   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    slti   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLT,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    sltiu  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLTU,   ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    xori   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_XOR,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    ori    -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_OR,     ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    andi   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_AND,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    lb     -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_LB,  WB_MEM, Y,        N),
+    lh     -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_LH,  WB_MEM, Y,        N),
+    lw     -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_LW,  WB_MEM, Y,        N),
+    lbu    -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_LBU, WB_MEM, Y,        N),
+    lhu    -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_LHU, WB_MEM, Y,        N),
+    slli   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLL,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    srli   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SRL,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    srai   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SRA,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    fence  -> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N,        N),
+    fence_i-> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N,        N),
+    ecall  -> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N,        N),
+    ebreak -> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N,        N),
 
+    // TODO: CSR aspects need to be improved
+    csrrw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SUB,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    csrrs  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SUB,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    csrrc  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SUB,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    csrrwi -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SUB,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    csrrsi -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SUB,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    csrrci -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SUB,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+
+    // U type
+    lui    -> List(PC_4,   A_RS1,  B_IMM, IMM_U,   ALU_COPY_B, ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    auipc  -> List(PC_4,   A_PC,   B_IMM, IMM_U,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+
+    // S type
+    sb     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_SB,  LD_XXX, WB_MEM, Y,        N),
+    sh     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_SH,  LD_XXX, WB_MEM, Y,        N),
+    sw     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_SW,  LD_XXX, WB_MEM, Y,        N),
+
+    // B type
+    beq    -> List(PC_ALU, A_RS1,  B_IMM, IMM_B,   ALU_ADD,    ALU_ALL,   BR_EQ,  N, ST_XXX, LD_XXX, WB_ALU, N,        N),
+    bne    -> List(PC_ALU, A_RS1,  B_IMM, IMM_B,   ALU_ADD,    ALU_ALL,   BR_NE,  N, ST_XXX, LD_XXX, WB_ALU, N,        N),
+    blt    -> List(PC_ALU, A_RS1,  B_IMM, IMM_B,   ALU_ADD,    ALU_ALL,   BR_LT,  N, ST_XXX, LD_XXX, WB_ALU, N,        N),
+    bge    -> List(PC_ALU, A_RS1,  B_IMM, IMM_B,   ALU_ADD,    ALU_ALL,   BR_GE,  N, ST_XXX, LD_XXX, WB_ALU, N,        N),
+    bltu   -> List(PC_ALU, A_RS1,  B_IMM, IMM_B,   ALU_ADD,    ALU_ALL,   BR_LTU, N, ST_XXX, LD_XXX, WB_ALU, N,        N),
+    bgeu   -> List(PC_ALU, A_RS1,  B_IMM, IMM_B,   ALU_ADD,    ALU_ALL,   BR_GEU, N, ST_XXX, LD_XXX, WB_ALU, N,        N),
+
+    // J type
+    jal    -> List(PC_ALU, A_PC,   B_IMM, IMM_J,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_XXX, WB_PC4, Y,        N),
 
     // rv64
+    // R type
+    sllw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SLL,    ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    srlw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SRL,    ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    sraw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SRA,    ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    addw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AND,    ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    subw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SUB,    ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
 
+    // I type
+    slliw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLL,    ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    srliw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SRL,    ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    sraiw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SRA,    ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    addiw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    lwu    -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_LWU, WB_MEM, Y,        N),
+    ld     -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_XXX, LD_LD,  WB_MEM, Y,        N),
 
-
-
-
-
-    slliw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLL, ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    srliw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SRL, ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    sraiw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SRA, ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    addiw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD, ALU_CUT32, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    // S type
+    sd     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    ALU_ALL,   BR_XXX, N, ST_SD,  LD_XXX, WB_ALU, N,        N),
   )
 }
 
