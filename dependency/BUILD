@@ -24,3 +24,9 @@ chisel_library(
     ],
     visibility = ["//visibility:public"]
 )
+
+chisel_library(
+    name = "difftest",
+    srcs = glob(["difftest/src/main/scala/*.scala"]),
+    visibility = ["//visibility:public"]
+)

@@ -63,7 +63,8 @@ verilator_test(
   inst_file = glob(["src/main/resources/inst*.hex"]),
   deps = [
     "cpu",
-    "//dependency:config"
+    "//dependency:config",
+    "//dependency:difftest"
   ],
   srcs = glob(["src/test/resources/Core-harness.cpp"])
 )

@@ -27,6 +27,11 @@ object `api-config-chipsalliance` extends CommonModule {
   override def millSourcePath = os.pwd / "dependency" / "api-config-chipsalliance" / "design" / "craft"
 }
 
+object difftest extends CommonModule {
+  override def millSourcePath = os.pwd / "dependency" / "difftest"
+  override def ivyDeps = super.ivyDeps() ++ chisel
+}
+
 object hardfloat extends SbtModule with CommonModule {
   override def millSourcePath = os.pwd / "dependency" / "berkeley-hardfloat"
   override def ivyDeps = super.ivyDeps() ++ chisel
@@ -79,7 +84,8 @@ object cpu extends SbtModule with CommonModule { m =>
   override def ivyDeps = super.ivyDeps() ++ chisel
 
   override def moduleDeps = super.moduleDeps ++ Seq(
-    `rocket-chip`
+    `rocket-chip`,
+    difftest
   )
 
   override def scalacPluginIvyDeps = Agg(
