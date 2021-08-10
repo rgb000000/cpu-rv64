@@ -7,3 +7,9 @@
 [submodule "dependency/berkeley-hardfloat"]
 	path = dependency/berkeley-hardfloat
 	url = https://github.com/ucb-bar/berkeley-hardfloat
+[submodule "dependency/NEMU"]
+	path = dependency/NEMU
+	url = https://github.com/OpenXiangShan/NEMU
+[submodule "dependency/difftest"]
+	path = dependency/difftest
+	url = https://github.com/OpenXiangShan/difftest
