@@ -1,11 +1,12 @@
 # cpu
 load("@io_bazel_rules_scala//scala:scala.bzl", "scala_library", "scala_macro_library","scala_binary", "scala_test")
-load("//config:chisel.bzl", "chisel_library", "chisel_treadle_test", "chisel_verilog", "hello", "verilator_test")
+load("//config:chisel.bzl", "chisel_library", "chisel_treadle_test", "chisel_verilog", "hello", "verilator_test", "difftest")
 chisel_library(
   name = "cpu",
   srcs = glob(["src/main/scala/cpu/*.scala"]),
   deps = [
-    "//dependency:config"
+    "//dependency:config",
+    "//dependency:difftest"
   ],
   resources = ["src/main/resources"],
   visibility = ["//visibility:public"]
@@ -64,7 +65,18 @@ verilator_test(
   deps = [
     "cpu",
     "//dependency:config",
-    "//dependency:difftest"
+  ],
+  srcs = glob(["src/test/resources/Core-harness.cpp"])
+)
+
+difftest(
+  name = "SimTop",
+  module_name = "SimTop",
+  module_code = "cpu.SimTop",
+  inst_file = glob(["src/main/resources/inst*.hex"]),
+  deps = [
+    "cpu",
+    "//dependency:config",
   ],
   srcs = glob(["src/test/resources/Core-harness.cpp"])
 )

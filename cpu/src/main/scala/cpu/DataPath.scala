@@ -5,6 +5,8 @@ import chisel3.util._
 import chipsalliance.rocketchip.config._
 import chisel3.util.experimental.loadMemoryFromFileInline
 
+import difftest._
+
 class DataPath(implicit p: Parameters) extends Module {
   val io = IO(new Bundle{
     val icacahe = Flipped(new CacheCPUIO)
@@ -23,7 +25,7 @@ class DataPath(implicit p: Parameters) extends Module {
 
   val regs = Module(new RegisterFile)
 
-  val stall = !ifet.io.inst.valid
+  val stall = !ifet.io.out.valid
 
   // fetch
   ifet.io.icache <> io.icacahe
@@ -34,16 +36,16 @@ class DataPath(implicit p: Parameters) extends Module {
   // decode
   // control signal
   val ctrl = io.control
-  ctrl.inst := ifet.io.inst.bits
+  ctrl.inst := ifet.io.out.bits.inst
 
-  id.io.inst := ifet.io.inst.bits
+  id.io.inst := ifet.io.out.bits.inst
   id.io.imm_sel := ctrl.imm_sel
   regs.io.raddr1 := id.io.rs1_addr
   regs.io.raddr2 := id.io.rs2_addr
   val rd_addr = id.io.rd_addr
 
   // ex
-  val A = Mux(ctrl.a_sel === A_PC, ifet.io.inst.bits, regs.io.rdata1)
+  val A = Mux(ctrl.a_sel === A_PC, ifet.io.out.bits.inst, regs.io.rdata1)
   val B = Mux(ctrl.b_sel === B_IMM, id.io.imm, regs.io.rdata2)
 
   ex.io.alu_op := ctrl.alu_op
@@ -68,4 +70,18 @@ class DataPath(implicit p: Parameters) extends Module {
   regs.io.wen := ctrl.wen & !stall
 
   dontTouch(regs.io.wdata)
+
+  if(p(Difftest)){
+    val dic = Module(new DifftestInstrCommit)
+    dic.io.clock := clock
+    dic.io.valid := ifet.io.out.valid
+    dic.io.pc := ifet.io.out.bits.pc
+    dic.io.instr := ifet.io.out.bits.inst
+    dic.io.skip := false.B
+    dic.io.isRVC := false.B
+    dic.io.scFailed := false.B
+    dic.io.wen := regs.io.wen
+    dic.io.wdata := regs.io.wdata
+    dic.io.wdest := regs.io.waddr
+  }
 }

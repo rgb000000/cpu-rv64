@@ -209,6 +209,44 @@ _verilator_compile = rule(
 )
 
 ###################################################
+def _difftest_compile_impl(ctx):
+    simtop = ctx.attr.SimTop.files.to_list()[1]
+    difftest_dir_clone = ctx.actions.declare_directory("difftest")
+    build_dir = ctx.actions.declare_directory("build")
+    root = "/home/Prj/cpu-rv64"
+    print(difftest_dir_clone.dirname)
+    print(difftest_dir_clone.short_path)
+    print(difftest_dir_clone.root)
+    print(difftest_dir_clone.path)
+
+    ctx.actions.run_shell(
+        inputs = [simtop],
+        outputs = [build_dir, difftest_dir_clone],
+        command = "echo $PWD && tree && source ~/.zshrc"                                                  +
+                  "&& cp %s %s"    % (simtop.path, build_dir.path)                                        + 
+                  "&& cp -r %s %s" % (root + "/dependency/difftest/src", difftest_dir_clone.path)         +
+                  "&& cp -r %s %s" % (root + "/dependency/difftest/scripts", difftest_dir_clone.path)     +
+                  "&& cp %s %s"    % (root + "/dependency/difftest/Makefile", difftest_dir_clone.path)    +
+                  "&& cp %s %s"    % (root + "/dependency/difftest/verilator.mk", difftest_dir_clone.path)+
+                  "&& cp %s %s"    % (root + "/dependency/difftest/vcs.mk", difftest_dir_clone.path)      +
+                  "&& tree && echo $NEMU_HOME && echo $SHELL"                                             +
+                  "&& cd %s"       % (difftest_dir_clone.path)                                            +
+                  "&& make emu",
+        progress_message = "Compiling .v with .cpp",
+        use_default_shell_env = True 
+    )
+    return DefaultInfo(files = depset([difftest_dir_clone]))
+
+_difftest_compile = rule(
+    implementation = _difftest_compile_impl,
+    attrs = {
+        "SimTop": attr.label(),
+        "EMU_VFILES": attr.label_list(allow_files=True),
+        "EMU_CXXFILES": attr.label_list(allow_files=True)
+    }
+)
+
+###################################################
 
 def verilator_test(
     name,
@@ -246,4 +284,40 @@ def verilator_test(
         harness_file = srcs[0],
         inst_file = inst_file,
         module_name = module_name
+    )
+
+###################################################
+
+def difftest(
+    name,
+    module_name,
+    module_code,
+    deps,
+    srcs,
+    inst_file = [],
+    visibility = None
+    ):
+    _chisel_verilog_scala_source(
+        name = name + "_emit_verilog_scala",
+        module_code = module_code,
+    )
+    scala_binary(
+        name = name + "_emit_verilog_binary",
+        main_class = "cpu.BazelRunner",
+        srcs = [
+            "%s_emit_verilog_scala" % name,
+        ],
+        deps = deps + _chisel_deps,
+        plugins = _chisel_plugins,
+        visibility = ["//visibility:private"],
+    )
+    _chisel_verilog_run_generator(
+        name = name + "_files",
+        visibility = visibility,
+        tool = name + "_emit_verilog_binary",
+        module_name = module_name,
+    )
+    _difftest_compile(
+        name = name,
+        SimTop = name + "_files"
     )

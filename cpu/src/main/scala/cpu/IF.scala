@@ -8,13 +8,16 @@ import chisel3.util.experimental.loadMemoryFromFileInline
 
 class IF (implicit p: Parameters) extends Module {
   val io = IO(new Bundle{
-    val pc = Valid(UInt(p(XLen).W))
-    val icache = Flipped(new CacheCPUIO)
-    val inst = Valid(UInt(32.W))
+    val out = Valid(new Bundle{
+      val pc = UInt(p(XLen).W)
+      val inst = UInt(32.W)
+    })
 
     val pc_alu = Input(UInt(p(XLen).W))
     val pc_epc = Input(UInt(p(XLen).W))
     val pc_sel = Input(UInt(2.W))
+
+    val icache = Flipped(new CacheCPUIO)
   })
 
   val pc = RegInit(p(PCStart).U(p(XLen).W))
@@ -34,18 +37,14 @@ class IF (implicit p: Parameters) extends Module {
   ))
 
   dontTouch(pc_next)
-  dontTouch(io.inst.valid)
-  dontTouch(io.pc.valid)
-  dontTouch(io.pc.bits)
+  dontTouch(io.out)
 
   pc := Mux(io.icache.req.fire(), pc_next, pc)
   inst := Mux(io.icache.resp.fire(), io.icache.resp.bits.data, inst)
 
-  io.inst.bits := inst
-  io.inst.valid := RegNext(io.icache.resp.fire())
-
-  io.pc.bits := pc
-  io.pc.valid := RegNext(io.icache.resp.fire())
+  io.out.bits.inst := inst
+  io.out.bits.pc := pc
+  io.out.valid := RegNext(io.icache.resp.fire())
 
   dontTouch(io.icache)
 }

@@ -7,6 +7,8 @@ case object XLen extends Field[Int]
 
 case object PCStart extends Field[Int]
 
+case object Difftest extends Field[Boolean]
+
 class DefaultConfig extends Config ((site, here, up)=>{
   case XLen           => 64
   case PCStart        => 0x0
@@ -17,4 +19,6 @@ class DefaultConfig extends Config ((site, here, up)=>{
   case NWay           => 4
   case NBank          => 4
   case IDBits         => 4
+
+  case Difftest       => true
 })
