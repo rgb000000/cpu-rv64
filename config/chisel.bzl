@@ -214,10 +214,6 @@ def _difftest_compile_impl(ctx):
     difftest_dir_clone = ctx.actions.declare_directory("difftest")
     build_dir = ctx.actions.declare_directory("build")
     root = "/home/Prj/cpu-rv64"
-    print(difftest_dir_clone.dirname)
-    print(difftest_dir_clone.short_path)
-    print(difftest_dir_clone.root)
-    print(difftest_dir_clone.path)
 
     ctx.actions.run_shell(
         inputs = [simtop],

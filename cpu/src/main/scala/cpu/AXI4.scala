@@ -127,6 +127,18 @@ class AXI4(val dataBits: Int = AXI4Parameters.dataBits, val idBits: Int = AXI4Pa
 //  }
 }
 
+class RAMHelper extends BlackBox {
+  val io = IO(new Bundle {
+    val clk = Input(Clock())
+    val en = Input(Bool())
+    val rIdx = Input(UInt(64.W))
+    val rdata = Output(UInt(64.W))
+    val wIdx = Input(UInt(64.W))
+    val wdata = Input(UInt(64.W))
+    val wmask = Input(UInt(64.W))
+    val wen = Input(Bool())
+  })
+}
 
 class AXIMem(val width: Int = 64, val depth: Int = 256) extends Module{
   val io = IO(Flipped(new AXI4))
@@ -136,22 +148,38 @@ class AXIMem(val width: Int = 64, val depth: Int = 256) extends Module{
   val r_state = RegInit(r_idle)
   val r_cnt = Counter(64)
   val read_req = RegInit(0.U.asTypeOf(io.ar.bits))
-  val r_addr = RegInit(0.U(64.W))
 
   val w_idle :: w_burst :: w_resp :: Nil = Enum(3)
   val w_state = RegInit(w_idle)
   val w_cnt = Counter(64)
   val write_req = RegInit(0.U.asTypeOf(io.aw.bits))
-  val w_addr = RegInit(0.U(64.W))
   val w_data = Vec(8, UInt(8.W))
+
+//  val ram = Module(new RAMHelper)
+//  ram.io.clk := clock
+//  ram.io.en := 1.U
+//  ram.io.rIdx := read_req.addr + (r_cnt.value << log2Ceil(64 / 8).U).asUInt() + "h8000_0000".U
+//  val r_data = ram.io.rdata
+//
+//  ram.io.wIdx := write_req.addr + (w_cnt.value << log2Ceil(64 / 8).U).asUInt() + "h8000_0000".U
+//  ram.io.wdata := io.w.bits.data
+//  ram.io.wmask := Cat(io.w.bits.strb.asBools().map((x) => {
+//    val res = Wire(UInt(8.W))
+//    res := Mux(x,  "hff".U, "h00".U)
+//    res
+//  }))
+//  ram.io.wen := io.w.fire()
+
 
   val mem = SyncReadMem(32, Vec(8, UInt(8.W)))
   loadMemoryFromFile(mem, "inst.hex")
 
+  val r_addr = read_req.addr - "h8000_0000".U
+  val r_data = mem.read((r_addr >> log2Ceil(64 / 8).U).asUInt() + r_cnt.value)
 
-  val r_data = mem.read((read_req.addr >> log2Ceil(64 / 8).U).asUInt() + r_cnt.value)
+  val w_addr = write_req.addr - "h8000_0000".U
   when(io.w.fire()){
-    mem.write(write_req.addr + w_cnt.value, io.w.bits.data.asTypeOf(w_data), io.w.bits.strb.asBools())
+    mem.write((w_addr >> log2Ceil(64/8).U).asUInt() + w_cnt.value, io.w.bits.data.asTypeOf(w_data), io.w.bits.strb.asBools())
   }
 
   io.ar.ready := r_state === r_idle
@@ -177,7 +205,6 @@ class AXIMem(val width: Int = 64, val depth: Int = 256) extends Module{
   when(r_state === r_idle){
     when(io.ar.fire()){
       read_req := io.ar.bits
-      r_addr := io.ar.bits.addr
     }
   }.elsewhen(r_state === r_burst){
     when(io.r.ready === 1.U){
@@ -192,7 +219,6 @@ class AXIMem(val width: Int = 64, val depth: Int = 256) extends Module{
   when(w_state === w_idle){
     when(io.aw.fire()){
       write_req := io.aw.bits
-      w_addr := io.aw.bits.addr
     }
   }.elsewhen(w_state === w_burst){
     when(io.w.fire()){

@@ -4,6 +4,8 @@ import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
 
+import difftest._
+
 class RegisterFile(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
     // read port
@@ -18,12 +20,19 @@ class RegisterFile(implicit p: Parameters) extends Module{
     val wdata = Input(UInt(p(XLen).W))
   })
 
-  val registers = Mem(32, UInt(p(XLen).W))
+  val registers = RegInit(VecInit(Seq.fill(32)(0.asUInt(p(XLen).W))))
 
-  io.rdata1 := Mux(io.raddr1.orR() === 0.U, 0.U, registers.read(io.raddr1))
-  io.rdata2 := Mux(io.raddr2.orR() === 0.U, 0.U, registers.read(io.raddr2))
+  io.rdata1 := Mux(io.raddr1.orR() === 0.U, 0.U, registers(io.raddr1))
+  io.rdata2 := Mux(io.raddr2.orR() === 0.U, 0.U, registers(io.raddr2))
 
   when(io.wen === 1.U & io.waddr.orR() =/= 0.U){
-    registers.write(io.waddr, io.wdata)
+    registers(io.waddr) := io.wdata
+  }
+
+  if(p(Difftest)){
+    val dar = Module(new DifftestArchIntRegState)
+    dar.io.clock := clock
+    dar.io.coreid := 0.U
+    dar.io.gpr := registers
   }
 }

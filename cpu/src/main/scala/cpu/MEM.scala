@@ -15,12 +15,14 @@ class MEM (implicit p: Parameters) extends Module {
     val alu_res = Input(UInt(p(XLen).W))
 
     val l_data = Output(Valid(UInt(p(XLen).W)))
+
+    val stall = Input(Bool())
   })
 
   import Control._
 
   // generate req
-  when(io.ld_type =/= 0.U){
+  when((io.ld_type =/= 0.U)){
     // is load inst
     // such as: x[rd] = sext(M[x[rs1] + sext(offset)][7:0])
     io.dcache.req.valid := 1.U
@@ -36,7 +38,7 @@ class MEM (implicit p: Parameters) extends Module {
     ))
     io.dcache.req.bits.op := 0.U   // read
     io.dcache.req.bits.data := 0.U // useless when load
-  }.elsewhen(io.st_type =/= 0.U){
+  }.elsewhen((io.st_type =/= 0.U)){
     // is store inst
     // such as: M[x[rs1]+sext(offset)] = x[rs2][7:0]
     io.dcache.req.valid := 1.U
@@ -48,7 +50,7 @@ class MEM (implicit p: Parameters) extends Module {
       ST_SB  -> ("b0000_0001".U << io.alu_res(2,0).asUInt()), // <<0, 1, 2, 3 ... 7
     ))
     io.dcache.req.bits.op := 1.U   // write
-    io.dcache.req.bits.data := io.s_data // useless when load
+    io.dcache.req.bits.data := io.s_data << (io.alu_res(2,0) << 3.U).asUInt() // useless when load
   }.otherwise{
     // not a mem inst
     io.dcache.req.valid := 0.U
@@ -59,7 +61,7 @@ class MEM (implicit p: Parameters) extends Module {
   }
 
   // get reps
-  when(io.dcache.resp.valid){
+  when(io.dcache.resp.fire() & (io.dcache.resp.bits.cmd =/= 0.U)){
     io.l_data.bits := (io.dcache.resp.bits.data) >> io.alu_res(2,0).asUInt()
     io.l_data.valid := 1.U
   }.otherwise{

@@ -25,17 +25,19 @@ class DataPath(implicit p: Parameters) extends Module {
 
   val regs = Module(new RegisterFile)
 
-  val stall = !ifet.io.out.valid
+  val ctrl = io.control
+
+  val stall = !io.icacahe.resp.valid | !io.dcache.resp.valid | (ifet.io.out.valid & (ctrl.ld_type.orR() | ctrl.st_type.orR()))
 
   // fetch
   ifet.io.icache <> io.icacahe
   ifet.io.pc_sel := io.control.pc_sel
   ifet.io.pc_alu := ex.io.out
   ifet.io.pc_epc := BitPat.bitPatToUInt(ISA.nop)
+  ifet.io.stall := stall
 
   // decode
   // control signal
-  val ctrl = io.control
   ctrl.inst := ifet.io.out.bits.inst
 
   id.io.inst := ifet.io.out.bits.inst
@@ -57,8 +59,9 @@ class DataPath(implicit p: Parameters) extends Module {
   mem.io.dcache <> io.dcache
   mem.io.ld_type := ctrl.ld_type
   mem.io.st_type := ctrl.st_type
-  mem.io.s_data := B
+  mem.io.s_data := regs.io.rdata2
   mem.io.alu_res := ex.io.out
+  mem.io.stall := stall
   val l_data = mem.io.l_data
 
   //wb
@@ -72,16 +75,42 @@ class DataPath(implicit p: Parameters) extends Module {
   dontTouch(regs.io.wdata)
 
   if(p(Difftest)){
+    println(">>>>>>>> difftest mode!")
+
     val dic = Module(new DifftestInstrCommit)
     dic.io.clock := clock
-    dic.io.valid := ifet.io.out.valid
-    dic.io.pc := ifet.io.out.bits.pc
-    dic.io.instr := ifet.io.out.bits.inst
+    dic.io.coreid := 0.U
+    dic.io.index := 0.U
+    dic.io.valid := RegNext(ifet.io.out.valid)
+    dic.io.pc := RegNext(ifet.io.out.bits.pc)
+    dic.io.instr := RegNext(ifet.io.out.bits.inst)
     dic.io.skip := false.B
     dic.io.isRVC := false.B
     dic.io.scFailed := false.B
-    dic.io.wen := regs.io.wen
-    dic.io.wdata := regs.io.wdata
-    dic.io.wdest := regs.io.waddr
+    dic.io.wen := RegNext(regs.io.wen)
+    dic.io.wdata := RegNext(regs.io.wdata)
+    dic.io.wdest := RegNext(regs.io.waddr)
+
+    val dcsr = Module(new DifftestCSRState)
+    dcsr.io.clock := clock
+    dcsr.io.coreid := 0.U
+    dcsr.io.mstatus := 0.U
+    dcsr.io.mcause := 0.U
+    dcsr.io.mepc := 0.U
+    dcsr.io.sstatus := 0.U
+    dcsr.io.scause := 0.U
+    dcsr.io.sepc := 0.U
+    dcsr.io.satp := 0.U
+    dcsr.io.mip := 0.U
+    dcsr.io.mie := 0.U
+    dcsr.io.mscratch := 0.U
+    dcsr.io.sscratch := 0.U
+    dcsr.io.mideleg := 0.U
+    dcsr.io.medeleg := 0.U
+    dcsr.io.mtval:= 0.U
+    dcsr.io.stval:= 0.U
+    dcsr.io.mtvec := 0.U
+    dcsr.io.stvec := 0.U
+    dcsr.io.priviledgeMode := 0.U
   }
 }
