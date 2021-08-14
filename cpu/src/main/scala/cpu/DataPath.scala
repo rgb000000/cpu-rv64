@@ -86,9 +86,9 @@ class DataPath(implicit p: Parameters) extends Module {
 
   dontTouch(regs.io.wdata)
 
-  val cycleCnt = Counter(2048)
+  val cycleCnt = Counter(65536)
   cycleCnt.inc()
-  val instCnt = Counter(2048)
+  val instCnt = Counter(65536)
   when(ifet.io.out.valid){
     instCnt.inc()
   }
@@ -115,7 +115,7 @@ class DataPath(implicit p: Parameters) extends Module {
     dte.io.clock := clock
     dte.io.coreid := 0.U
     dte.io.valid := RegNext(ifet.io.out.bits.inst === "h0000006f".U)
-    dte.io.code := "hf".U
+    dte.io.code := "h0".U
     dte.io.pc := RegNext(ifet.io.out.bits.pc)
     dte.io.cycleCnt := cycleCnt.value
     dte.io.instrCnt := instCnt.value
