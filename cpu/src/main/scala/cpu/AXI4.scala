@@ -140,7 +140,7 @@ class RAMHelper extends BlackBox {
   })
 }
 
-class AXIMem(val width: Int = 64, val depth: Int = 256) extends Module{
+class AXIMem(val width: Int = 64, val depth: Int = 256)(implicit p: Parameters) extends Module{
   val io = IO(Flipped(new AXI4))
 
 
@@ -155,31 +155,36 @@ class AXIMem(val width: Int = 64, val depth: Int = 256) extends Module{
   val write_req = RegInit(0.U.asTypeOf(io.aw.bits))
   val w_data = Vec(8, UInt(8.W))
 
-//  val ram = Module(new RAMHelper)
-//  ram.io.clk := clock
-//  ram.io.en := 1.U
-//  ram.io.rIdx := read_req.addr + (r_cnt.value << log2Ceil(64 / 8).U).asUInt() + "h8000_0000".U
-//  val r_data = ram.io.rdata
-//
-//  ram.io.wIdx := write_req.addr + (w_cnt.value << log2Ceil(64 / 8).U).asUInt() + "h8000_0000".U
-//  ram.io.wdata := io.w.bits.data
-//  ram.io.wmask := Cat(io.w.bits.strb.asBools().map((x) => {
-//    val res = Wire(UInt(8.W))
-//    res := Mux(x,  "hff".U, "h00".U)
-//    res
-//  }))
-//  ram.io.wen := io.w.fire()
+  val r_data = Wire(UInt(64.W))
 
+  if (p(Difftest)){
+      val ram = Module(new RAMHelper)
+      ram.io.clk := clock
+      ram.io.en := 1.U
+//      ram.io.rIdx := read_req.addr + (r_cnt.value << log2Ceil(64 / 8).U).asUInt()
+    ram.io.rIdx := ((read_req.addr - "h8000_0000".U) >> 3.U).asUInt() + r_cnt.value
+    r_data := RegNext(ram.io.rdata)
 
-  val mem = SyncReadMem(32, Vec(8, UInt(8.W)))
-  loadMemoryFromFile(mem, "inst.hex")
+//      ram.io.wIdx := write_req.addr + (w_cnt.value << log2Ceil(64 / 8).U).asUInt()
+    ram.io.wIdx := ((write_req.addr - "h8000_0000".U) >> 3.U).asUInt() + w_cnt.value
+    ram.io.wdata := io.w.bits.data
+      ram.io.wmask := Cat(io.w.bits.strb.asBools().map((x) => {
+        val res = Wire(UInt(8.W))
+        res := Mux(x,  "hff".U, "h00".U)
+        res
+      }))
+      ram.io.wen := io.w.fire()
+  }else{
+    val mem = SyncReadMem(32, Vec(8, UInt(8.W)))
+    loadMemoryFromFile(mem, "inst.hex")
 
-  val r_addr = read_req.addr - "h8000_0000".U
-  val r_data = mem.read((r_addr >> log2Ceil(64 / 8).U).asUInt() + r_cnt.value)
+    val r_addr = read_req.addr - "h8000_0000".U
+    r_data := mem.read((r_addr >> log2Ceil(64 / 8).U).asUInt() + r_cnt.value).asUInt()
 
-  val w_addr = write_req.addr - "h8000_0000".U
-  when(io.w.fire()){
-    mem.write((w_addr >> log2Ceil(64/8).U).asUInt() + w_cnt.value, io.w.bits.data.asTypeOf(w_data), io.w.bits.strb.asBools())
+    val w_addr = write_req.addr - "h8000_0000".U
+    when(io.w.fire()){
+      mem.write((w_addr >> log2Ceil(64/8).U).asUInt() + w_cnt.value, io.w.bits.data.asTypeOf(w_data), io.w.bits.strb.asBools())
+    }
   }
 
   io.ar.ready := r_state === r_idle

@@ -11,12 +11,20 @@ class ImmGen (implicit p: Parameters) extends Module{
     val sel = Input(UInt(3.W))
     val out = Output(UInt(p(XLen).W))
   })
-  val Iimm = io.inst(31, 20).asSInt
-  val Simm = Cat(io.inst(31, 25), io.inst(11,7)).asSInt
-  val Bimm = Cat(io.inst(31), io.inst(7), io.inst(30, 25), io.inst(11, 8), 0.U(1.W)).asSInt
-  val Uimm = Cat(io.inst(31, 12), 0.U(12.W)).asSInt
-  val Jimm = Cat(io.inst(31), io.inst(19, 12), io.inst(20), io.inst(30, 25), io.inst(24, 21), 0.U(1.W)).asSInt
-  val Zimm = io.inst(19, 15).zext
+
+  val Iimm = Wire(SInt(64.W))
+  val Simm = Wire(SInt(64.W))
+  val Bimm = Wire(SInt(64.W))
+  val Uimm = Wire(SInt(64.W))
+  val Jimm = Wire(SInt(64.W))
+  val Zimm = Wire(SInt(64.W))
+
+  Iimm := io.inst(31, 20).asSInt()
+  Simm := Cat(io.inst(31, 25), io.inst(11,7)).asSInt
+  Bimm := Cat(io.inst(31), io.inst(7), io.inst(30, 25), io.inst(11, 8), 0.U(1.W)).asSInt
+  Uimm := Cat(io.inst(31, 12), 0.U(12.W)).asSInt
+  Jimm := Cat(io.inst(31), io.inst(19, 12), io.inst(20), io.inst(30, 25), io.inst(24, 21), 0.U(1.W)).asSInt
+  Zimm := io.inst(19, 15).zext
 
   io.out := MuxLookup(io.sel, Iimm & (-2.S), Seq(
     IMM_I -> Iimm,

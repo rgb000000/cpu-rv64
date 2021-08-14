@@ -15,8 +15,10 @@ class MEM (implicit p: Parameters) extends Module {
     val alu_res = Input(UInt(p(XLen).W))
 
     val l_data = Output(Valid(UInt(p(XLen).W)))
+    val s_complete = Output(Bool())
 
     val stall = Input(Bool())
+    val inst_valid = Input(Bool())
   })
 
   import Control._
@@ -25,7 +27,7 @@ class MEM (implicit p: Parameters) extends Module {
   when((io.ld_type =/= 0.U)){
     // is load inst
     // such as: x[rd] = sext(M[x[rs1] + sext(offset)][7:0])
-    io.dcache.req.valid := 1.U
+    io.dcache.req.valid := 1.U & io.inst_valid
     io.dcache.req.bits.addr := io.alu_res
     io.dcache.req.bits.mask := MuxLookup(io.ld_type, 0.U, Array(
       LD_LD  -> ("b1111_1111".U),
@@ -41,7 +43,7 @@ class MEM (implicit p: Parameters) extends Module {
   }.elsewhen((io.st_type =/= 0.U)){
     // is store inst
     // such as: M[x[rs1]+sext(offset)] = x[rs2][7:0]
-    io.dcache.req.valid := 1.U
+    io.dcache.req.valid := 1.U & io.inst_valid
     io.dcache.req.bits.addr := io.alu_res
     io.dcache.req.bits.mask := MuxLookup(io.st_type, 0.U, Array(
       ST_SD  -> ("b1111_1111".U),
@@ -61,7 +63,7 @@ class MEM (implicit p: Parameters) extends Module {
   }
 
   // get reps
-  when(io.dcache.resp.fire() & (io.dcache.resp.bits.cmd =/= 0.U)){
+  when(io.dcache.resp.fire() & (io.dcache.resp.bits.cmd =/= 0.U) & io.ld_type.orR()){
     io.l_data.bits := (io.dcache.resp.bits.data) >> io.alu_res(2,0).asUInt()
     io.l_data.valid := 1.U
   }.otherwise{
@@ -69,4 +71,6 @@ class MEM (implicit p: Parameters) extends Module {
     io.l_data.valid := 0.U
   }
 
+  io.s_complete := Mux(io.dcache.resp.fire() & !io.stall & io.st_type.orR(), 1.U, 0.U)
+  dontTouch(io.s_complete)
 }

@@ -20,6 +20,6 @@ class DefaultConfig extends Config ((site, here, up)=>{
   case NBank          => 4
   case IDBits         => 4
 
-//  case Difftest       => true
-  case Difftest       => false
+  case Difftest       => true
+//  case Difftest       => false
 })

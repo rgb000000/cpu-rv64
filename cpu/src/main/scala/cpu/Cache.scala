@@ -99,8 +99,10 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
 
   val depth = math.pow(2, index_width).toInt
 
-  val tag_v_tab = SyncReadMem(depth, tag_v)
-  val dirty_tab = SyncReadMem(depth, dirty)
+  val tag_tab = SyncReadMem(depth, tag_v.tag)
+  val v_tab = RegInit(VecInit(Seq.fill(depth)(0.U)))
+
+  val dirty_tab = RegInit(VecInit(Seq.fill(depth)(0.U)))
   // nBank * (n * 8bit)
   val bankn = List.fill(p(NBank))(SyncReadMem(depth, Vec((p(CacheLineSize) / p(NBank)) / 8, UInt(8.W))))
 
@@ -109,8 +111,7 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
   // read logic
   // TODO: check data order in simulator
   //            tag,v,   d,    data
-  result := Cat(List(tag_v_tab.read(io.in.r.bits.index, io.in.r.valid).asUInt()) ++
-    List(dirty_tab.read(io.in.r.bits.index, io.in.r.valid)) ++
+  result := Cat(List(tag_tab.read(io.in.r.bits.index, io.in.r.valid).asUInt()) ++ Seq(RegNext(v_tab(io.in.r.bits.index), 0.U), RegNext(dirty_tab(io.in.r.bits.index), 0.U)) ++
     bankn.map(_.read(io.in.r.bits.index, io.in.r.valid).asUInt())).asTypeOf(new WayOut(tag_width))
 
   io.out.bits := result
@@ -124,9 +125,10 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
   when(io.in.w.fire()){
     when(io.in.w.bits.op === 1.U){
       // write tag,v
-      tag_v_tab.write(io.in.w.bits.index, Cat(io.in.w.bits.tag, io.in.w.bits.v).asTypeOf(tag_v))
+      tag_tab.write(io.in.w.bits.index, io.in.w.bits.tag)
+      v_tab(io.in.w.bits.index) := io.in.w.bits.v
       // write d
-      dirty_tab.write(io.in.w.bits.d, io.in.w.bits.d)
+      dirty_tab(io.in.w.bits.index) := io.in.w.bits.d
       // write data
       bankn.zipWithIndex.foreach((a) =>{
         val (bank, i) = a
@@ -220,7 +222,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   ways.foreach((way =>{
     way.io.in.r.bits.index := io.cpu.req.bits.addr.asTypeOf(infos).index
     way.io.in.r.bits.op := 0.U //                | only accept read req
-    way.io.in.r.valid := (io.cpu.req.valid) & (io.cpu.req.bits.op === 0.U) & (!conflict_hit_write) // req is valid and not conflict with hit write
+//    way.io.in.r.valid := (io.cpu.req.valid) & (io.cpu.req.bits.op === 0.U) & (!conflict_hit_write) // req is valid and not conflict with hit write
+    way.io.in.r.valid := (io.cpu.req.valid) & (!conflict_hit_write) // req is valid and not conflict with hit write
   }))
 
   // compare ways tag, return one hot such {0,0,0,0} or {0,0,1,0}
@@ -315,7 +318,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
   val refill_cnt = Counter(p(NWay))
   //                              resp in lookup stage
-  io.cpu.resp.valid := (state === idle) | ((state === lookup) & (!is_miss) & (req_reg.op === 0.U)) |
+//  io.cpu.resp.valid := (state === idle) | ((state === lookup) & (!is_miss) & (req_reg.op === 0.U)) |
+  io.cpu.resp.valid := (state === idle) | ((state === lookup) & (!is_miss)) |
     ((state === refill) & ((!req_reg.op) & refill_cnt.value === req_reg.addr.asTypeOf(infos).offset(log2Ceil(64 / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(64 / 8)).asUInt()) & io.mem.resp.valid)
   io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
     val (valid, i) = x
@@ -424,7 +428,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
       write_buffer.bits.tag := miss_info.addr.asTypeOf(infos).tag
       write_buffer.bits.index := miss_info.addr.asTypeOf(infos).index
-      write_buffer.bits.offset := miss_info.addr.asTypeOf(infos).offset + (r_cnt.value << log2Ceil(p(XLen) / 8).U)
+//      write_buffer.bits.offset := miss_info.addr.asTypeOf(infos).offset + (r_cnt.value << log2Ceil(p(XLen) / 8).U)
+      write_buffer.bits.offset :=  (r_cnt.value << log2Ceil(p(XLen) / 8).U).asUInt()
       write_buffer.bits.v := 1.U
       write_buffer.bits.d := 0.U
       write_buffer.bits.replace_way := replace_buffer.way_num
