@@ -28,7 +28,7 @@ class DataPath(implicit p: Parameters) extends Module {
 
   val ctrl = io.control
 
-  val stall = !io.icacahe.resp.valid | !io.dcache.resp.valid | (ifet.io.out.valid & (ctrl.ld_type.orR() | ctrl.st_type.orR()))
+  val stall = !io.dcache.req.ready | !io.icacahe.resp.valid | !io.dcache.resp.valid | (ifet.io.out.valid & (ctrl.ld_type.orR() | ctrl.st_type.orR()))
 
   // fetch
   ifet.io.icache <> io.icacahe

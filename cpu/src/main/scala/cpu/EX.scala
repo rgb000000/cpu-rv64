@@ -34,7 +34,7 @@ class ALU (implicit p: Parameters) extends Module {
     val out = Output(UInt(p(XLen).W))
   })
   import ALU._
-  val shamt = io.rs2(4, 0).asUInt()
+  val shamt = io.rs2(5, 0).asUInt()
 
   val out = MuxLookup(io.alu_op, io.rs2, Seq(
     ALU_ADD  -> (io.rs1 + io.rs2),
