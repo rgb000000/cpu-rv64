@@ -362,10 +362,10 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   val w_cnt = Counter(4)
   val r_cnt = Counter(4)
 
-  when((state === lookup) & is_miss & (replace_buffer.v & replace_buffer.d)){
+  when((state === lookup) & is_miss & ((rand_way_data.v === 1.U) & (rand_way_data.d === 1.U))){
     // send write burst cmd
     io.mem.req.valid := 1.U
-    io.mem.req.bits.addr := replace_buffer.addr
+    io.mem.req.bits.addr := Cat(rand_way_data.tag, req_reg.addr.asTypeOf(infos).index, 0.U(offset_width.W))
     io.mem.req.bits.cmd := MemCmdConst.WriteBurst
     io.mem.req.bits.len := 3.U // 1.U << 3 = 8
     io.mem.req.bits.data := 0.U
