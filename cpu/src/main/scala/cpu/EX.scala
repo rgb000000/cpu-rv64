@@ -53,7 +53,7 @@ class ALU (implicit p: Parameters) extends Module {
 
   io.out := MuxCase(out, Array(
     (io.res_cut === ALU_ALL) -> out,
-    (io.res_cut === ALU_CUT32) -> out(31,0).asSInt().asUInt()
+    (io.res_cut === ALU_CUT32) -> Cat(Seq.fill(32)(out(31)) ++ Seq(out(31,0)))
   ))
 }
 

@@ -91,18 +91,17 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
     val in = Flipped(new WayIn(tag_width, index_width, offset_width))
   })
 
-  val tag_v = new Bundle{
-    val tag = UInt(tag_width.W) // tag
-    val v = UInt(1.W)         // valid
-  }
+  val tag = UInt(tag_width.W) // tag
+  val v = UInt(1.W)         // valid
+
   val dirty = UInt(1.W)
 
   val depth = math.pow(2, index_width).toInt
 
-  val tag_tab = SyncReadMem(depth, tag_v.tag)
-  val v_tab = RegInit(VecInit(Seq.fill(depth)(0.U)))
+  val tag_tab = SyncReadMem(depth, tag)
+  val v_tab = RegInit(VecInit(Seq.fill(depth)(0.U(1.W))))
 
-  val dirty_tab = RegInit(VecInit(Seq.fill(depth)(0.U)))
+  val dirty_tab = RegInit(VecInit(Seq.fill(depth)(0.U(1.W))))
   // nBank * (n * 8bit)
   val bankn = List.fill(p(NBank))(SyncReadMem(depth, Vec((p(CacheLineSize) / p(NBank)) / 8, UInt(8.W))))
 
@@ -250,7 +249,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   dontTouch(select_data_rev)
   (select_data_rev, select_data.reverse).zipped.foreach(_ := _)
   // use LFSR to generate rand in binary, need to be converted to ont-hot to use as mask
-  val rand_way = UIntToOH(LFSR(64)( log2Ceil(p(NWay))-1 , 0).asUInt())
+  val rand_way = UIntToOH(LFSR(128, seed = Some(9987))( log2Ceil(p(NWay))-1 , 0).asUInt())
   // rand way data (tag, v, d, data)
   val rand_way_data = Mux1H(for(i <- rand_way.asBools().zipWithIndex) yield (i._1, ways_ret_datas(i._2)))
 
@@ -317,20 +316,37 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   dontTouch(req_reg)
 
   val refill_cnt = Counter(p(NWay))
+
+  val load_ret = RegInit(0.U(64.W))
+  when((state === refill) & ((!req_reg.op) & refill_cnt.value === req_reg.addr.asTypeOf(infos).offset(log2Ceil(64 / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(64 / 8)).asUInt()) & io.mem.resp.valid){
+    load_ret := io.mem.resp.bits.data
+  }
+
   //                              resp in lookup stage
 //  io.cpu.resp.valid := (state === idle) | ((state === lookup) & (!is_miss) & (req_reg.op === 0.U)) |
   io.cpu.resp.valid := (state === idle) | ((state === lookup) & (!is_miss)) |
-    ((state === refill) & ((!req_reg.op) & refill_cnt.value === req_reg.addr.asTypeOf(infos).offset(log2Ceil(64 / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(64 / 8)).asUInt()) & io.mem.resp.valid)
-  io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
-    val (valid, i) = x
-    val res = Wire(UInt(8.W))
-    when(state === lookup){
+    //    ((state === refill) & ((!req_reg.op) & refill_cnt.value === req_reg.addr.asTypeOf(infos).offset(log2Ceil(64 / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(64 / 8)).asUInt()) & io.mem.resp.valid) |
+    ((state === refill) & ((!req_reg.op) & (refill_cnt.value === 3.U) & io.mem.resp.valid)) |
+    ((state === refill) & ((req_reg.op) & (refill_cnt.value === 3.U) & io.mem.resp.valid))
+
+  when(state === lookup){
+    io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
+      val (valid, i) = x
+      val res = Wire(UInt(8.W))
       res := Mux(valid, select_data_rev(req_reg.addr(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8))).asUInt()(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
-    }.otherwise{
-      res := Mux(valid, io.mem.resp.bits.data(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
-    }
-    res
+      res
     }).reverse) >> (req_reg.addr(2, 0) << 3.U)
+  }.otherwise{
+    val ret = Mux(req_reg.addr.asTypeOf(infos).offset(log2Ceil(64 / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(64 / 8)).asUInt() === 3.U, io.mem.resp.bits.data, load_ret)
+    io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
+      val (valid, i) = x
+      val res = Wire(UInt(8.W))
+      res := Mux(valid, ret(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
+      res
+    }).reverse) >> (req_reg.addr(2, 0) << 3.U)
+  }
+
+
   io.cpu.resp.bits.cmd := Mux(state === idle, 0.U, 1.U)
 
   when((state=== refill) & io.mem.resp.fire()){
@@ -411,7 +427,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
       write_buffer.bits.v := 1.U
       write_buffer.bits.d := 1.U
       write_buffer.bits.data := req_reg.data
-      write_buffer.bits.replace_way := ways_compare_res
+      write_buffer.bits.replace_way := Cat(ways_compare_res.asBools()).asUInt() // note: !
       write_buffer.bits.wmask := req_reg.mask
     }.elsewhen((state === refill) & io.mem.resp.fire()){
 

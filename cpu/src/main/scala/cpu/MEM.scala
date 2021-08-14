@@ -64,13 +64,23 @@ class MEM (implicit p: Parameters) extends Module {
 
   // get reps
   when(io.dcache.resp.fire() & (io.dcache.resp.bits.cmd =/= 0.U) & io.ld_type.orR()){
-    io.l_data.bits := (io.dcache.resp.bits.data) >> io.alu_res(2,0).asUInt()
+    io.l_data.bits := (io.dcache.resp.bits.data) // >> io.alu_res(2,0).asUInt()
+    io.l_data.bits := MuxLookup(io.ld_type, 0.S(p(XLen).W), Seq(
+      Control.LD_LD  -> io.dcache.resp.bits.data(63, 0).asSInt(),
+      Control.LD_LW  -> io.dcache.resp.bits.data(31, 0).asSInt(),
+      Control.LD_LH  -> io.dcache.resp.bits.data(15, 0).asSInt(),
+      Control.LD_LB  -> io.dcache.resp.bits.data( 7, 0).asSInt(),
+      Control.LD_LWU -> io.dcache.resp.bits.data(31, 0).zext(),
+      Control.LD_LHU -> io.dcache.resp.bits.data(15, 0).zext(),
+      Control.LD_LBU -> io.dcache.resp.bits.data( 7, 0).zext(),
+    )).asUInt()
     io.l_data.valid := 1.U
   }.otherwise{
     io.l_data.bits := 0.U
     io.l_data.valid := 0.U
   }
 
-  io.s_complete := Mux(io.dcache.resp.fire() & !io.stall & io.st_type.orR(), 1.U, 0.U)
+//  io.s_complete := Mux((io.dcache.resp.fire() & (io.dcache.resp.bits.cmd =/= 0.U)) & !io.stall & io.st_type.orR(), 1.U, 0.U)
+  io.s_complete := Mux((io.dcache.resp.fire() & (io.dcache.resp.bits.cmd =/= 0.U)) & io.st_type.orR(), 1.U, 0.U)
   dontTouch(io.s_complete)
 }
