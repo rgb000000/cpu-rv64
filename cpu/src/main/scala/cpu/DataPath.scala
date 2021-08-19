@@ -28,7 +28,7 @@ class DataPath(implicit p: Parameters) extends Module {
 
   val ctrl = io.control
 
-  val stall = !io.dcache.req.ready | !io.icacahe.resp.valid | !io.dcache.resp.valid | (ifet.io.out.valid & (ctrl.ld_type.orR() | ctrl.st_type.orR()))
+  val stall = RegNext(io.dcache.req.valid & !io.dcache.req.ready) | !io.dcache.req.ready | !io.icacahe.resp.valid | !io.dcache.resp.valid | (ifet.io.out.valid & (ctrl.ld_type.orR() | ctrl.st_type.orR()))
 
   // fetch
   ifet.io.icache <> io.icacahe
@@ -57,7 +57,6 @@ class DataPath(implicit p: Parameters) extends Module {
   val B = Mux(ctrl.b_sel === B_IMM, id.io.imm, regs.io.rdata2)
 
   ex.io.alu_op := ctrl.alu_op
-  ex.io.alu_cut := ctrl.alu_cut
   ex.io.rs1 := A
   ex.io.rs2 := B
 

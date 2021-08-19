@@ -9,7 +9,7 @@ class MEM (implicit p: Parameters) extends Module {
     val dcache = Flipped(new CacheCPUIO)
 
     val ld_type = Input(UInt(3.W))
-    val st_type = Input(UInt(2.W))
+    val st_type = Input(UInt(3.W))
 
     val s_data = Input(UInt(p(XLen).W))
     val alu_res = Input(UInt(p(XLen).W))
@@ -23,11 +23,14 @@ class MEM (implicit p: Parameters) extends Module {
 
   import Control._
 
+  // handle cacahe read conflict_bank
+  val dcache_ready_reg = RegNext(io.dcache.req.valid & !io.dcache.req.ready)
+
   // generate req
   when((io.ld_type =/= 0.U)){
     // is load inst
     // such as: x[rd] = sext(M[x[rs1] + sext(offset)][7:0])
-    io.dcache.req.valid := 1.U & io.inst_valid
+    io.dcache.req.valid := (1.U & io.inst_valid) | dcache_ready_reg
     io.dcache.req.bits.addr := io.alu_res
     io.dcache.req.bits.mask := MuxLookup(io.ld_type, 0.U, Array(
       LD_LD  -> ("b1111_1111".U),
