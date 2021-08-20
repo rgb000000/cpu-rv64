@@ -113,8 +113,8 @@ class DataPath(implicit p: Parameters) extends Module {
     val dte = Module(new DifftestTrapEvent)
     dte.io.clock := clock
     dte.io.coreid := 0.U
-    dte.io.valid := RegNext(ifet.io.out.bits.inst === "h0000006f".U)
-    dte.io.code := "h0".U
+    dte.io.valid := RegNext(ifet.io.out.bits.inst === "h0000006b".U)
+    dte.io.code := regs.io.trap_code.getOrElse(1.U)
     dte.io.pc := RegNext(ifet.io.out.bits.pc)
     dte.io.cycleCnt := cycleCnt.value
     dte.io.instrCnt := instCnt.value

@@ -18,6 +18,8 @@ class RegisterFile(implicit p: Parameters) extends Module{
     val wen = Input(Bool())
     val waddr = Input(UInt(log2Ceil(32).W))
     val wdata = Input(UInt(p(XLen).W))
+
+    val trap_code = if (p(Difftest)) Some(Output(UInt(p(XLen).W))) else None
   })
 
   val registers = RegInit(VecInit(Seq.fill(32)(0.asUInt(p(XLen).W))))
@@ -34,5 +36,7 @@ class RegisterFile(implicit p: Parameters) extends Module{
     dar.io.clock := clock
     dar.io.coreid := 0.U
     dar.io.gpr := registers
+
+    io.trap_code.get := registers(10) //a0 is x10
   }
 }
