@@ -70,7 +70,7 @@ object Control {
   import ISA._
   import ALU._
 
-  //                                                                             kill                       wb_en  illegal?
+  //                                                                  kill                       wb_en  illegal?
   //             pc_sel    A_sel   B_sel  imm_sel  alu_op      br_type |  st_type ld_type wb_sel  | csr_cmd |
   //               |         |       |     |         |           |     |     |       |       |    |  |      |
   val default =
@@ -89,7 +89,7 @@ object Control {
     and    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AND,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
 
     // I type
-    jalr   -> List(PC_ALU, A_RS1,  B_IMM, IMM_I,   ALU_ADD,    BR_XXX, N, ST_XXX, LD_XXX, WB_PC4, Y,        N),
+    jalr   -> List(PC_ALU, A_RS1,  B_IMM, IMM_I,   ALU_ADD,    BR_XXX, Y, ST_XXX, LD_XXX, WB_PC4, Y,        N),
     addi   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
     slti   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLT,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
     sltiu  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLTU,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
@@ -135,21 +135,21 @@ object Control {
     bgeu   -> List(PC_4,   A_PC,   B_IMM, IMM_B,   ALU_ADD,    BR_GEU, N, ST_XXX, LD_XXX, WB_ALU, N,        N),
 
     // J type
-    jal    -> List(PC_ALU, A_PC,   B_IMM, IMM_J,   ALU_ADD,    BR_XXX, N, ST_XXX, LD_XXX, WB_PC4, Y,        N),
+    jal    -> List(PC_ALU, A_PC,   B_IMM, IMM_J,   ALU_ADD,    BR_XXX, Y, ST_XXX, LD_XXX, WB_PC4, Y,        N),
 
     // rv64
     // R type
-    sllw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SLLW,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    srlw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SRLW,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    sraw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SRAW,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    addw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_ADDW,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    subw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SUBW,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    sllw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SLLW,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    srlw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SRLW,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    sraw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SRAW,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    addw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_ADDW,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    subw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SUBW,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
 
     // I type
-    slliw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLLIW,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    srliw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SRLIW,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    sraiw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SRAIW,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
-    addiw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADDIW,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    slliw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLLIW,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    srliw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SRLIW,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    sraiw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SRAIW,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
+    addiw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADDIW,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
     lwu    -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    BR_XXX, N, ST_XXX, LD_LWU, WB_MEM, Y,        N),
     ld     -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    BR_XXX, N, ST_XXX, LD_LD,  WB_MEM, Y,        N),
 
@@ -158,9 +158,7 @@ object Control {
   )
 }
 
-class ControlIO(implicit p: Parameters) extends Bundle{
-  val inst = Input(UInt(32.W))
-
+class CtrlSignal (implicit p: Parameters) extends Bundle {
   val pc_sel  = Output(UInt(2.W))
   val a_sel   = Output(UInt(1.W))
   val b_sel   = Output(UInt(1.W))
@@ -175,22 +173,27 @@ class ControlIO(implicit p: Parameters) extends Bundle{
   val illegal = Output(UInt(1.W))
 }
 
+class ControlIO(implicit p: Parameters) extends Bundle{
+  val inst = Input(UInt(32.W))
+  val signal = Output(new CtrlSignal)
+}
+
 class Control(implicit p: Parameters) extends Module{
   val io = IO(new ControlIO)
 
   val ctrl_signal = ListLookup(io.inst, Control.default, Control.map)
 
-  io.pc_sel  := ctrl_signal( 0)
-  io.a_sel   := ctrl_signal( 1)
-  io.b_sel   := ctrl_signal( 2)
-  io.imm_sel := ctrl_signal( 3)
-  io.alu_op  := ctrl_signal( 4)
-  io.br_type := ctrl_signal( 5)
-  io.kill    := ctrl_signal( 6)
-  io.st_type := ctrl_signal( 7)
-  io.ld_type := ctrl_signal( 8)
-  io.wb_type := ctrl_signal( 9)
-  io.wen     := ctrl_signal(10)
+  io.signal.pc_sel  := ctrl_signal( 0)
+  io.signal.a_sel   := ctrl_signal( 1)
+  io.signal.b_sel   := ctrl_signal( 2)
+  io.signal.imm_sel := ctrl_signal( 3)
+  io.signal.alu_op  := ctrl_signal( 4)
+  io.signal.br_type := ctrl_signal( 5)
+  io.signal.kill    := ctrl_signal( 6)
+  io.signal.st_type := ctrl_signal( 7)
+  io.signal.ld_type := ctrl_signal( 8)
+  io.signal.wb_type := ctrl_signal( 9)
+  io.signal.wen     := ctrl_signal(10)
   // todo: csr_cmd
-  io.illegal := ctrl_signal(11)
+  io.signal.illegal := ctrl_signal(11)
 }

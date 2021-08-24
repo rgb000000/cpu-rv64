@@ -347,7 +347,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   }
 
 
-  io.cpu.resp.bits.cmd := Mux(state === idle, 0.U, 1.U)
+  io.cpu.resp.bits.cmd := Mux(state === idle, 0.U, Mux(req_reg.op === 1.U, 1.U, 2.U))   // op=1, return 1   op=0, return 2
 
   when((state=== refill) & io.mem.resp.fire()){
     refill_cnt.inc()

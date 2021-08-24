@@ -24,8 +24,8 @@ class RegisterFile(implicit p: Parameters) extends Module{
 
   val registers = RegInit(VecInit(Seq.fill(32)(0.asUInt(p(XLen).W))))
 
-  io.rdata1 := Mux(io.raddr1.orR() === 0.U, 0.U, registers(io.raddr1))
-  io.rdata2 := Mux(io.raddr2.orR() === 0.U, 0.U, registers(io.raddr2))
+  io.rdata1 := Mux(io.raddr1.orR() === 0.U, 0.U, Mux(io.wen & io.waddr === io.raddr1, io.wdata, registers(io.raddr1)))
+  io.rdata2 := Mux(io.raddr2.orR() === 0.U, 0.U, Mux(io.wen & io.waddr === io.raddr2, io.wdata, registers(io.raddr2)))
 
   when(io.wen === 1.U & io.waddr.orR() =/= 0.U){
     registers(io.waddr) := io.wdata

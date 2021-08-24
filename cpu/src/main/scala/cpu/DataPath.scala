@@ -1,11 +1,51 @@
 package cpu
 
-import chisel3._
+import chisel3.{util, _}
 import chisel3.util._
 import chipsalliance.rocketchip.config._
 import chisel3.util.experimental.loadMemoryFromFileInline
-
 import difftest._
+
+class ByPass(implicit p: Parameters) extends Module {
+  val io = IO(new Bundle{
+    val ex = Input(new Bundle{
+      val isrs1 = Bool()
+      val rs1   = UInt(5.W)
+      val isrs2 = Bool()
+      val rs2   = UInt(5.W)
+      val valid = Bool()
+    })
+
+    val mem = Input(new Bundle{
+      val rd = UInt(5.W)
+      val valid = Bool()
+    })
+
+    val wb = Input(new Bundle{
+      val rd = UInt(5.W)
+      val valid = Bool()
+    })
+
+    val forwardA = Output(UInt(2.W))    // 00: from register    01: from mem(RegNext(ex alu))   11: from wb
+    val forwardB = Output(UInt(2.W))
+  })
+
+  when(io.ex.isrs1 & (io.ex.rs1 === io.mem.rd) & io.mem.valid){
+    io.forwardA := "b01".U
+  }.elsewhen(io.ex.isrs1 & (io.ex.rs1 === io.wb.rd) & io.wb.valid){
+    io.forwardA := "b11".U
+  }.otherwise{
+    io.forwardA := "b00".U
+  }
+
+  when(io.ex.isrs2 & (io.ex.rs2 === io.mem.rd) & io.mem.valid){
+    io.forwardB := "b01".U
+  }.elsewhen(io.ex.isrs2 & (io.ex.rs2 === io.wb.rd) & io.wb.valid){
+    io.forwardB := "b11".U
+  }.otherwise{
+    io.forwardB := "b00".U
+  }
+}
 
 class DataPath(implicit p: Parameters) extends Module {
   val io = IO(new Bundle{
@@ -26,61 +66,148 @@ class DataPath(implicit p: Parameters) extends Module {
 
   val regs = Module(new RegisterFile)
 
-  val ctrl = io.control
+  val ctrl = io.control.signal
 
-  val stall = RegNext(io.dcache.req.valid & !io.dcache.req.ready) | !io.dcache.req.ready | !io.icacahe.resp.valid | !io.dcache.resp.valid | (ifet.io.out.valid & (ctrl.ld_type.orR() | ctrl.st_type.orR()))
+  val bypass = Module(new ByPass)
 
-  // fetch
+  // cache not ready
+  val stall = !io.icacahe.resp.valid || !io.dcache.resp.valid || !io.dcache.req.ready
+
+  val mem2if_pc_sel = Wire(UInt(2.W))
+  val mem2if_pc_alu = Wire(UInt(p(XLen).W))
+  val mem_kill = Wire(UInt(1.W))
+
+  // fetch /////////////////////////////////////
+
   ifet.io.icache <> io.icacahe
-  ifet.io.pc_sel := io.control.pc_sel
-  ifet.io.pc_alu := ex.io.out
+  ifet.io.pc_sel := mem2if_pc_sel   // ex_ctrl.asTypeOf(new CtrlSignal).pc_sel
+  ifet.io.pc_alu := mem2if_pc_alu   // ex_alu_out
   ifet.io.pc_epc := BitPat.bitPatToUInt(ISA.nop)
   ifet.io.stall := stall
-  ifet.io.br_taken := br.io.taken
+  val br_taken_from_mem = Wire(Bool())
+  ifet.io.br_taken := br_taken_from_mem
+  ifet.io.kill := mem_kill
 
-  // decode
-  // control signal
-  ctrl.inst := ifet.io.out.bits.inst
+  val if_pc    = RegEnable(ifet.io.out.bits.pc, !stall)
+  val if_inst  = RegEnable(ifet.io.out.bits.inst, !stall)
+  val if_valid = RegEnable(Mux(mem_kill === 1.U, 0.U, ifet.io.out.valid), 0.U, !stall)
 
-  id.io.inst := ifet.io.out.bits.inst
+  // decode /////////////////////////////////////
+  io.control.inst := if_inst // control signal
+
+  id.io.inst := if_inst
   id.io.imm_sel := ctrl.imm_sel
+
   regs.io.raddr1 := id.io.rs1_addr
   regs.io.raddr2 := id.io.rs2_addr
-  val rd_addr = id.io.rd_addr
 
-  br.io.rs1 := regs.io.rdata1
-  br.io.rs2 := regs.io.rdata2
-  br.io.br_type := ctrl.br_type
+//  br.io.rs1 := regs.io.rdata1
+//  br.io.rs2 := regs.io.rdata2
+//  br.io.br_type := ctrl.br_type
 
-  // ex
-  val A = Mux(ctrl.a_sel === A_PC, ifet.io.out.bits.pc, regs.io.rdata1)
-  val B = Mux(ctrl.b_sel === B_IMM, id.io.imm, regs.io.rdata2)
+  val id_rs1   = RegEnable(id.io.rs1_addr, !stall)
+  val id_rs2   = RegEnable(id.io.rs2_addr, !stall)
+  val id_rdata1= RegEnable(regs.io.rdata1, !stall)
+  val id_rdata2= RegEnable(regs.io.rdata2, !stall)
+  val id_A     = RegEnable(Mux(ctrl.a_sel === A_PC, if_pc, regs.io.rdata1), !stall)
+  val id_B     = RegEnable(Mux(ctrl.b_sel === B_IMM, id.io.imm, regs.io.rdata2), !stall)
+  val id_rd    = RegEnable(id.io.rd_addr, !stall)
+  val id_ctrl  = RegEnable(ctrl.asUInt(), !stall)
+  val id_inst  = RegEnable(if_inst, !stall)
+  val id_pc    = RegEnable(if_pc, !stall)
+  val id_valid = RegEnable(Mux(mem_kill === 1.U, 0.U, if_valid), 0.U, !stall)
 
-  ex.io.alu_op := ctrl.alu_op
-  ex.io.rs1 := A
-  ex.io.rs2 := B
+  // ex /////////////////////////////////////
+  bypass.io.ex.isrs1 := id_ctrl.asTypeOf(new CtrlSignal).a_sel === A_RS1
+  bypass.io.ex.isrs2 := id_ctrl.asTypeOf(new CtrlSignal).b_sel === B_RS2
+  bypass.io.ex.rs1   := id_rs1
+  bypass.io.ex.rs2   := id_rs2
+  bypass.io.ex.valid := id_valid
 
-  // mem
-  mem.io.dcache <> io.dcache
-  mem.io.ld_type := ctrl.ld_type
-  mem.io.st_type := ctrl.st_type
-  mem.io.s_data := regs.io.rdata2
-  mem.io.alu_res := ex.io.out
-  mem.io.stall := stall
-  mem.io.inst_valid := ifet.io.out.valid
-  val l_data = mem.io.l_data
+  ex.io.alu_op := id_ctrl.asTypeOf(new CtrlSignal).alu_op
 
-  //wb
-  regs.io.waddr := rd_addr
-  regs.io.wdata := MuxLookup(ctrl.wb_type, 0.U, Array(
-    WB_ALU -> ex.io.out,
-    WB_MEM -> l_data.bits,
-    WB_PC4 -> (ifet.io.out.bits.pc + 4.U)
+  val bypass_ex_alu_out = Wire(UInt(p(XLen).W))
+  val bypass_mem_l_data = Wire(UInt(p(XLen).W))
+  ex.io.rs1 := MuxLookup(bypass.io.forwardA, id_A, Seq(
+    "b00".U -> id_A,
+    "b01".U -> bypass_ex_alu_out,
+    "b11".U -> bypass_mem_l_data
   ))
-  regs.io.wen := (ctrl.wen & !stall & ifet.io.out.valid) | mem.io.l_data.valid
+  ex.io.rs2 := MuxLookup(bypass.io.forwardB, id_B, Seq(
+    "b00".U -> id_B,
+    "b01".U -> bypass_ex_alu_out,
+    "b11".U -> bypass_mem_l_data
+  ))
+
+  br.io.rs1 := MuxLookup(bypass.io.forwardA, id_rdata1, Seq(
+    "b00".U -> id_rdata1,
+    "b01".U -> bypass_ex_alu_out,
+    "b11".U -> bypass_mem_l_data
+  ))
+  br.io.rs2 := MuxLookup(bypass.io.forwardB, id_rdata2, Seq(
+    "b00".U -> id_rdata2,
+    "b01".U -> bypass_ex_alu_out,
+    "b11".U -> bypass_mem_l_data
+  ))
+  br.io.br_type := id_ctrl.asTypeOf(new CtrlSignal).br_type
+
+  val ex_rs1     = RegEnable(id_rs1, !stall)
+  val ex_rs2     = RegEnable(id_rs2, !stall)
+  val ex_taken   = RegEnable(br.io.taken, !stall)
+  val ex_alu_out = RegEnable(ex.io.out, !stall)
+  val ex_rdata2  = RegEnable(id_rdata2, !stall)
+  val ex_rd      = RegEnable(id_rd, !stall)
+  val ex_ctrl    = RegEnable(id_ctrl, !stall)
+  val ex_inst    = RegEnable(id_inst, !stall)
+  val ex_pc      = RegEnable(id_pc, !stall)
+  val ex_valid   = RegEnable(Mux(mem_kill === 1.U, 0.U, id_valid), 0.U, !stall)
+
+  bypass_ex_alu_out := ex_alu_out
+
+  // mem /////////////////////////////////////
+
+  bypass.io.mem.rd := ex_rd
+  bypass.io.mem.valid := ex_valid & ex_ctrl.asTypeOf(new CtrlSignal).wen
+
+  mem.io.dcache <> io.dcache
+  // d$ req is sended by ex stage!
+  mem.io.ld_type    := id_ctrl.asTypeOf(new CtrlSignal).ld_type
+  mem.io.st_type    := id_ctrl.asTypeOf(new CtrlSignal).st_type
+  mem.io.s_data     := id_rdata2
+  mem.io.alu_res    := ex.io.out
+  mem.io.inst_valid := Mux(mem_kill === 1.U, 0.U, id_valid)
+  mem.io.stall      := stall
+
+  val mem_alu_out    = RegEnable(ex_alu_out, !stall)
+  val mem_l_data     = RegEnable(mem.io.l_data, !stall)
+  val mem_s_complete = RegEnable(mem.io.s_complete, !stall)
+  val mem_rd         = RegEnable(ex_rd, !stall)
+  val mem_ctrl       = RegEnable(ex_ctrl, !stall)
+  val mem_inst       = RegEnable(ex_inst, !stall)
+  val mem_pc         = RegEnable(ex_pc, !stall)
+  val mem_valid      = RegEnable(ex_valid, 0.U, !stall)
+
+
+  br_taken_from_mem := ex_taken
+  mem_kill := (ex_ctrl.asTypeOf(new CtrlSignal).kill | ex_taken) & ex_valid
+  mem2if_pc_sel := Mux(ex_valid === 1.U, ex_ctrl.asTypeOf(new CtrlSignal).pc_sel, 0.U)
+  mem2if_pc_alu := ex_alu_out
+
+  // wb /////////////////////////////////////
+  bypass.io.wb.rd := mem_rd
+  bypass.io.wb.valid := mem_valid & mem_ctrl.asTypeOf(new CtrlSignal).wen
+  bypass_mem_l_data := regs.io.wdata
+
+  regs.io.waddr := mem_rd
+  regs.io.wdata := MuxLookup(mem_ctrl.asTypeOf(new CtrlSignal).wb_type, 0.U, Array(
+    WB_ALU -> mem_alu_out,
+    WB_MEM -> mem_l_data.bits,
+    WB_PC4 -> (mem_pc + 4.U)
+  ))
+  regs.io.wen := (mem_ctrl.asTypeOf(new CtrlSignal).wen & !stall & mem_valid) // | mem_l_data.valid
 
   val commit_valid  = Wire(Bool())
-  commit_valid := (ifet.io.out.valid & !stall) | mem.io.l_data.valid | mem.io.s_complete
+  commit_valid := (mem_valid & !stall) // | mem_l_data.valid | mem_s_complete
   dontTouch(commit_valid)
 
   dontTouch(regs.io.wdata)
@@ -101,8 +228,8 @@ class DataPath(implicit p: Parameters) extends Module {
     dic.io.index := 0.U
 //    dic.io.valid := RegNext(ifet.io.out.valid)
     dic.io.valid := RegNext(commit_valid)
-    dic.io.pc := RegNext(ifet.io.out.bits.pc)
-    dic.io.instr := RegNext(ifet.io.out.bits.inst)
+    dic.io.pc := RegNext(mem_pc)
+    dic.io.instr := RegNext(mem_inst)
     dic.io.skip := false.B
     dic.io.isRVC := false.B
     dic.io.scFailed := false.B
@@ -113,9 +240,9 @@ class DataPath(implicit p: Parameters) extends Module {
     val dte = Module(new DifftestTrapEvent)
     dte.io.clock := clock
     dte.io.coreid := 0.U
-    dte.io.valid := RegNext(ifet.io.out.bits.inst === "h0000006b".U)
+    dte.io.valid := RegNext((mem_inst === "h0000006b".U) & (mem_valid === 1.U))
     dte.io.code := regs.io.trap_code.getOrElse(1.U)
-    dte.io.pc := RegNext(ifet.io.out.bits.pc)
+    dte.io.pc := RegNext(mem_pc)
     dte.io.cycleCnt := cycleCnt.value
     dte.io.instrCnt := instCnt.value
 

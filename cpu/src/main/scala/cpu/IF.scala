@@ -19,6 +19,7 @@ class IF (implicit p: Parameters) extends Module {
     val br_taken = Input(Bool())
 
     val stall = Input(Bool())
+    val kill = Input(Bool())
 
     val icache = Flipped(new CacheCPUIO)
   })
@@ -48,9 +49,18 @@ class IF (implicit p: Parameters) extends Module {
   inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data, inst)
   dontTouch(inst)
 
-  io.out.bits.inst := Mux(io.out.valid, io.icache.resp.bits.data, inst)
+  val stall_negedge = (!io.stall) & RegNext(io.stall)
+  val is_valid_when_stall = RegInit(0.U)
+  when(io.stall & io.out.valid){
+    is_valid_when_stall := 1.U
+  }.elsewhen(stall_negedge){
+    is_valid_when_stall := 0.U
+  }
+
+
+  io.out.bits.inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data, inst)
   io.out.bits.pc := cur_pc
-  io.out.valid := io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U)
+  io.out.valid := Mux(io.kill, 0.U, io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U)) | (is_valid_when_stall & stall_negedge)
 
   dontTouch(io.icache)
 }
