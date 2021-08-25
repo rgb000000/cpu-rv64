@@ -122,9 +122,9 @@ object Control {
     auipc  -> List(PC_4,   A_PC,   B_IMM, IMM_U,   ALU_ADD,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y,        N),
 
     // S type
-    sb     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SB,  LD_XXX, WB_MEM, Y,        N),
-    sh     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SH,  LD_XXX, WB_MEM, Y,        N),
-    sw     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SW,  LD_XXX, WB_MEM, Y,        N),
+    sb     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SB,  LD_XXX, WB_MEM, N,        N),
+    sh     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SH,  LD_XXX, WB_MEM, N,        N),
+    sw     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SW,  LD_XXX, WB_MEM, N,        N),
 
     // B type
     beq    -> List(PC_4,   A_PC,   B_IMM, IMM_B,   ALU_ADD,    BR_EQ,  N, ST_XXX, LD_XXX, WB_ALU, N,        N),

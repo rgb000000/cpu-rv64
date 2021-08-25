@@ -47,6 +47,28 @@ class ByPass(implicit p: Parameters) extends Module {
   }
 }
 
+class LoadRisk (implicit p: Parameters) extends Module{
+  val io = IO(new Bundle{
+    val id = Input(new Bundle{
+      val valid = Bool()
+      val rs1   = UInt(5.W)
+      val rs2   = UInt(5.W)
+    })
+    val ex = Input(new Bundle{
+      val valid  = Bool()
+      val isLoad = Bool()
+      val rd     = UInt(5.W)
+    })
+    val stall = Output(Bool())
+  })
+
+  when(io.id.valid & io.ex.valid & io.ex.isLoad & ((io.id.rs1 === io.ex.rd) | (io.id.rs2 === io.ex.rd))) {
+    io.stall := true.B
+  }.otherwise{
+    io.stall := false.B
+  }
+}
+
 class DataPath(implicit p: Parameters) extends Module {
   val io = IO(new Bundle{
     val icacahe = Flipped(new CacheCPUIO)
@@ -69,6 +91,7 @@ class DataPath(implicit p: Parameters) extends Module {
   val ctrl = io.control.signal
 
   val bypass = Module(new ByPass)
+  val loadrisk = Module(new LoadRisk)
 
   // cache not ready
   val stall = !io.icacahe.resp.valid || !io.dcache.resp.valid || !io.dcache.req.ready
@@ -83,14 +106,14 @@ class DataPath(implicit p: Parameters) extends Module {
   ifet.io.pc_sel := mem2if_pc_sel   // ex_ctrl.asTypeOf(new CtrlSignal).pc_sel
   ifet.io.pc_alu := mem2if_pc_alu   // ex_alu_out
   ifet.io.pc_epc := BitPat.bitPatToUInt(ISA.nop)
-  ifet.io.stall := stall
+  ifet.io.stall := stall | loadrisk.io.stall
   val br_taken_from_mem = Wire(Bool())
   ifet.io.br_taken := br_taken_from_mem
   ifet.io.kill := mem_kill
 
-  val if_pc    = RegEnable(ifet.io.out.bits.pc, !stall)
-  val if_inst  = RegEnable(ifet.io.out.bits.inst, !stall)
-  val if_valid = RegEnable(Mux(mem_kill === 1.U, 0.U, ifet.io.out.valid), 0.U, !stall)
+  val if_pc    = RegEnable(ifet.io.out.bits.pc, !stall & !loadrisk.io.stall)
+  val if_inst  = RegEnable(ifet.io.out.bits.inst, !stall & !loadrisk.io.stall)
+  val if_valid = RegEnable(Mux(mem_kill === 1.U, 0.U, ifet.io.out.valid), 0.U, !stall & !loadrisk.io.stall)
 
   // decode /////////////////////////////////////
   io.control.inst := if_inst // control signal
@@ -101,9 +124,9 @@ class DataPath(implicit p: Parameters) extends Module {
   regs.io.raddr1 := id.io.rs1_addr
   regs.io.raddr2 := id.io.rs2_addr
 
-//  br.io.rs1 := regs.io.rdata1
-//  br.io.rs2 := regs.io.rdata2
-//  br.io.br_type := ctrl.br_type
+  loadrisk.io.id.valid := if_valid & !mem_kill
+  loadrisk.io.id.rs1 := id.io.rs1_addr
+  loadrisk.io.id.rs2 := id.io.rs2_addr
 
   val id_rs1   = RegEnable(id.io.rs1_addr, !stall)
   val id_rs2   = RegEnable(id.io.rs2_addr, !stall)
@@ -115,29 +138,33 @@ class DataPath(implicit p: Parameters) extends Module {
   val id_ctrl  = RegEnable(ctrl.asUInt(), !stall)
   val id_inst  = RegEnable(if_inst, !stall)
   val id_pc    = RegEnable(if_pc, !stall)
-  val id_valid = RegEnable(Mux(mem_kill === 1.U, 0.U, if_valid), 0.U, !stall)
+  val id_valid = RegEnable(Mux((mem_kill === 1.U) | loadrisk.io.stall, 0.U, if_valid), 0.U, !stall)
 
   // ex /////////////////////////////////////
-  bypass.io.ex.isrs1 := id_ctrl.asTypeOf(new CtrlSignal).a_sel === A_RS1
-  bypass.io.ex.isrs2 := id_ctrl.asTypeOf(new CtrlSignal).b_sel === B_RS2
+  bypass.io.ex.isrs1 := true.B // id_ctrl.asTypeOf(new CtrlSignal).a_sel === A_RS1
+  bypass.io.ex.isrs2 := true.B // id_ctrl.asTypeOf(new CtrlSignal).b_sel === B_RS2
   bypass.io.ex.rs1   := id_rs1
   bypass.io.ex.rs2   := id_rs2
   bypass.io.ex.valid := id_valid
+
+  loadrisk.io.ex.valid := id_valid & !mem_kill
+  loadrisk.io.ex.rd := id_rd
+  loadrisk.io.ex.isLoad := id_ctrl.asTypeOf(new CtrlSignal).ld_type.orR()
 
   ex.io.alu_op := id_ctrl.asTypeOf(new CtrlSignal).alu_op
 
   val bypass_ex_alu_out = Wire(UInt(p(XLen).W))
   val bypass_mem_l_data = Wire(UInt(p(XLen).W))
-  ex.io.rs1 := MuxLookup(bypass.io.forwardA, id_A, Seq(
+  ex.io.rs1 := Mux(id_ctrl.asTypeOf(new CtrlSignal).a_sel =/= A_RS1, id_A, MuxLookup(bypass.io.forwardA, id_A, Seq(
     "b00".U -> id_A,
     "b01".U -> bypass_ex_alu_out,
     "b11".U -> bypass_mem_l_data
-  ))
-  ex.io.rs2 := MuxLookup(bypass.io.forwardB, id_B, Seq(
+  )))
+  ex.io.rs2 := Mux(id_ctrl.asTypeOf(new CtrlSignal).b_sel =/= B_RS2, id_B, MuxLookup(bypass.io.forwardB, id_B, Seq(
     "b00".U -> id_B,
     "b01".U -> bypass_ex_alu_out,
     "b11".U -> bypass_mem_l_data
-  ))
+  )))
 
   br.io.rs1 := MuxLookup(bypass.io.forwardA, id_rdata1, Seq(
     "b00".U -> id_rdata1,
@@ -149,7 +176,7 @@ class DataPath(implicit p: Parameters) extends Module {
     "b01".U -> bypass_ex_alu_out,
     "b11".U -> bypass_mem_l_data
   ))
-  br.io.br_type := id_ctrl.asTypeOf(new CtrlSignal).br_type
+  br.io.br_type := Mux(id_valid === 1.U, id_ctrl.asTypeOf(new CtrlSignal).br_type, 0.U)
 
   val ex_rs1     = RegEnable(id_rs1, !stall)
   val ex_rs2     = RegEnable(id_rs2, !stall)
@@ -173,7 +200,7 @@ class DataPath(implicit p: Parameters) extends Module {
   // d$ req is sended by ex stage!
   mem.io.ld_type    := id_ctrl.asTypeOf(new CtrlSignal).ld_type
   mem.io.st_type    := id_ctrl.asTypeOf(new CtrlSignal).st_type
-  mem.io.s_data     := id_rdata2
+  mem.io.s_data     := br.io.rs2
   mem.io.alu_res    := ex.io.out
   mem.io.inst_valid := Mux(mem_kill === 1.U, 0.U, id_valid)
   mem.io.stall      := stall
@@ -188,7 +215,7 @@ class DataPath(implicit p: Parameters) extends Module {
   val mem_valid      = RegEnable(ex_valid, 0.U, !stall)
 
 
-  br_taken_from_mem := ex_taken
+  br_taken_from_mem := ex_taken & ex_valid
   mem_kill := (ex_ctrl.asTypeOf(new CtrlSignal).kill | ex_taken) & ex_valid
   mem2if_pc_sel := Mux(ex_valid === 1.U, ex_ctrl.asTypeOf(new CtrlSignal).pc_sel, 0.U)
   mem2if_pc_alu := ex_alu_out
@@ -215,7 +242,7 @@ class DataPath(implicit p: Parameters) extends Module {
   val cycleCnt = Counter(65536)
   cycleCnt.inc()
   val instCnt = Counter(65536)
-  when(ifet.io.out.valid){
+  when(commit_valid){
     instCnt.inc()
   }
 

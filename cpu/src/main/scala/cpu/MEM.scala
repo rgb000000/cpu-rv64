@@ -71,8 +71,12 @@ class MEM (implicit p: Parameters) extends Module {
   }
 
   // get reps
-  val l_data = RegNext(io.l_data.bits)
-  val l_data_valid = RegNext(io.l_data.valid)
+
+  val stall_data_valid = io.dcache.resp.fire() & (io.dcache.resp.bits.cmd === 2.U) & io.stall
+  val stall_data_valid_posedge = stall_data_valid & !RegNext(stall_data_valid)
+
+  val l_data = RegEnable(io.l_data.bits, stall_data_valid_posedge)
+  val l_data_valid = RegEnable(io.l_data.valid, stall_data_valid_posedge)
 
   val stall_negedge = !io.stall & RegNext(io.stall)
   when(stall_negedge){
