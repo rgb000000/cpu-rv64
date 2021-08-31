@@ -96,6 +96,11 @@ trait RVSystem {
   def wfi    = BitPat("b000100000101_00000_000_00000_1110011") // wait for interrupt
 }
 
+trait Custom {
+  def trap   = BitPat("b000000000000_00000_000_00000_1101010") // 6a  trap
+  def putch  = BitPat("b000000000000_00000_000_00000_1101011") // 6a  putch
+}
+
 object ISA extends RV64I with RVSystem {
 
 }

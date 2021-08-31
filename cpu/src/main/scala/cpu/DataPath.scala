@@ -214,7 +214,11 @@ class DataPath(implicit p: Parameters) extends Module {
   mem.io.inst_valid := Mux(mem_kill === 1.U, 0.U, id_valid)
   mem.io.stall      := stall
 
-  csr.io.stall := stall
+  if (p(Difftest)) {
+    csr.io.stall := stall | (ex_inst === "h0000006c".U)
+  } else {
+    csr.io.stall := stall
+  }
   csr.io.cmd := ex_ctrl.asTypeOf(new CtrlSignal).csr_cmd
   csr.io.in  := ex_alu_out
   csr.io.ctrl_signal.pc := ex_pc
@@ -283,7 +287,7 @@ class DataPath(implicit p: Parameters) extends Module {
     dic.io.valid := RegNext(commit_valid)
     dic.io.pc := RegNext(mem_pc)
     dic.io.instr := RegNext(mem_inst)
-    dic.io.skip := false.B
+    dic.io.skip := RegNext(mem_inst === "h0000006c".U)
     dic.io.isRVC := false.B
     dic.io.scFailed := false.B
     dic.io.wen := RegNext(regs.io.wen)
@@ -298,5 +302,10 @@ class DataPath(implicit p: Parameters) extends Module {
     dte.io.pc := RegNext(mem_pc)
     dte.io.cycleCnt := cycleCnt.value
     dte.io.instrCnt := instCnt.value
+
+    when (RegNext((mem_inst === "h0000006c".U) & (mem_valid === 1.U))) {
+      printf("%c", regs.io.trap_code.getOrElse(1.U))
+    }
+
   }
 }
