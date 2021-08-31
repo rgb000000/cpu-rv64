@@ -113,12 +113,12 @@ object Control {
     wfi    -> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
 
     // TODO: CSR aspects need to be improved
-    csrrw  -> List(PC_0,   A_XXX,  B_XXX, IMM_X,   ALU_COPY_A, BR_XXX, Y, ST_XXX, LD_XXX, WB_CSR, Y, CSR.W, N),
-    csrrs  -> List(PC_0,   A_XXX,  B_XXX, IMM_X,   ALU_COPY_A, BR_XXX, Y, ST_XXX, LD_XXX, WB_CSR, Y, CSR.S, N),
-    csrrc  -> List(PC_0,   A_XXX,  B_XXX, IMM_X,   ALU_COPY_A, BR_XXX, Y, ST_XXX, LD_XXX, WB_CSR, Y, CSR.C, N),
-    csrrwi -> List(PC_0,   A_XXX,  B_XXX, IMM_Z,   ALU_XXX,    BR_XXX, Y, ST_XXX, LD_XXX, WB_CSR, Y, CSR.W, N),
-    csrrsi -> List(PC_0,   A_XXX,  B_XXX, IMM_Z,   ALU_XXX,    BR_XXX, Y, ST_XXX, LD_XXX, WB_CSR, Y, CSR.S, N),
-    csrrci -> List(PC_0,   A_XXX,  B_XXX, IMM_Z,   ALU_XXX,    BR_XXX, Y, ST_XXX, LD_XXX, WB_CSR, Y, CSR.C, N),
+    csrrw  -> List(PC_0,   A_RS1,  B_XXX, IMM_X,   ALU_COPY_A, BR_XXX, Y, ST_XXX, LD_XXX, WB_CSR, Y, CSR.W, N),
+    csrrs  -> List(PC_0,   A_RS1,  B_XXX, IMM_X,   ALU_COPY_A, BR_XXX, Y, ST_XXX, LD_XXX, WB_CSR, Y, CSR.S, N),
+    csrrc  -> List(PC_0,   A_RS1,  B_XXX, IMM_X,   ALU_COPY_A, BR_XXX, Y, ST_XXX, LD_XXX, WB_CSR, Y, CSR.C, N),
+    csrrwi -> List(PC_0,   A_XXX,  B_IMM, IMM_Z,   ALU_COPY_B, BR_XXX, Y, ST_XXX, LD_XXX, WB_CSR, Y, CSR.W, N),
+    csrrsi -> List(PC_0,   A_XXX,  B_IMM, IMM_Z,   ALU_COPY_B, BR_XXX, Y, ST_XXX, LD_XXX, WB_CSR, Y, CSR.S, N),
+    csrrci -> List(PC_0,   A_XXX,  B_IMM, IMM_Z,   ALU_COPY_B, BR_XXX, Y, ST_XXX, LD_XXX, WB_CSR, Y, CSR.C, N),
 
     // U type
     lui    -> List(PC_4,   A_RS1,  B_IMM, IMM_U,   ALU_COPY_B, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N),

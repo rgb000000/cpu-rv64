@@ -7,11 +7,14 @@ case object XLen extends Field[Int]
 
 case object PCStart extends Field[String]
 
+case object PCEVec extends Field[String]
+
 case object Difftest extends Field[Boolean]
 
 class DefaultConfig extends Config ((site, here, up)=>{
   case XLen           => 64
   case PCStart        => "h8000_0000"
+  case PCEVec         => "h9000_0000"
   case L2$Size        => -1
   case I$Size         => here(CacheLineSize) * here(NWay) * 256
   case D$Size         => here(CacheLineSize) * here(NWay) * 256
