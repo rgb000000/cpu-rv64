@@ -30,7 +30,7 @@ class ByPass(implicit p: Parameters) extends Module {
     val forwardB = Output(UInt(2.W))
   })
 
-  when(io.ex.isrs1 & (io.ex.rs1 === io.mem.rd) & io.mem.valid){
+  when(io.ex.isrs1 & ((io.ex.rs1 === io.mem.rd) & io.ex.rs1 =/= 0.U) & io.mem.valid){
     io.forwardA := "b01".U
   }.elsewhen(io.ex.isrs1 & (io.ex.rs1 === io.wb.rd) & io.wb.valid){
     io.forwardA := "b11".U
@@ -38,7 +38,7 @@ class ByPass(implicit p: Parameters) extends Module {
     io.forwardA := "b00".U
   }
 
-  when(io.ex.isrs2 & (io.ex.rs2 === io.mem.rd) & io.mem.valid){
+  when(io.ex.isrs2 & ((io.ex.rs2 === io.mem.rd) & io.ex.rs2 =/= 0.U) & io.mem.valid){
     io.forwardB := "b01".U
   }.elsewhen(io.ex.isrs2 & (io.ex.rs2 === io.wb.rd) & io.wb.valid){
     io.forwardB := "b11".U
@@ -95,6 +95,7 @@ class DataPath(implicit p: Parameters) extends Module {
   val loadrisk = Module(new LoadRisk)
 
   val csr = Module(new CSR)
+  val csr_except = Wire(Bool())
   csr.io.interrupt.time     := false.B
   csr.io.interrupt.soft     := false.B
   csr.io.interrupt.external := false.B
@@ -116,6 +117,8 @@ class DataPath(implicit p: Parameters) extends Module {
   val br_taken_from_mem = Wire(Bool())
   ifet.io.br_taken := br_taken_from_mem
   ifet.io.kill := mem_kill
+  ifet.io.pc_except_entry.valid := csr_except
+  ifet.io.pc_except_entry.bits := csr.io.exvec
 
   val if_pc    = RegEnable(ifet.io.out.bits.pc, !stall & !loadrisk.io.stall)
   val if_inst  = RegEnable(ifet.io.out.bits.inst, !stall & !loadrisk.io.stall)
@@ -243,9 +246,16 @@ class DataPath(implicit p: Parameters) extends Module {
 
 
   br_taken_from_mem := ex_taken & ex_valid
-  mem_kill := (ex_ctrl.asTypeOf(new CtrlSignal).kill | ex_taken) & ex_valid
+  if (p(Difftest)) {
+    csr_except := csr.io.expt & ex_valid & (ex_inst =/= "h0000006c".U)
+  } else {
+    csr_except := csr.io.expt & ex_valid
+  }
+  mem_kill := (ex_ctrl.asTypeOf(new CtrlSignal).kill | ex_taken | csr_except) & ex_valid
   mem2if_pc_sel := Mux(ex_valid === 1.U, ex_ctrl.asTypeOf(new CtrlSignal).pc_sel, 0.U)
   mem2if_pc_alu := ex_alu_out
+  dontTouch(mem2if_pc_sel)
+  dontTouch(mem2if_pc_alu)
 
   // wb /////////////////////////////////////
   bypass.io.wb.rd := mem_rd

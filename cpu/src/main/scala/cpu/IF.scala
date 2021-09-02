@@ -18,6 +18,8 @@ class IF (implicit p: Parameters) extends Module {
     val pc_sel = Input(UInt(2.W))
     val br_taken = Input(Bool())
 
+    val pc_except_entry = Flipped(Valid(UInt(p(XLen).W)))
+
     val stall = Input(Bool())
     val kill = Input(Bool())
 
@@ -27,12 +29,21 @@ class IF (implicit p: Parameters) extends Module {
   val cur_pc = RegInit(p(PCStart).asUInt(p(XLen).W) - 4.U)
   val inst = RegInit(BitPat.bitPatToUInt(ISA.nop))
 
-  val pc_next = Mux(io.stall, cur_pc, Mux(io.pc_sel === Control.PC_ALU, io.pc_alu, MuxLookup(io.pc_sel, 0.U, Array(
-    Control.PC_0   -> (cur_pc),
-    Control.PC_4   -> Mux(io.br_taken, io.pc_alu, cur_pc + 4.U),
-    Control.PC_ALU -> (io.pc_alu),
-    Control.PC_EPC -> (io.pc_epc)
-  ))))
+//  val pc_next = Mux(io.stall, cur_pc, Mux(io.pc_sel === Control.PC_ALU, io.pc_alu, MuxLookup(io.pc_sel, 0.U, Array(
+//    Control.PC_0   -> (cur_pc),
+//    Control.PC_4   -> Mux(io.br_taken, io.pc_alu, cur_pc + 4.U),
+//    Control.PC_ALU -> (io.pc_alu),
+//    Control.PC_EPC -> (io.pc_epc)
+//  ))))
+
+  val pc_next = Mux(io.stall, cur_pc,
+                  Mux(io.br_taken, io.pc_alu,
+                    Mux(io.pc_except_entry.valid, io.pc_except_entry.bits, MuxLookup(io.pc_sel, 0.U, Array(
+                      Control.PC_0   -> (cur_pc),
+                      Control.PC_4   -> (cur_pc + 4.U),
+                      Control.PC_ALU -> (io.pc_alu),
+                      Control.PC_EPC -> (io.pc_epc)
+                    )))))
 
   // always read instructions from icache
   io.icache.req.valid := !io.stall
