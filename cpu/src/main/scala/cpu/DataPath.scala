@@ -279,9 +279,9 @@ class DataPath(implicit p: Parameters) extends Module {
 
   dontTouch(regs.io.wdata)
 
-  val cycleCnt = Counter(65536)
+  val cycleCnt = Counter(Int.MaxValue)
   cycleCnt.inc()
-  val instCnt = Counter(65536)
+  val instCnt = Counter(Int.MaxValue)
   when(commit_valid){
     instCnt.inc()
   }
