@@ -21,12 +21,19 @@ class InnerCrossBarN21(val n: Int)(implicit p: Parameters) extends Module{
   val state = RegInit(s_idle)
   val thisReq = arbiter.io.out
 
+  val cur_idx = Reg(UInt(log2Ceil(n).W))
+
   switch (state) {
     is (s_idle) {
       when (thisReq.fire()) {
+        cur_idx := arbiter.io.chosen
         when (thisReq.bits.cmd === MemCmdConst.ReadBurst) {
           state := s_readResp
-        }.elsewhen(thisReq.bits.cmd === MemCmdConst.WriteBurst){
+        }.elsewhen(thisReq.bits.cmd === MemCmdConst.WriteBurst) {
+          state := s_writeResp
+        }.elsewhen(thisReq.bits.cmd === MemCmdConst.Read) {
+          state := s_readResp
+        }.elsewhen(thisReq.bits.cmd === MemCmdConst.Write) {
           state := s_writeResp
         }
       }
@@ -39,13 +46,14 @@ class InnerCrossBarN21(val n: Int)(implicit p: Parameters) extends Module{
   (arbiter.io.in, io.in.map(_.req)).zipped.foreach((arb, in) => {
     arb <> in
   })
-  (arbiter.io.in, io.in.map(_.req)).zipped.foreach((arb, in) => {
-    in.ready := arb.ready & (state === s_idle)
+  (arbiter.io.in, io.in.map(_.req), 0 until n).zipped.foreach((arb, in, idx) => {
+    // to guarantee op atomic, a req can be accepted only state === s_idle
+    in.ready := arb.ready & ((state === s_idle) | ((state === s_writeResp) & (cur_idx === idx.U)))
   })
 
 
   io.out.req <> arbiter.io.out
-  io.out.resp.ready := 1.U
+  io.out.resp.ready := io.in(cur_idx).resp.ready
 
   // resp
   io.in.map(_.resp).zipWithIndex.foreach( info => {
