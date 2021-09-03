@@ -11,6 +11,9 @@ case object PCEVec extends Field[String]
 
 case object Difftest extends Field[Boolean]
 
+//                                          start   range   isCache? type(MEMBus:0, AXI:1)
+case object AddressSpace extends Field[Seq[(BigInt, BigInt, Boolean, Int)]]
+
 class DefaultConfig extends Config ((site, here, up)=>{
   case XLen           => 64
   case PCStart        => "h8000_0000"
@@ -25,4 +28,13 @@ class DefaultConfig extends Config ((site, here, up)=>{
 
   case Difftest       => true
 //  case Difftest       => false
+
+  case AddressSpace   => Seq(
+    //  start        range    isCache?
+    (BigInt(0x02000000), BigInt(0x0000ffff), false,   0), // CLINT
+    (BigInt(0x10000000), BigInt(0x00000fff), false,   1), // UART16550
+    (BigInt(0x10001000), BigInt(0x00000fff), false,   1), // SPI Controller
+    (BigInt(0x30000000), BigInt(0x0fffffff), false,   1), // SPI Flash XIP mode
+    (BigInt(0x80000000), BigInt(0x7fffffff), true ,   1), // MEM
+  )
 })

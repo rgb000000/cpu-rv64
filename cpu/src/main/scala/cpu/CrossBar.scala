@@ -5,9 +5,9 @@ import chisel3.util._
 import chipsalliance.rocketchip.config._
 
 
-class InnerCrossBar(val n: Int)(implicit p: Parameters) extends Module{
+class InnerCrossBarN21(val n: Int)(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
-    val in = Flipped(Vec(n, new CacheMemIO))
+    val in = Vec(n, Flipped(new CacheMemIO))
 
     val out = new CacheMemIO
   })
@@ -54,4 +54,85 @@ class InnerCrossBar(val n: Int)(implicit p: Parameters) extends Module{
     resp.valid := io.out.resp.valid & (io.out.resp.bits.id === i.U)
   })
 
+}
+
+
+class InnerCrossBar12N(val n: Int=2)(implicit p: Parameters) extends Module {
+  val addressSpace = p(AddressSpace).groupBy(_._4) // groupby port type
+
+  val io = IO(new Bundle{
+    val in = Flipped(new CacheMemIO)
+
+    val out = Vec(n, new CacheMemIO)
+  })
+
+  val s_idle :: s_resp :: s_bad :: Nil = Enum(3)
+  val state = RegInit(s_idle)
+
+  val addr_in = io.in.req.bits.addr
+
+//  val outSelVec = VecInit(addressSpace.map(space => {
+//    (addr_in >= space._1.U) & (addr_in < (space._1 + space._2).U)
+//  }))
+
+  val outSelVec = VecInit(Seq.fill(n)(false.B))
+  for(i <- 0 until n) {
+    outSelVec(i) := addressSpace(0).map(space => {
+      (addr_in >= space._1.U) & (addr_in < (space._1 + space._2).U)
+    }).reduce(_ | _)
+  }
+
+  val reqInvalidAddr = io.in.req.valid & !outSelVec.asUInt().orR()
+
+  val outSelIdx = PriorityEncoder(outSelVec)
+  val outSel = io.out(outSelIdx)
+
+  val cur_idx = RegEnable(outSelIdx, io.in.req.fire() & (state === s_idle))
+
+  // req connect    in.req  <>   io.out(xxx).req
+  (io.out, outSelVec).zipped.foreach((out, sel) => {
+    out.req.bits := io.in.req.bits
+    out.req.valid := io.in.req.valid & sel & (state === s_idle)
+  })
+  io.in.req.ready := outSel.req.ready || reqInvalidAddr
+
+  // resp connect
+  io.in.resp.valid := io.out(cur_idx).resp.valid
+  io.in.resp.bits := io.out(cur_idx).resp.bits
+  io.out.foreach(_.resp.ready := 0.U)
+  io.out(cur_idx).resp.ready := io.in.resp.ready
+
+  switch(state){
+    is(s_idle){
+      when(io.in.req.fire() & !reqInvalidAddr){
+        state := s_resp
+      }.elsewhen(io.in.req.fire() & reqInvalidAddr){
+        state := s_bad
+      }
+    }
+    is(s_resp){
+      when(io.out(cur_idx).resp.fire()) {
+        state := s_idle
+      }
+    }
+    is(s_bad){
+      when(io.in.resp.fire()){
+        state := s_idle
+      }
+    }
+  }
+}
+
+class InnerCrossBarNN(val Nin: Int = 2, val Nout: Int = 2)(implicit p: Parameters) extends Module{
+  val io  = IO(new Bundle{
+    val in  = Vec(Nin, Flipped(new CacheMemIO()))
+    val out = Vec(Nout, new CacheMemIO())
+  })
+
+  val n2one = Module(new InnerCrossBarN21(Nin))
+  val one2n = Module(new InnerCrossBar12N(Nout))
+
+  (n2one.io.in, io.in).zipped.foreach(_ <> _)
+  n2one.io.out <> one2n.io.in
+  (io.out, one2n.io.out).zipped.foreach(_ <> _)
 }

@@ -13,8 +13,9 @@ class Core (implicit p: Parameters) extends Module{
   val icache = Module(new Cache("i"))
   val dcache = Module(new Cache("d"))
   val control = Module(new Control)
-  val crossbar = Module(new InnerCrossBar(2))   // [imem, dmem] to [mem]
+  val crossbar = Module(new InnerCrossBarNN(2, 2))   // [imem, dmem] to [clint, axi]
   val mem2axi = Module(new MemBus2AXI)
+  val clint = Module(new CLINT)
 
 
   datapath.io.icacahe <> icache.io.cpu  // icache
@@ -26,8 +27,9 @@ class Core (implicit p: Parameters) extends Module{
     val (cb, cache) = info
     cb <> cache
   })
-  // crossbar <> mem2ai
-  crossbar.io.out <> mem2axi.io.in
+
+  // crossbar <> clint, mem2axi
+  (crossbar.io.out, Seq(clint.io.cpu, mem2axi.io.in)).zipped.foreach(_ <> _)
   // mem2axi <> io.axi
   val aximem = Module(new AXIMem)
   dontTouch(aximem.io)
