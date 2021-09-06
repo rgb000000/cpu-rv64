@@ -18,7 +18,7 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
   io.in.resp.valid := r.valid
   io.in.resp.bits.cmd := Mux(r.bits.last, MemCmdConst.ReadLast, MemCmdConst.Read)
 
-  io.in.req.ready := 1.U
+  io.in.req.ready := ar.ready | aw.ready | w.ready
 
   ar.bits.lock := 0.U
   ar.bits.cache := 0.U
@@ -30,7 +30,7 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
   ar.bits.len := (p(CacheLineSize) / AXI4Parameters.dataBits).U
   ar.bits.size := 3.U // 8 * 8bits = 64bits
   ar.bits.burst := AXI4Parameters.BURST_INCR
-  ar.valid := io.in.req.bits.cmd === MemCmdConst.ReadBurst
+  ar.valid := (io.in.req.bits.cmd === MemCmdConst.ReadBurst) & io.in.req.valid
 
   aw.bits.lock := 0.U
   aw.bits.cache := 0.U
@@ -42,12 +42,12 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
   aw.bits.len := io.in.req.bits.len
   aw.bits.size := 3.U // 8 * 8bits = 64bits
   aw.bits.burst := AXI4Parameters.BURST_INCR
-  aw.valid := io.in.req.bits.cmd === MemCmdConst.WriteBurst
+  aw.valid := (io.in.req.bits.cmd === MemCmdConst.WriteBurst) & io.in.req.valid
 
   w.bits.data := io.in.req.bits.data
   w.bits.strb := Cat(Seq.fill(p(XLen) / 8)(1.U(1.W))) // 0xff
   w.bits.last := io.in.req.bits.cmd === MemCmdConst.WriteLast
-  w.valid := io.in.req.bits.cmd === MemCmdConst.Write
+  w.valid := (io.in.req.bits.cmd === MemCmdConst.Write) & io.in.req.valid
 
   r.ready := io.in.resp.ready
 

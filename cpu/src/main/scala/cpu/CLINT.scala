@@ -14,8 +14,8 @@ class CLINT(implicit p: Parameters) extends Module{
 
   dontTouch(io.interrupt)
 
-  val mtime = RegInit(0.U(64.W))
-  val mtimecmp = RegInit(0.U(64.W))
+  val mtime = RegInit(1.U(64.W))
+  val mtimecmp = RegInit(2.U(64.W))
 
   val s_idle :: s_w :: s_resp :: Nil = Enum(3)
   val state = RegInit(s_idle)
@@ -25,8 +25,8 @@ class CLINT(implicit p: Parameters) extends Module{
   val addr = Reg(UInt(64.W))
 
   val sel_data = Wire(UInt(64.W))
-  sel_data := Mux(addr === 0x020000008.U, mtime,
-              Mux(addr === 0x020000009.U, mtimecmp,
+  sel_data := Mux(addr === "h02000000".U, mtime,
+              Mux(addr === "h02000008".U, mtimecmp,
                 0x7fffffff.U))
 
   io.cpu.req.ready := 1.U
@@ -34,7 +34,7 @@ class CLINT(implicit p: Parameters) extends Module{
   io.cpu.resp.valid := state === s_resp
   io.cpu.resp.bits.id := id
   io.cpu.resp.bits.data := 0.U
-  io.cpu.resp.bits.cmd :=  op === 1.U
+  io.cpu.resp.bits.cmd :=  Mux(op === 1.U, 1.U, MemCmdConst.ReadLast)
 
   io.interrupt := mtime >= mtimecmp
 
@@ -43,9 +43,9 @@ class CLINT(implicit p: Parameters) extends Module{
     id := io.cpu.req.bits.id
     addr := io.cpu.req.bits.addr
   }.elsewhen((state === s_w) & io.cpu.req.fire()){
-    when(io.cpu.req.bits.addr === 0x020000008.U){
+    when(io.cpu.req.bits.addr === "h02000000".U){
       mtime := io.cpu.req.bits.data
-    }.elsewhen(io.cpu.req.bits.addr === 0x020000009.U){
+    }.elsewhen(io.cpu.req.bits.addr === "h02000008".U){
       mtimecmp := io.cpu.req.bits.data
     }
   }.elsewhen((state === s_resp)){

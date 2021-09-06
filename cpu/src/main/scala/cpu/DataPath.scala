@@ -297,7 +297,9 @@ class DataPath(implicit p: Parameters) extends Module {
     dic.io.valid := RegNext(commit_valid)
     dic.io.pc := RegNext(mem_pc)
     dic.io.instr := RegNext(mem_inst)
-    dic.io.skip := RegNext(mem_inst === "h0000006c".U)
+    dic.io.skip := RegNext((mem_inst === "h0000006c".U) |
+      ((mem_ctrl.asTypeOf(new CtrlSignal).ld_type.orR() | mem_ctrl.asTypeOf(new CtrlSignal).st_type.orR()) & ((mem_alu_out === "h02000000".U) | (mem_alu_out === "h02000008".U)))
+    )
     dic.io.isRVC := false.B
     dic.io.scFailed := false.B
     dic.io.wen := RegNext(regs.io.wen)

@@ -152,6 +152,10 @@ class CacheMemIO (implicit p: Parameters) extends Bundle{
 }
 
 class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
+
+  val addressSpace = p(AddressSpace).groupBy(_._3)  // groupBy isCache attribute
+  require(addressSpace.keys.toList.length == 2)     // true or false  (cached or uncached)
+
   val io = IO(new Bundle{
     val cpu = new CacheCPUIO
     val mem = new CacheMemIO
@@ -190,6 +194,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   // save cpu req
 //  val req_reg = WireInit(0.U.asTypeOf(new CacheReq))
   val req_reg = RegInit(0.U.asTypeOf(new CacheReq))
+  val req_isCached = RegInit(false.B)
   // req_reg.addr view as {tag, index, offset}
   val req_reg_info = req_reg.addr.asTypeOf(infos)
 
@@ -233,7 +238,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     }))  // Cat(high ... low)
 
   // ways_compare_res is all 0, {0, 0, 0, 0} means the current req is miss
-  val is_miss = ways_compare_res.orR() === 0.U
+  val is_miss = ((ways_compare_res.orR() === 0.U) & req_isCached) | (!req_isCached)
   assert((p(CacheLineSize) / p(NBank)) == 64)
 
   // Vec(NWay, (tag_width + v + d + cacheline)bit) tag      v   d      data
@@ -328,8 +333,9 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 //  io.cpu.resp.valid := (state === idle) | ((state === lookup) & (!is_miss) & (req_reg.op === 0.U)) |
   io.cpu.resp.valid := (state === idle) | ((state === lookup) & (!is_miss)) |
     //    ((state === refill) & ((!req_reg.op) & refill_cnt.value === req_reg.addr.asTypeOf(infos).offset(log2Ceil(64 / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(64 / 8)).asUInt()) & io.mem.resp.valid) |
-    ((state === refill) & ((!req_reg.op) & (refill_cnt.value === 3.U) & io.mem.resp.valid)) |
-    ((state === refill) & ((req_reg.op) & (refill_cnt.value === 3.U) & io.mem.resp.valid))
+    (req_isCached & (((state === refill) & ((!req_reg.op) & (refill_cnt.value === 3.U) & io.mem.resp.valid)) |
+                     ((state === refill) & ((req_reg.op) & (refill_cnt.value === 3.U) & io.mem.resp.valid)))) |
+    (!req_isCached & ((state === refill) & ((!req_reg.op) & io.mem.resp.valid)))
 
   when(state === lookup){
     io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
@@ -339,7 +345,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
       res
     }).reverse) >> (req_reg.addr(2, 0) << 3.U)
   }.otherwise{
-    val ret = Mux(req_reg.addr.asTypeOf(infos).offset(log2Ceil(64 / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(64 / 8)).asUInt() === 3.U, io.mem.resp.bits.data, load_ret)
+    // 这里的逻辑是为了保证ld的结果在都refill最后一个数据来的时候来放回，目地是为了保证操作的原子性
+    val ret = Mux(req_isCached, Mux(req_reg.addr.asTypeOf(infos).offset(log2Ceil(64 / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(64 / 8)).asUInt() === 3.U, io.mem.resp.bits.data, load_ret), io.mem.resp.bits.data)
     io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
       val (valid, i) = x
       val res = Wire(UInt(8.W))
@@ -351,7 +358,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
   io.cpu.resp.bits.cmd := Mux(state === idle, 0.U, Mux(req_reg.op === 1.U, 1.U, 2.U))   // op=1, return 1   op=0, return 2
 
-  when((state=== refill) & io.mem.resp.fire()){
+  when((state=== refill) & io.mem.resp.fire() & req_isCached){
     refill_cnt.inc()
   }.elsewhen(state === idle) {
     refill_cnt.value := 0.U
@@ -364,31 +371,37 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   val w_cnt = Counter(4)
   val r_cnt = Counter(4)
 
-  when((state === lookup) & is_miss & ((rand_way_data.v === 1.U) & (rand_way_data.d === 1.U))){
+  when((state === lookup) & is_miss & ((req_isCached & ((rand_way_data.v === 1.U) & (rand_way_data.d === 1.U))) |
+                                       (!req_isCached & (req_reg.op === 1.U)))
+  ){
     // send write burst cmd
     io.mem.req.valid := 1.U
-    io.mem.req.bits.addr := Cat(rand_way_data.tag, req_reg.addr.asTypeOf(infos).index, 0.U(offset_width.W))
-    io.mem.req.bits.cmd := MemCmdConst.WriteBurst
-    io.mem.req.bits.len := 3.U // 1.U << 3 = 8
+    io.mem.req.bits.addr := Mux(req_isCached, Cat(rand_way_data.tag, req_reg.addr.asTypeOf(infos).index, 0.U(offset_width.W)), req_reg.addr)
+    io.mem.req.bits.cmd := Mux(req_isCached, MemCmdConst.WriteBurst, MemCmdConst.Write)
+    io.mem.req.bits.len := Mux(req_isCached, 3.U /* 1.U << 3 = 8*/, 1.U)
     io.mem.req.bits.data := 0.U
     io.mem.req.bits.id := id
-  }.elsewhen((state === miss) & (replace_buffer.v & replace_buffer.d)){
-    // send write data 4 times
+  }.elsewhen((state === miss) & ((req_isCached & replace_buffer.v & replace_buffer.d) |
+                                 (!req_isCached & (req_reg.op === 1.U)))
+  ){
+    // send write data 4 times when is Cached or write data 1 time when uncached
     io.mem.req.valid := 1.U
-    io.mem.req.bits.addr := replace_buffer.addr
-    io.mem.req.bits.cmd := Mux(w_cnt.value === 3.U, MemCmdConst.WriteLast, MemCmdConst.Write)
+    io.mem.req.bits.addr := Mux(req_isCached, replace_buffer.addr, req_reg.addr)
+    io.mem.req.bits.cmd := Mux(req_isCached, Mux(w_cnt.value === 3.U, MemCmdConst.WriteLast, MemCmdConst.Write), MemCmdConst.WriteLast)
     io.mem.req.bits.len := 2.U // 1.U << 2 = 4
-    io.mem.req.bits.data := replace_buffer.data(w_cnt.value)
+    io.mem.req.bits.data := Mux(req_isCached, replace_buffer.data(w_cnt.value), req_reg.data)
     io.mem.req.bits.id := id
-    when(io.mem.req.fire()){
+    when(io.mem.req.fire() & req_isCached){
       w_cnt.inc()
     }
-  }.elsewhen(state === replace){
+  }.elsewhen(state === replace & (req_isCached |
+                                  (!req_isCached & (req_reg.op === 0.U)))
+  ){
     // send read burst cmd
     io.mem.req.valid := 1.U
-    io.mem.req.bits.addr := miss_info.addr & Cat(Seq.fill(tag_width + index_width)(1.U(1.W)) ++ Seq.fill(offset_width)(0.U(1.W)))
-    io.mem.req.bits.cmd := MemCmdConst.ReadBurst
-    io.mem.req.bits.len := 2.U // 1.U << 2 = 4
+    io.mem.req.bits.addr := Mux(req_isCached, miss_info.addr & Cat(Seq.fill(tag_width + index_width)(1.U(1.W)) ++ Seq.fill(offset_width)(0.U(1.W))), req_reg.addr)
+    io.mem.req.bits.cmd := Mux(req_isCached, MemCmdConst.ReadBurst, MemCmdConst.Read)
+    io.mem.req.bits.len := Mux(req_isCached, 2.U /* 1.U << 2 = 4*/, 1.U)
     io.mem.req.bits.data := 0.U
     io.mem.req.bits.id := id
   }.otherwise{
@@ -404,6 +417,13 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
   io.cpu.req.ready := ((state === idle) | ((state === lookup) & (!is_miss))) & !conflict_hit_write
   req_reg := Mux(io.cpu.req.fire(), io.cpu.req.bits, req_reg)
+  req_isCached := Mux(io.cpu.req.fire(), addressSpace(true).map(info => {
+    val start = info._1
+    val range = info._2
+    val isCache = info._3
+    val port_id = info._4
+    (io.cpu.req.bits.addr >= start.U(64.W)) & (io.cpu.req.bits.addr < (start.U(64.W) + range.U(64.W)))
+  }).reduce(_ | _), req_isCached)
 
   when((state === lookup) & is_miss){
     // miss and goto miss state
@@ -432,27 +452,31 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
       write_buffer.bits.replace_way := Cat(ways_compare_res.asBools()).asUInt() // note: !
       write_buffer.bits.wmask := req_reg.mask
     }.elsewhen((state === refill) & io.mem.resp.fire()){
+      when(req_isCached === 1.U){
+        when(req_reg.op === 1.U){
+          write_buffer.bits.data := Mux(refill_cnt.value === miss_info.addr.asTypeOf(infos).offset(log2Ceil(64 / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(64 / 8)).asUInt(),
+            io.mem.resp.bits.data & !Cat(req_reg.mask.asBools().map(x => {
+              val res = Wire(UInt(8.W))
+              res := Mux(x, "hff".U(8.W), 0.U(8.W))
+              res
+            })) | req_reg.data, io.mem.resp.bits.data)
+        }.otherwise{
+          write_buffer.bits.data := io.mem.resp.bits.data
+        }
 
-      when(req_reg.op === 1.U){
-        write_buffer.bits.data := Mux(refill_cnt.value === miss_info.addr.asTypeOf(infos).offset(log2Ceil(64 / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(64 / 8)).asUInt(),
-          io.mem.resp.bits.data & !Cat(req_reg.mask.asBools().map(x => {
-            val res = Wire(UInt(8.W))
-            res := Mux(x, "hff".U(8.W), 0.U(8.W))
-            res
-          })) | req_reg.data, io.mem.resp.bits.data)
+        write_buffer.bits.tag := miss_info.addr.asTypeOf(infos).tag
+        write_buffer.bits.index := miss_info.addr.asTypeOf(infos).index
+        //      write_buffer.bits.offset := miss_info.addr.asTypeOf(infos).offset + (r_cnt.value << log2Ceil(p(XLen) / 8).U)
+        write_buffer.bits.offset :=  (r_cnt.value << log2Ceil(p(XLen) / 8).U).asUInt()
+        write_buffer.bits.v := 1.U
+        write_buffer.bits.d := 0.U
+        write_buffer.bits.replace_way := replace_buffer.way_num
+        write_buffer.bits.wmask := Cat(Seq.fill((p(CacheLineSize) / p(NBank)) / 8)(1.U))
+        r_cnt.inc()
       }.otherwise{
-        write_buffer.bits.data := io.mem.resp.bits.data
-      }
+        // uncache
 
-      write_buffer.bits.tag := miss_info.addr.asTypeOf(infos).tag
-      write_buffer.bits.index := miss_info.addr.asTypeOf(infos).index
-//      write_buffer.bits.offset := miss_info.addr.asTypeOf(infos).offset + (r_cnt.value << log2Ceil(p(XLen) / 8).U)
-      write_buffer.bits.offset :=  (r_cnt.value << log2Ceil(p(XLen) / 8).U).asUInt()
-      write_buffer.bits.v := 1.U
-      write_buffer.bits.d := 0.U
-      write_buffer.bits.replace_way := replace_buffer.way_num
-      write_buffer.bits.wmask := Cat(Seq.fill((p(CacheLineSize) / p(NBank)) / 8)(1.U))
-      r_cnt.inc()
+      }
     }
 
 
@@ -483,7 +507,12 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     }
 
     is(miss){
-      when((io.mem.req.fire() & (io.mem.req.bits.cmd === MemCmdConst.WriteLast)) | ((replace_buffer.v === 0.U) | (replace_buffer.d === 0.U))){
+      when(
+        (req_isCached & (io.mem.req.fire() & (io.mem.req.bits.cmd === MemCmdConst.WriteLast)) | ((replace_buffer.v === 0.U) | (replace_buffer.d === 0.U))) |
+          (!req_isCached & (((req_reg.op === 1.U) & (io.mem.req.fire() & (io.mem.req.bits.cmd === MemCmdConst.WriteLast))) |
+                             (req_reg.op === 0.U)))
+      ){
+        // cached | (uncached & op == 1)    send write data
         state := replace
       }.otherwise{
         // next level memory not ready
@@ -492,7 +521,10 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     }
 
     is(replace){
-      when(io.mem.req.fire() & (io.mem.req.bits.cmd === MemCmdConst.ReadBurst)){
+      when((req_isCached & (io.mem.req.fire() & (io.mem.req.bits.cmd === MemCmdConst.ReadBurst))) |
+            (!req_isCached & ((req_reg.op === 1.U) |
+                             ((req_reg.op === 0.U) & (io.mem.req.fire() & (io.mem.req.bits.cmd === MemCmdConst.Read)))))
+      ){
         // send cmd to read miss_info
         state := refill
       }.otherwise{
@@ -501,7 +533,11 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     }
 
     is(refill){
-      when(io.mem.resp.fire() & (io.mem.resp.bits.cmd === MemCmdConst.ReadLast)){
+      when((req_isCached & (io.mem.resp.fire() & (io.mem.resp.bits.cmd === MemCmdConst.ReadLast))) |
+           (!req_isCached & ((req_reg.op === 1.U) |
+                            ((req_reg.op === 0.U) & (io.mem.resp.fire() & (io.mem.resp.bits.cmd === MemCmdConst.ReadLast)))))
+
+      ){
         // get last read data
         state := idle
       }.otherwise{
