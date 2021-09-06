@@ -104,4 +104,14 @@ class MEM (implicit p: Parameters) extends Module {
 //  io.s_complete := Mux((io.dcache.resp.fire() & (io.dcache.resp.bits.cmd =/= 0.U)) & !io.stall & io.st_type.orR(), 1.U, 0.U)
   io.s_complete := Mux((io.dcache.resp.fire() & (io.dcache.resp.bits.cmd === 1.U)), 1.U, 0.U)
   dontTouch(io.s_complete)
+
+  if(p(Difftest)){
+//    when(io.dcache.req.fire() & (io.dcache.req.bits.op === 1.U)){
+//      printf("addr: %x, data: %x, sd_type: %x \n", io.dcache.req.bits.addr, io.dcache.req.bits.data, io.st_type)
+//    }
+//
+//    when(io.dcache.req.fire() & (io.dcache.req.bits.op === 0.U)){
+//      printf("addr: %x, data: %x, ld_type: %x \n", io.dcache.req.bits.addr, 0.U, io.ld_type)
+//    }
+  }
 }

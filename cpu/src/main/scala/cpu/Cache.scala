@@ -33,14 +33,15 @@ class CacheResp(implicit p: Parameters) extends Bundle{
 
 // ====================== L1 to L2 IO =========================
 object MemCmdConst{
-  def Read        = "b0000".U
+  def ReadOnce    = "b0000".U
   def ReadBurst   = "b0001".U
   def ReadLast    = "b0010".U
 
-  def Write       = "b1000".U
+  def WriteOnce   = "b1000".U
   def WriteBurst  = "b1001".U
   def WriteLast   = "b1010".U
   def WriteResp   = "b1011".U
+  def WriteData   = "b1100".U
 }
 class MemReq(implicit p: Parameters) extends Bundle {
   //
@@ -162,8 +163,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   })
 
   val cache_size = cache_type match {
-    case "i" => p(I$Size)
-    case "d" => p(D$Size)
+    case "i" => {println(s"ICache size is ${p(I$Size) / 8 / 1024} KB"); p(I$Size)}
+    case "d" => {println(s"DCache size is ${p(D$Size) / 8 / 1024} KB"); p(D$Size)}
     case _ => {println("cache type must 'i' or 'd'");System.exit(1);0}
   }
   val id = cache_type match {
@@ -374,11 +375,11 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   when((state === lookup) & is_miss & ((req_isCached & ((rand_way_data.v === 1.U) & (rand_way_data.d === 1.U))) |
                                        (!req_isCached & (req_reg.op === 1.U)))
   ){
-    // send write burst cmd
+    // send write burst cmd or write once cmd
     io.mem.req.valid := 1.U
     io.mem.req.bits.addr := Mux(req_isCached, Cat(rand_way_data.tag, req_reg.addr.asTypeOf(infos).index, 0.U(offset_width.W)), req_reg.addr)
-    io.mem.req.bits.cmd := Mux(req_isCached, MemCmdConst.WriteBurst, MemCmdConst.Write)
-    io.mem.req.bits.len := Mux(req_isCached, 3.U /* 1.U << 3 = 8*/, 1.U)
+    io.mem.req.bits.cmd := Mux(req_isCached, MemCmdConst.WriteBurst, MemCmdConst.WriteOnce)
+    io.mem.req.bits.len := Mux(req_isCached, 2.U /* 1.U << 2 = 4*/, 0.U)
     io.mem.req.bits.data := 0.U
     io.mem.req.bits.id := id
   }.elsewhen((state === miss) & ((req_isCached & replace_buffer.v & replace_buffer.d) |
@@ -387,8 +388,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     // send write data 4 times when is Cached or write data 1 time when uncached
     io.mem.req.valid := 1.U
     io.mem.req.bits.addr := Mux(req_isCached, replace_buffer.addr, req_reg.addr)
-    io.mem.req.bits.cmd := Mux(req_isCached, Mux(w_cnt.value === 3.U, MemCmdConst.WriteLast, MemCmdConst.Write), MemCmdConst.WriteLast)
-    io.mem.req.bits.len := 2.U // 1.U << 2 = 4
+    io.mem.req.bits.cmd := Mux(req_isCached, Mux(w_cnt.value === 3.U, MemCmdConst.WriteLast, MemCmdConst.WriteData), MemCmdConst.WriteLast)
+    io.mem.req.bits.len := Mux(req_isCached, 2.U /* 1.U << 2 = 4*/, 0.U)
     io.mem.req.bits.data := Mux(req_isCached, replace_buffer.data(w_cnt.value), req_reg.data)
     io.mem.req.bits.id := id
     when(io.mem.req.fire() & req_isCached){
@@ -400,8 +401,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     // send read burst cmd
     io.mem.req.valid := 1.U
     io.mem.req.bits.addr := Mux(req_isCached, miss_info.addr & Cat(Seq.fill(tag_width + index_width)(1.U(1.W)) ++ Seq.fill(offset_width)(0.U(1.W))), req_reg.addr)
-    io.mem.req.bits.cmd := Mux(req_isCached, MemCmdConst.ReadBurst, MemCmdConst.Read)
-    io.mem.req.bits.len := Mux(req_isCached, 2.U /* 1.U << 2 = 4*/, 1.U)
+    io.mem.req.bits.cmd := Mux(req_isCached, MemCmdConst.ReadBurst, MemCmdConst.ReadOnce)
+    io.mem.req.bits.len := Mux(req_isCached, 2.U /* 1.U << 2 = 4*/, 0.U)
     io.mem.req.bits.data := 0.U
     io.mem.req.bits.id := id
   }.otherwise{
@@ -434,7 +435,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
     // replace info, use rand way data
     replace_buffer.addr := Cat(rand_way_data.tag, req_reg.addr.asTypeOf(infos).index, 0.U(offset_width.W))
-    replace_buffer.data := rand_way_data.datas
+    replace_buffer.data := rand_way_data.datas.reverse
     replace_buffer.way_num := rand_way
     replace_buffer.v := rand_way_data.v
     replace_buffer.d := rand_way_data.d
@@ -469,7 +470,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
         //      write_buffer.bits.offset := miss_info.addr.asTypeOf(infos).offset + (r_cnt.value << log2Ceil(p(XLen) / 8).U)
         write_buffer.bits.offset :=  (r_cnt.value << log2Ceil(p(XLen) / 8).U).asUInt()
         write_buffer.bits.v := 1.U
-        write_buffer.bits.d := 0.U
+        write_buffer.bits.d := Mux(req_reg.op === 1.U, 1.U, 0.U) // if op is write(store inst), dirty is 1
         write_buffer.bits.replace_way := replace_buffer.way_num
         write_buffer.bits.wmask := Cat(Seq.fill((p(CacheLineSize) / p(NBank)) / 8)(1.U))
         r_cnt.inc()
@@ -523,7 +524,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     is(replace){
       when((req_isCached & (io.mem.req.fire() & (io.mem.req.bits.cmd === MemCmdConst.ReadBurst))) |
             (!req_isCached & ((req_reg.op === 1.U) |
-                             ((req_reg.op === 0.U) & (io.mem.req.fire() & (io.mem.req.bits.cmd === MemCmdConst.Read)))))
+                             ((req_reg.op === 0.U) & (io.mem.req.fire() & (io.mem.req.bits.cmd === MemCmdConst.ReadOnce)))))
       ){
         // send cmd to read miss_info
         state := refill

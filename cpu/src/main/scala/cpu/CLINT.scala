@@ -39,7 +39,7 @@ class CLINT(implicit p: Parameters) extends Module{
   io.interrupt := mtime >= mtimecmp
 
   when((state === s_idle) & io.cpu.req.fire()) {
-    op := (io.cpu.req.bits.cmd) === MemCmdConst.Write
+    op := (io.cpu.req.bits.cmd) === MemCmdConst.WriteOnce
     id := io.cpu.req.bits.id
     addr := io.cpu.req.bits.addr
   }.elsewhen((state === s_w) & io.cpu.req.fire()){
@@ -58,9 +58,9 @@ class CLINT(implicit p: Parameters) extends Module{
 
   switch(state){
     is(s_idle){
-      when(io.cpu.req.fire() & (io.cpu.req.bits.cmd === MemCmdConst.Write)){
+      when(io.cpu.req.fire() & (io.cpu.req.bits.cmd === MemCmdConst.WriteOnce)){
         state := s_w
-      }.elsewhen(io.cpu.req.fire() & (io.cpu.req.bits.cmd === MemCmdConst.Read)){
+      }.elsewhen(io.cpu.req.fire() & (io.cpu.req.bits.cmd === MemCmdConst.ReadOnce)){
         state := s_resp
       }
     }
