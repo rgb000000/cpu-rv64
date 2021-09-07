@@ -3,7 +3,7 @@ package cpu
 import chisel3.{util, _}
 import chisel3.util._
 import chipsalliance.rocketchip.config._
-import chisel3.util.experimental.loadMemoryFromFileInline
+import chisel3.util.experimental.{BoringUtils, loadMemoryFromFileInline}
 import difftest._
 
 class ByPass(implicit p: Parameters) extends Module {
@@ -315,9 +315,12 @@ class DataPath(implicit p: Parameters) extends Module {
     dte.io.cycleCnt := cycleCnt.value
     dte.io.instrCnt := instCnt.value
 
-    when (RegNext((mem_inst === "h0000006c".U) & (mem_valid === 1.U))) {
-      printf("%c", regs.io.trap_code.getOrElse(1.U))
-    }
+    val difftest_uart_valid = Wire(Bool())
+    val difftest_uart_ch    = Wire(UInt(8.W))
+    BoringUtils.addSource(difftest_uart_valid, "difftest_uart_valid")
+    BoringUtils.addSource(difftest_uart_ch, "difftest_uart_ch")
+    difftest_uart_valid := RegNext((mem_inst === "h0000006c".U) & (mem_valid === 1.U))
+    difftest_uart_ch := regs.io.trap_code.getOrElse(1.U)
 
   }
 }
