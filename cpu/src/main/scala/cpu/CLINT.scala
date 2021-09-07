@@ -38,6 +38,8 @@ class CLINT(implicit p: Parameters) extends Module{
 
   io.interrupt := mtime >= mtimecmp
 
+  mtime := mtime + 1.U
+
   when((state === s_idle) & io.cpu.req.fire()) {
     op := (io.cpu.req.bits.cmd) === MemCmdConst.WriteOnce
     id := io.cpu.req.bits.id

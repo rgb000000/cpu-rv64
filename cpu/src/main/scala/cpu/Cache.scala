@@ -456,11 +456,15 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
       when(req_isCached === 1.U){
         when(req_reg.op === 1.U){
           write_buffer.bits.data := Mux(refill_cnt.value === miss_info.addr.asTypeOf(infos).offset(log2Ceil(64 / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(64 / 8)).asUInt(),
-            io.mem.resp.bits.data & !Cat(req_reg.mask.asBools().map(x => {
+            (io.mem.resp.bits.data & (~Cat(req_reg.mask.asBools().reverse.map(x => {
               val res = Wire(UInt(8.W))
               res := Mux(x, "hff".U(8.W), 0.U(8.W))
               res
-            })) | req_reg.data, io.mem.resp.bits.data)
+            }))).asUInt()) | (req_reg.data & Cat(req_reg.mask.asBools().reverse.map(x => {
+              val res = Wire(UInt(8.W))
+              res := Mux(x, "hff".U(8.W), 0.U(8.W))
+              res
+            }))), io.mem.resp.bits.data)
         }.otherwise{
           write_buffer.bits.data := io.mem.resp.bits.data
         }

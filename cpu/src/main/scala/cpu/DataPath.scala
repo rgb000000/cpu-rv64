@@ -30,17 +30,17 @@ class ByPass(implicit p: Parameters) extends Module {
     val forwardB = Output(UInt(2.W))
   })
 
-  when(io.ex.isrs1 & ((io.ex.rs1 === io.mem.rd) & io.ex.rs1 =/= 0.U) & io.mem.valid){
+  when(io.ex.isrs1 & ((io.ex.rs1 === io.mem.rd) & (io.ex.rs1 =/= 0.U)) & io.mem.valid){
     io.forwardA := "b01".U
-  }.elsewhen(io.ex.isrs1 & (io.ex.rs1 === io.wb.rd) & io.wb.valid){
+  }.elsewhen(io.ex.isrs1 & ((io.ex.rs1 === io.wb.rd) & (io.ex.rs1 =/= 0.U)) & io.wb.valid){
     io.forwardA := "b11".U
   }.otherwise{
     io.forwardA := "b00".U
   }
 
-  when(io.ex.isrs2 & ((io.ex.rs2 === io.mem.rd) & io.ex.rs2 =/= 0.U) & io.mem.valid){
+  when(io.ex.isrs2 & ((io.ex.rs2 === io.mem.rd) & (io.ex.rs2 =/= 0.U)) & io.mem.valid){
     io.forwardB := "b01".U
-  }.elsewhen(io.ex.isrs2 & (io.ex.rs2 === io.wb.rd) & io.wb.valid){
+  }.elsewhen(io.ex.isrs2 & (io.ex.rs2 === io.wb.rd) & (io.ex.rs2 =/= 0.U) & io.wb.valid){
     io.forwardB := "b11".U
   }.otherwise{
     io.forwardB := "b00".U
