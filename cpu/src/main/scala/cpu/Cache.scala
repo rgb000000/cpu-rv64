@@ -215,13 +215,19 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   // conflict check (conflict with hit write)
   val conflict_hit_write = WireInit(
     // req is read op and write_buffer is valid
-    (io.cpu.req.valid & (io.cpu.req.bits.op ===  0.U) & (write_buffer.valid === 1.U) &
-      (write_buffer.bits.index(
-        log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)
-      ) === io.cpu.req.bits.addr.asTypeOf(infos).index(
-        log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)
-      ))) | ( // req bank is equ with wb bank
-      (state === lookup) & (req_reg.op === 1.U) & (io.cpu.req.bits.op === 0.U) & (io.cpu.req.bits.addr === req_reg.addr)
+    ((io.cpu.req.bits.op ===  0.U) & (write_buffer.valid === 1.U) &
+      (
+        (write_buffer.bits.index === io.cpu.req.bits.addr.asTypeOf(infos).index) &
+        (write_buffer.bits.tag === io.cpu.req.bits.addr.asTypeOf(infos).tag) &
+        (write_buffer.bits.offset(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)) === io.cpu.req.bits.addr.asTypeOf(infos).index(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)))
+      )) |
+      ( // req bank is equ with wb bank
+        (state === lookup) & (req_reg.op === 1.U) & (io.cpu.req.bits.op === 0.U) &
+        (
+          (io.cpu.req.bits.addr.asTypeOf(infos).tag === req_reg.addr.asTypeOf(infos).tag) &
+          (io.cpu.req.bits.addr.asTypeOf(infos).index === req_reg.addr.asTypeOf(infos).index) &
+          (io.cpu.req.bits.addr.asTypeOf(infos).offset(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)) === req_reg.addr.asTypeOf(infos).offset(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)))
+        )
       )
   )
 

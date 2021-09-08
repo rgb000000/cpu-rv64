@@ -33,7 +33,7 @@ class MEM (implicit p: Parameters) extends Module {
   when(io.ld_type =/= 0.U){
     // is load inst
     // such as: x[rd] = sext(M[x[rs1] + sext(offset)][7:0])
-    io.dcache.req.valid := (1.U & io.inst_valid) | dcache_ready_reg
+    io.dcache.req.valid := ((1.U & io.inst_valid) | dcache_ready_reg) & !io.stall
     io.dcache.req.bits.addr := io.alu_res
     io.dcache.req.bits.mask := MuxLookup(io.ld_type, 0.U, Array(
       LD_LD  -> ("b1111_1111".U),
@@ -46,11 +46,11 @@ class MEM (implicit p: Parameters) extends Module {
     ))
     io.dcache.req.bits.op := 0.U   // read
     io.dcache.req.bits.data := 0.U // useless when load
-    ld_type := io.ld_type
+    ld_type := Mux(!io.stall, io.ld_type, ld_type)
   }.elsewhen(io.st_type =/= 0.U){
     // is store inst
     // such as: M[x[rs1]+sext(offset)] = x[rs2][7:0]
-    io.dcache.req.valid := 1.U & io.inst_valid
+    io.dcache.req.valid := 1.U & io.inst_valid & !io.stall
     io.dcache.req.bits.addr := io.alu_res
     io.dcache.req.bits.mask := MuxLookup(io.st_type, 0.U, Array(
       ST_SD  -> ("b1111_1111".U),
@@ -60,7 +60,7 @@ class MEM (implicit p: Parameters) extends Module {
     ))
     io.dcache.req.bits.op := 1.U   // write
     io.dcache.req.bits.data := io.s_data << (io.alu_res(2,0) << 3.U).asUInt() // useless when load
-    st_type := io.st_type
+    st_type := Mux(!io.stall, io.st_type, st_type)
   }.otherwise{
     // not a mem inst
     io.dcache.req.valid := 0.U
