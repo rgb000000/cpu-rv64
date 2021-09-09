@@ -111,7 +111,7 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
   // read logic
   // TODO: check data order in simulator
   //            tag,v,   d,    data
-  result := Cat(List(tag_tab.read(io.in.r.bits.index, io.in.r.valid).asUInt()) ++ Seq(RegNext(v_tab(io.in.r.bits.index), 0.U), RegNext(dirty_tab(io.in.r.bits.index), 0.U)) ++
+  result := Cat(List(tag_tab.read(io.in.r.bits.index, io.in.r.valid).asUInt()) ++ Seq(RegNext(v_tab(io.in.r.bits.index), 0.U(1.W)), RegNext(dirty_tab(io.in.r.bits.index), 0.U(1.W))) ++
     bankn.map(_.read(io.in.r.bits.index, io.in.r.valid).asUInt())).asTypeOf(new WayOut(tag_width))
 
   io.out.bits := result
@@ -215,18 +215,17 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   // conflict check (conflict with hit write)
   val conflict_hit_write = WireInit(
     // req is read op and write_buffer is valid
-    ((io.cpu.req.bits.op ===  0.U) & (write_buffer.valid === 1.U) &
+    (/*(io.cpu.req.bits.op ===  0.U) &*/ (write_buffer.valid === 1.U) &
       (
-        (write_buffer.bits.index === io.cpu.req.bits.addr.asTypeOf(infos).index) &
-        (write_buffer.bits.tag === io.cpu.req.bits.addr.asTypeOf(infos).tag) &
-        (write_buffer.bits.offset(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)) === io.cpu.req.bits.addr.asTypeOf(infos).index(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)))
+        (write_buffer.bits.index === io.cpu.req.bits.addr.asTypeOf(infos).index) |
+        (write_buffer.bits.offset(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)) === io.cpu.req.bits.addr.asTypeOf(infos).offset(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)))
       )) |
-      ( // req bank is equ with wb bank
+      ( // this block is to make sure the write op will complete before the read op *at the same address(the same bank)*
         (state === lookup) & (req_reg.op === 1.U) & (io.cpu.req.bits.op === 0.U) &
         (
-          (io.cpu.req.bits.addr.asTypeOf(infos).tag === req_reg.addr.asTypeOf(infos).tag) &
-          (io.cpu.req.bits.addr.asTypeOf(infos).index === req_reg.addr.asTypeOf(infos).index) &
-          (io.cpu.req.bits.addr.asTypeOf(infos).offset(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)) === req_reg.addr.asTypeOf(infos).offset(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)))
+//          (io.cpu.req.bits.addr.asTypeOf(infos).tag === req_reg.addr.asTypeOf(infos).tag) &
+          (io.cpu.req.bits.addr.asTypeOf(infos).index === req_reg.addr.asTypeOf(infos).index)
+//          (io.cpu.req.bits.addr.asTypeOf(infos).offset(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)) === req_reg.addr.asTypeOf(infos).offset(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)))
         )
       )
   )
@@ -263,7 +262,10 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   dontTouch(select_data_rev)
   (select_data_rev, select_data.reverse).zipped.foreach(_ := _)
   // use LFSR to generate rand in binary, need to be converted to ont-hot to use as mask
-  val rand_way = UIntToOH(LFSR(128, seed = Some(9987))( log2Ceil(p(NWay))-1 , 0).asUInt())
+  val rand_num = LFSR(128, seed = Some(9987))(log2Ceil(p(NWay))-1 , 0).asUInt()
+  val write_buffer_conflict_with_replace = write_buffer.valid & (rand_num === OHToUInt(write_buffer.bits.replace_way))
+  val rand_way = UIntToOH(Mux(write_buffer_conflict_with_replace, (rand_num + 1.U)(log2Ceil(p(NWay))-1 , 0).asUInt(), rand_num))
+  assert(rand_way.orR() === 1.U)
   // rand way data (tag, v, d, data)
   val rand_way_data = Mux1H(for(i <- rand_way.asBools().zipWithIndex) yield (i._1, ways_ret_datas(i._2)))
 
