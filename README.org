@@ -7,3 +7,7 @@
 1. =mill resolve _= 显示可用选项
 2. =mill mill.scalalib.GenIDEA/idea= 为 idea 创建工程
 3. =mill __.test.testOnly xxx.xxx= 进行测试
+
+* bazel tutorial
+1. =bazel build cpu:SimTop=   构建SimTop外加difftest，生成的可执行程序在 =./bazel-out/k8-fastbuild/bin/cpu/build/emu=
+2. [TODO] difftest的构建在bazel里面复用了difftest自己的makefile，后期尝试全部使用bazel all in one
