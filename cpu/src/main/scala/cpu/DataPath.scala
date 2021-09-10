@@ -159,7 +159,7 @@ class DataPath(implicit p: Parameters) extends Module {
 
   loadrisk.io.ex.valid := id_valid & !mem_kill
   loadrisk.io.ex.rd := id_rd
-  loadrisk.io.ex.isLoad := id_ctrl.asTypeOf(new CtrlSignal).ld_type.orR()
+  loadrisk.io.ex.isLoad := id_ctrl.asTypeOf(new CtrlSignal).ld_type.orR() | id_ctrl.asTypeOf(new CtrlSignal).csr_cmd(1,0).orR()
 
   ex.io.alu_op := id_ctrl.asTypeOf(new CtrlSignal).alu_op
 

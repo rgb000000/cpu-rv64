@@ -37,10 +37,12 @@ class MStatus (implicit p: Parameters) extends Bundle{
   val mpp   = UInt(2.W)     // xPP
   val ZERO2 = UInt(2.W)
   val spp   = UInt(1.W)     // The xPP fields can only hold privilege modes up to x, so MPP is two bits wide, SPP is one bit wide, and UPP is implicitly zero.
+
   val mpie  = Bool()        // xPIE holds the value of the interrupt-enable bit active prior to the trap
   val ZERO3 = UInt(1.W)
   val spie  = Bool()        // whether supervisor interrupts were enabled prior to trapping into supervisor mode
   val upie  = Bool()        // whether user-level interruptswere enabled prior to taking a user-level trap
+
   val mie   = Bool()        // interrupt-enable
   val ZERO4 = UInt(1.W)
   val sie   = Bool()        // interrupt-enable
@@ -113,6 +115,9 @@ class CSR (implicit p: Parameters) extends Module {
 
   val csr_addr = io.ctrl_signal.inst(31, 20).asUInt()
 
+  val mhardid = 0.U
+  val mscratch = Reg(UInt(64.W))
+
   val mtvec   = RegInit(p(PCEVec).U(p(XLen).W))
   val mepc = Reg(UInt(p(XLen).W))
   val mcause = RegInit(0.U(p(XLen).W))
@@ -143,7 +148,9 @@ class CSR (implicit p: Parameters) extends Module {
     BitPat(CSRs.mcause.U)   -> mcause,
     BitPat(CSRs.mip.U)      -> mip.asUInt(),
     BitPat(CSRs.mie.U)      -> mie.asUInt(),
-    BitPat(CSRs.mcycle.U)   -> mcycle
+    BitPat(CSRs.mcycle.U)   -> mcycle,
+    BitPat(CSRs.mhartid.U)  -> mhardid,
+    BitPat(CSRs.mscratch.U) -> mscratch
   )
 
   io.out := Lookup(csr_addr, 0.U, csrFile).asUInt()
@@ -172,9 +179,9 @@ class CSR (implicit p: Parameters) extends Module {
     Control.LD_LW -> io.ctrl_signal.addr(1, 0).orR, Control.LD_LH -> io.ctrl_signal.addr(0), Control.LD_LHU -> io.ctrl_signal.addr(0)))
   val saddrInvalid = MuxLookup(io.ctrl_signal.st_type, false.B, Seq(
     Control.ST_SW -> io.ctrl_signal.addr(1, 0).orR, Control.ST_SH -> io.ctrl_signal.addr(0)))
-  io.expt := io.ctrl_signal.illegal || iaddrInvalid || laddrInvalid || saddrInvalid ||
-    (io.cmd(1, 0).orR && (!csrValid || !privValid)) || (wen && csrRO && false.B) ||
-    (privInst && !privValid) || isEcall || isEbreak || time_interrupt
+  io.expt := (io.ctrl_signal.illegal || iaddrInvalid || laddrInvalid || saddrInvalid ||
+    (io.cmd(1, 0).orR && (!csrValid || !privValid) && false.B) || (wen && csrRO && false.B) ||
+    (privInst && !privValid && false.B) || isEcall || isEbreak || time_interrupt) & io.ctrl_signal.valid
   io.exvec := mtvec
   io.epc  := mepc
 
@@ -204,6 +211,10 @@ class CSR (implicit p: Parameters) extends Module {
         val tmp_mstatus = wdata.asTypeOf(new MStatus)
         mstatus.mie := tmp_mstatus.mie
         mstatus.mpie := tmp_mstatus.mpie
+        mstatus.xs := tmp_mstatus.xs
+        mstatus.fs := tmp_mstatus.fs
+        mstatus.mpp := tmp_mstatus.mpp
+        mstatus.sd := tmp_mstatus.xs.andR() | tmp_mstatus.fs.andR()
       }
       .elsewhen(csr_addr === CSRs.mip.U) {
 //        val tmp_mip = wdata.asTypeOf(new MIP)
@@ -219,10 +230,13 @@ class CSR (implicit p: Parameters) extends Module {
       .elsewhen(csr_addr === CSRs.mcause.U) { mcause := wdata & (BigInt(1) << (p(XLen)-1) | 0xf).U }
       .elsewhen(csr_addr === CSRs.mtvec.U) { mtvec := wdata}
       .elsewhen(csr_addr === CSRs.mcycle.U){ mcycle := wdata}
+      .elsewhen(csr_addr === CSRs.mscratch.U){ mscratch := wdata}
     }
   }
 
   if (p(Difftest)) {
+    val sstatus_mask = ("b1" + "0"*(p(XLen) - 35) + "11" + "0"*12 + "1101111" + "0"*13).U(64.W)
+    val sstatus = sstatus_mask & mstatus.asUInt()
     val dcsr = Module(new DifftestCSRState)
     dcsr.io.clock          := clock
     dcsr.io.coreid         := 0.U
@@ -233,12 +247,12 @@ class CSR (implicit p: Parameters) extends Module {
     dcsr.io.mip            := 0.U // RegNext(Mux(!io.stall, mip.asUInt(),      RegEnable(mip.asUInt(), !io.stall)))     // RegNext(mip.asUInt(), !io.stall)
     dcsr.io.mie            := RegNext(Mux(!io.stall, mie.asUInt(),      RegEnable(mie.asUInt(), !io.stall)))     // RegNext(mie.asUInt(), !io.stall)
     dcsr.io.mtvec          := RegNext(Mux(!io.stall, mtvec,             RegEnable(mtvec, !io.stall)))            // RegNext(mtvec, !io.stall)
-    dcsr.io.sstatus        := 0.U // RegNext(0.U)
+    dcsr.io.sstatus        := RegNext(Mux(!io.stall, sstatus,           RegEnable(sstatus, !io.stall))) // 0.U // RegNext(0.U)
     dcsr.io.scause         := 0.U // RegNext(0.U)
     dcsr.io.sepc           := 0.U // RegNext(0.U)
     dcsr.io.satp           := 0.U // RegNext(0.U)
-    dcsr.io.mscratch       := 0.U // RegNext(mscratch)
-    dcsr.io.sscratch       := 0.U // RegNext(0.U)
+    dcsr.io.mscratch       := RegNext(Mux(!io.stall, mscratch,          RegEnable(mscratch, !io.stall)))
+    dcsr.io.sscratch       := 0.U // RegNext(Mux(!io.stall, sstatus,           RegEnable(sstatus, !io.stall))) // 0.U // RegNext(0.U)
     dcsr.io.mideleg        := 0.U // RegNext(0.U)
     dcsr.io.medeleg        := 0.U // RegNext(0.U)
     dcsr.io.mtval          := 0.U // RegNext(0.U)

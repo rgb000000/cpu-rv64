@@ -110,7 +110,7 @@ class MEM (implicit p: Parameters) extends Module {
     val cycleCnt = WireInit(0.asUInt(64.W))
     BoringUtils.addSink(cycleCnt, "cycleCnt")
 //    when(io.dcache.req.fire() & (io.dcache.req.bits.op === 1.U)){
-//      when(io.dcache.req.bits.addr === BitPat("b0000_0000_0000_0000_0000_0000_0000_0000_1000_0000_0000_0001_0000_0001_011?_????")){
+//      when(io.dcache.req.bits.addr === BitPat("b0000_0000_0000_0000_0000_0000_0000_0000_1000_0000_0000_0010_0110_0011_101?_????")){
 //        printf("addr: %x, data: %x, sd_type: %x, time: %d \n", io.dcache.req.bits.addr, io.dcache.req.bits.data, io.st_type, cycleCnt)
 //      }
 //    }
