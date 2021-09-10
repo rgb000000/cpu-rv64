@@ -75,7 +75,7 @@ class DataPath(implicit p: Parameters) extends Module {
     val dcache = Flipped(new CacheCPUIO)
 
     val control = Flipped(new ControlIO)
-//    val interrupt = Input(Bool())
+    val time_interrupt = Input(Bool())
   })
 
   import Control._
@@ -96,9 +96,6 @@ class DataPath(implicit p: Parameters) extends Module {
 
   val csr = Module(new CSR)
   val csr_except = Wire(Bool())
-  csr.io.interrupt.time     := false.B
-  csr.io.interrupt.soft     := false.B
-  csr.io.interrupt.external := false.B
 
   // cache not ready
   val stall = !io.icacahe.resp.valid || !io.dcache.resp.valid || !io.dcache.req.ready
@@ -106,6 +103,9 @@ class DataPath(implicit p: Parameters) extends Module {
   val mem2if_pc_sel = Wire(UInt(2.W))
   val mem2if_pc_alu = Wire(UInt(p(XLen).W))
   val mem_kill = Wire(UInt(1.W))
+
+  val time_interrupt_enable = WireInit(false.B)
+  BoringUtils.addSink(time_interrupt_enable, "time_interrupt_enable")
 
   // fetch /////////////////////////////////////
 
@@ -148,7 +148,7 @@ class DataPath(implicit p: Parameters) extends Module {
   val id_inst  = RegEnable(if_inst, !stall)
   val id_pc    = RegEnable(if_pc, !stall)
   val id_valid = RegEnable(Mux((mem_kill === 1.U) | loadrisk.io.stall, 0.U, if_valid), 0.U, !stall)
-  val id_interrupt = RegEnable(0.U(1.W), 0.U(1.W), !stall)
+  val id_interrupt = RegEnable(io.time_interrupt & time_interrupt_enable, 0.U(1.W), !stall)
 
   // ex /////////////////////////////////////
   bypass.io.ex.isrs1 := true.B // id_ctrl.asTypeOf(new CtrlSignal).a_sel === A_RS1
@@ -214,11 +214,11 @@ class DataPath(implicit p: Parameters) extends Module {
   mem.io.st_type    := Mux(mem_wb_interrupt, ST_XXX, id_ctrl.asTypeOf(new CtrlSignal).st_type)
   mem.io.s_data     := br.io.rs2
   mem.io.alu_res    := ex.io.out
-  mem.io.inst_valid := Mux(mem_kill === 1.U, 0.U, id_valid)
+  mem.io.inst_valid := Mux((mem_kill === 1.U) | (id_interrupt === 1.U), 0.U, id_valid)
   mem.io.stall      := stall
 
   if (p(Difftest)) {
-    csr.io.stall := stall | (ex_inst === "h0000006c".U)
+    csr.io.stall := stall | (ex_inst === "h0000007b".U)
   } else {
     csr.io.stall := stall
   }
@@ -227,11 +227,19 @@ class DataPath(implicit p: Parameters) extends Module {
   csr.io.ctrl_signal.pc := ex_pc
   csr.io.ctrl_signal.addr := ex_alu_out
   csr.io.ctrl_signal.inst := ex_inst
-  csr.io.ctrl_signal.illegal := ex_ctrl.asTypeOf(new CtrlSignal).illegal
+  if(p(Difftest)){
+    csr.io.ctrl_signal.illegal := ex_ctrl.asTypeOf(new CtrlSignal).illegal & (ex_inst  =/= "h0000007b".U) & (ex_inst =/= "h0000006b".U)
+  }else{
+    csr.io.ctrl_signal.illegal := ex_ctrl.asTypeOf(new CtrlSignal).illegal
+  }
   csr.io.ctrl_signal.st_type := ex_ctrl.asTypeOf(new CtrlSignal).st_type
   csr.io.ctrl_signal.ld_type := ex_ctrl.asTypeOf(new CtrlSignal).ld_type
   csr.io.ctrl_signal.valid   := ex_valid
   csr.io.pc_check := (ex_ctrl.asTypeOf(new CtrlSignal).pc_sel === PC_ALU) & ex_valid
+
+  csr.io.interrupt.time     := ex_interrupt & ex_valid
+  csr.io.interrupt.soft     := false.B
+  csr.io.interrupt.external := false.B
 
   val mem_alu_out    = RegEnable(ex_alu_out, !stall)
   val mem_l_data     = RegEnable(mem.io.l_data, !stall)
@@ -240,14 +248,15 @@ class DataPath(implicit p: Parameters) extends Module {
   val mem_ctrl       = RegEnable(ex_ctrl, !stall)
   val mem_inst       = RegEnable(ex_inst, !stall)
   val mem_pc         = RegEnable(ex_pc, !stall)
-  val mem_valid      = RegEnable(ex_valid, 0.U, !stall)
+  val mem_valid_true = RegEnable(ex_valid, 0.U, !stall)
   val mem_csr        = RegEnable(csr.io.out, !stall)
-  val mem_interrupt  = RegEnable(ex_interrupt, 0.U, !stall)
+  val mem_csr_except  = RegEnable(csr_except, 0.U, !stall)
 
+  val mem_valid = mem_valid_true & !mem_csr_except
 
   br_taken_from_mem := ex_taken & ex_valid
   if (p(Difftest)) {
-    csr_except := csr.io.expt & ex_valid & (ex_inst =/= "h0000006c".U)
+    csr_except := csr.io.expt & ex_valid & (ex_inst =/= "h0000007b".U)
   } else {
     csr_except := csr.io.expt & ex_valid
   }
@@ -262,7 +271,7 @@ class DataPath(implicit p: Parameters) extends Module {
   bypass.io.wb.valid := mem_valid & mem_ctrl.asTypeOf(new CtrlSignal).wen
   bypass_mem_l_data := regs.io.wdata
 
-  mem_wb_interrupt := ex_interrupt | mem_interrupt
+  mem_wb_interrupt := ((ex_interrupt & ex_valid) | csr.io.expt) | (mem_valid_true & mem_csr_except)
 
   regs.io.waddr := mem_rd
   regs.io.wdata := MuxLookup(mem_ctrl.asTypeOf(new CtrlSignal).wb_type, 0.U, Array(
@@ -274,13 +283,14 @@ class DataPath(implicit p: Parameters) extends Module {
   regs.io.wen := (mem_ctrl.asTypeOf(new CtrlSignal).wen & !stall & mem_valid) // | mem_l_data.valid
 
   val commit_valid  = Wire(Bool())
-  commit_valid := (mem_valid & !stall) // | mem_l_data.valid | mem_s_complete
+  commit_valid := (mem_valid_true & !mem_csr_except & !stall) // | mem_l_data.valid | mem_s_complete
   dontTouch(commit_valid)
 
   dontTouch(regs.io.wdata)
 
   val cycleCnt = Counter(Int.MaxValue)
   cycleCnt.inc()
+  BoringUtils.addSource(cycleCnt.value, "cycleCnt")
   val instCnt = Counter(Int.MaxValue)
   when(commit_valid){
     instCnt.inc()
@@ -288,6 +298,22 @@ class DataPath(implicit p: Parameters) extends Module {
 
   if(p(Difftest)){
     println(">>>>>>>> difftest mode!")
+
+    val dcache_op = WireInit(false.B)
+    val dcache_data = WireInit(0.asUInt(p(XLen).W))
+    val dcache_address = WireInit(0.asUInt(p(XLen).W))
+    val dcache_mask = WireInit(0.asUInt(8.W))
+
+    BoringUtils.addSink(dcache_mask, "dcache_mask")
+    BoringUtils.addSink(dcache_data, "dcache_data")
+    BoringUtils.addSink(dcache_address, "dcache_address")
+    BoringUtils.addSink(dcache_op, "dcache_op")
+
+//    val dse = Module(new DifftestStoreEvent)
+//    dse.io.valid := RegNext(commit_valid & !RegEnable(RegEnable(dcache_op, !stall), !stall))
+//    dse.io.storeAddr := RegNext(RegEnable(RegEnable(dcache_address, !stall), !stall))
+//    dse.io.storeData := RegNext(RegEnable(RegEnable(0.U, !stall), !stall))
+//    dse.io.storeMask := RegNext(RegEnable(RegEnable(dcache_mask, !stall), !stall))
 
     val dic = Module(new DifftestInstrCommit)
     dic.io.clock := clock
@@ -297,8 +323,11 @@ class DataPath(implicit p: Parameters) extends Module {
     dic.io.valid := RegNext(commit_valid)
     dic.io.pc := RegNext(mem_pc)
     dic.io.instr := RegNext(mem_inst)
-    dic.io.skip := RegNext((mem_inst === "h0000006c".U) |
-      ((mem_ctrl.asTypeOf(new CtrlSignal).ld_type.orR() | mem_ctrl.asTypeOf(new CtrlSignal).st_type.orR()) & ((mem_alu_out === "h02000000".U) | (mem_alu_out === "h02000008".U)))
+    dic.io.skip := RegNext(
+      ((mem_inst === "h0000007b".U) |
+      ((mem_ctrl.asTypeOf(new CtrlSignal).ld_type.orR() | mem_ctrl.asTypeOf(new CtrlSignal).st_type.orR()) & (p(CLINTRegs).values.map(mem_alu_out === _.U).reduce(_|_))) |
+      (mem_inst === BitPat("b101100000000_?????_010_?????_1110011"))
+      ) & !stall
     )
     dic.io.isRVC := false.B
     dic.io.scFailed := false.B
@@ -319,7 +348,7 @@ class DataPath(implicit p: Parameters) extends Module {
     val difftest_uart_ch    = Wire(UInt(8.W))
     BoringUtils.addSource(difftest_uart_valid, "difftest_uart_valid")
     BoringUtils.addSource(difftest_uart_ch, "difftest_uart_ch")
-    difftest_uart_valid := RegNext((mem_inst === "h0000006c".U) & (mem_valid === 1.U))
+    difftest_uart_valid := RegNext((mem_inst === "h0000007b".U) & (mem_valid === 1.U))
     difftest_uart_ch := regs.io.trap_code.getOrElse(1.U)
 
   }

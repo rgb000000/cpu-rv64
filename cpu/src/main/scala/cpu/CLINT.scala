@@ -6,6 +6,9 @@ import chipsalliance.rocketchip.config._
 
 class CLINT(implicit p: Parameters) extends Module{
   // (0x02000000L, 0x0000ffffL, false,   0), // CLINT
+  val addrs = p(CLINTRegs)
+  val mtime_addr = addrs("mtime").U
+  val mtimecmp_addr = addrs("mtimecmp").U
 
   val io = IO(new Bundle{
     val cpu = Flipped(new CacheMemIO())
@@ -25,9 +28,10 @@ class CLINT(implicit p: Parameters) extends Module{
   val addr = Reg(UInt(64.W))
 
   val sel_data = Wire(UInt(64.W))
-  sel_data := Mux(addr === "h02000000".U, mtime,
-              Mux(addr === "h02000008".U, mtimecmp,
-                0x7fffffff.U))
+  sel_data := MuxLookup(addr, 0x7fffffff.U, Array(
+    mtime_addr    -> mtime,
+    mtimecmp_addr -> mtimecmp
+  ))
 
   io.cpu.req.ready := 1.U
 
@@ -36,7 +40,7 @@ class CLINT(implicit p: Parameters) extends Module{
   io.cpu.resp.bits.data := 0.U
   io.cpu.resp.bits.cmd :=  Mux(op === 1.U, 1.U, MemCmdConst.ReadLast)
 
-  io.interrupt := mtime >= mtimecmp
+  io.interrupt := RegNext(mtime >= mtimecmp)
 
   mtime := mtime + 1.U
 
@@ -45,9 +49,9 @@ class CLINT(implicit p: Parameters) extends Module{
     id := io.cpu.req.bits.id
     addr := io.cpu.req.bits.addr
   }.elsewhen((state === s_w) & io.cpu.req.fire()){
-    when(io.cpu.req.bits.addr === "h02000000".U){
+    when(io.cpu.req.bits.addr === mtime_addr){
       mtime := io.cpu.req.bits.data
-    }.elsewhen(io.cpu.req.bits.addr === "h02000008".U){
+    }.elsewhen(io.cpu.req.bits.addr === mtimecmp_addr){
       mtimecmp := io.cpu.req.bits.data
     }
   }.elsewhen((state === s_resp)){

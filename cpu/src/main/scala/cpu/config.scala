@@ -14,6 +14,8 @@ case object Difftest extends Field[Boolean]
 //                                          start   range   isCache? type(MEMBus:0, AXI:1)
 case object AddressSpace extends Field[Seq[(String, String, Boolean, Int)]]
 
+case object CLINTRegs extends Field[Map[String, String]]
+
 class DefaultConfig extends Config ((site, here, up)=>{
   case XLen           => 64
   case PCStart        => "h8000_0000"
@@ -36,5 +38,10 @@ class DefaultConfig extends Config ((site, here, up)=>{
     ("h10001000", "h00000fff", false,   1), // SPI Controller
     ("h30000000", "h0fffffff", false,   1), // SPI Flash XIP mode
     ("h80000000", "h7fffffff", true ,   1), // MEM
+  )
+
+  case CLINTRegs => Map(
+    "mtime"     -> "h0200_bff8",
+    "mtimecmp"  -> "h0200_4000"
   )
 })

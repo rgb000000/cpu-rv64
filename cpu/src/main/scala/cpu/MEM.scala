@@ -3,6 +3,7 @@ package cpu
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
+import chisel3.util.experimental.BoringUtils
 
 class MEM (implicit p: Parameters) extends Module {
   val io = IO(new Bundle{
@@ -106,12 +107,21 @@ class MEM (implicit p: Parameters) extends Module {
   dontTouch(io.s_complete)
 
   if(p(Difftest)){
+    val cycleCnt = WireInit(0.asUInt(64.W))
+    BoringUtils.addSink(cycleCnt, "cycleCnt")
 //    when(io.dcache.req.fire() & (io.dcache.req.bits.op === 1.U)){
-//      printf("addr: %x, data: %x, sd_type: %x \n", io.dcache.req.bits.addr, io.dcache.req.bits.data, io.st_type)
+//      when(io.dcache.req.bits.addr === BitPat("b0000_0000_0000_0000_0000_0000_0000_0000_1000_0000_0000_0001_0000_0001_011?_????")){
+//        printf("addr: %x, data: %x, sd_type: %x, time: %d \n", io.dcache.req.bits.addr, io.dcache.req.bits.data, io.st_type, cycleCnt)
+//      }
 //    }
 //
 //    when(io.dcache.req.fire() & (io.dcache.req.bits.op === 0.U)){
 //      printf("addr: %x, data: %x, ld_type: %x \n", io.dcache.req.bits.addr, 0.U, io.ld_type)
 //    }
+
+    BoringUtils.addSource(io.dcache.req.bits.mask, "dcache_mask")
+    BoringUtils.addSource(io.dcache.req.bits.data, "dcache_data")
+    BoringUtils.addSource(io.dcache.req.bits.addr, "dcache_address")
+    BoringUtils.addSource(io.dcache.req.bits.op, "dcache_op")
   }
 }

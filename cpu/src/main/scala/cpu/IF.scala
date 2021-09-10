@@ -37,8 +37,8 @@ class IF (implicit p: Parameters) extends Module {
 //  ))))
 
   val pc_next = Mux(io.stall, cur_pc,
-                  Mux(io.br_taken, io.pc_alu,
-                    Mux(io.pc_except_entry.valid, io.pc_except_entry.bits, MuxLookup(io.pc_sel, 0.U, Array(
+                  Mux(io.pc_except_entry.valid, io.pc_except_entry.bits,
+                    Mux(io.br_taken, io.pc_alu, MuxLookup(io.pc_sel, 0.U, Array(
                       Control.PC_0   -> (cur_pc),
                       Control.PC_4   -> (cur_pc + 4.U),
                       Control.PC_ALU -> (io.pc_alu),

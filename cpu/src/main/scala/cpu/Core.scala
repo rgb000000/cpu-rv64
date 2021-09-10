@@ -21,6 +21,7 @@ class Core (implicit p: Parameters) extends Module{
   datapath.io.icacahe <> icache.io.cpu  // icache
   datapath.io.dcache <> dcache.io.cpu   // dcache
   datapath.io.control <> control.io     // control
+  datapath.io.time_interrupt := clint.io.interrupt // time interrupt
 
   // crossbar <> i/d cache
   crossbar.io.in.zip(Seq(icache, dcache).map(_.io.mem)).foreach(info =>{

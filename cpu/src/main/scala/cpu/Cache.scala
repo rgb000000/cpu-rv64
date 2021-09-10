@@ -217,7 +217,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     // req is read op and write_buffer is valid
     (/*(io.cpu.req.bits.op ===  0.U) &*/ (write_buffer.valid === 1.U) &
       (
-        (write_buffer.bits.index === io.cpu.req.bits.addr.asTypeOf(infos).index) |
+        (write_buffer.bits.index === io.cpu.req.bits.addr.asTypeOf(infos).index) |  // 读操作和写操作的第一步都是要lookup，也就是读操作。当index相等但是bank不相等的时候，也是会对所有的way的所有bank的相同index进行读操作会与write buffer冲突
+                                                                                    // TODO： 这个cache写的太垃圾了，把我debug惨了，后续有时间在简化一下逻辑。比如写操作只查询v d tag，不读bank
         (write_buffer.bits.offset(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)) === io.cpu.req.bits.addr.asTypeOf(infos).offset(log2Ceil(p(CacheLineSize) / p(NBank) / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(p(CacheLineSize) / p(NBank) / 8)))
       )) |
       ( // this block is to make sure the write op will complete before the read op *at the same address(the same bank)*

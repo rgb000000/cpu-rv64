@@ -3,7 +3,8 @@ package cpu
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
-import difftest.DifftestCSRState
+import chisel3.util.experimental.BoringUtils
+import difftest.{DifftestArchEvent, DifftestCSRState}
 
 object CSR {
   val N = 0.U(3.W) // None
@@ -111,11 +112,13 @@ class CSR (implicit p: Parameters) extends Module {
   val io = IO(new CSRIO)
 
   val csr_addr = io.ctrl_signal.inst(31, 20).asUInt()
-  val rs1_addr = io.ctrl_signal.inst(19, 15).asUInt()
 
   val mtvec   = RegInit(p(PCEVec).U(p(XLen).W))
   val mepc = Reg(UInt(p(XLen).W))
-  val mcause = Reg(UInt(p(XLen).W))
+  val mcause = RegInit(0.U(p(XLen).W))
+  val mcycle = RegInit(0.U(p(XLen).W))
+
+  mcycle := mcycle + 1.U
 
   val reset_mstatus = WireInit(0.U.asTypeOf(new MStatus))
   reset_mstatus.mpp := CSR.PRV_M
@@ -123,7 +126,12 @@ class CSR (implicit p: Parameters) extends Module {
   val mstatus = RegInit(reset_mstatus)
 
   val mie = RegInit(0.U.asTypeOf(new MIE))
-  val mip = RegInit(0.U.asTypeOf(new MIP))
+  val mip = WireInit(0.U.asTypeOf(new MIP))
+  mip.mtip := io.interrupt.time
+
+  dontTouch(mstatus)
+  dontTouch(mie)
+  dontTouch(mip)
 
   val mbadaddr = RegInit(0.U(p(XLen).W))
 
@@ -134,7 +142,8 @@ class CSR (implicit p: Parameters) extends Module {
     BitPat(CSRs.mepc.U)     -> mepc,
     BitPat(CSRs.mcause.U)   -> mcause,
     BitPat(CSRs.mip.U)      -> mip.asUInt(),
-    BitPat(CSRs.mie.U)      -> mie.asUInt()
+    BitPat(CSRs.mie.U)      -> mie.asUInt(),
+    BitPat(CSRs.mcycle.U)   -> mcycle
   )
 
   io.out := Lookup(csr_addr, 0.U, csrFile).asUInt()
@@ -147,12 +156,17 @@ class CSR (implicit p: Parameters) extends Module {
   val isSret    = privInst && (csr_addr(1, 0).asUInt() === "b10".U) && (csr_addr(9, 8).asUInt() === "b01".U) // is sret   000100000010
   val csrValid  = csrFile map (_._1 === csr_addr) reduce (_ || _)   // is csr address valid?
   val csrRO     = csr_addr(11, 10).andR || csr_addr === CSRs.mtvec.U || csr_addr === CSRs.medeleg.U   // read only? csr_addr(11, 10) == 2'b11
-  val wen       = io.cmd === CSR.W || io.cmd(1) && rs1_addr.orR     // wen
+  val wen       = (io.cmd === CSR.W) | (io.cmd === CSR.S) | (io.cmd === CSR.C)     // wen
   val wdata     = MuxLookup(io.cmd, 0.U, Seq(
     CSR.W -> io.in,
     CSR.S -> (io.out | io.in),
     CSR.C -> (io.out & (~io.in).asUInt())
   ))
+
+  val time_interrupt_enable = WireInit(mie.mtie & mstatus.mie)
+  BoringUtils.addSource(time_interrupt_enable, "time_interrupt_enable")
+  val time_interrupt = mip.mtip & time_interrupt_enable
+
   val iaddrInvalid = io.pc_check && io.ctrl_signal.addr(1)
   val laddrInvalid = MuxLookup(io.ctrl_signal.ld_type, false.B, Seq(
     Control.LD_LW -> io.ctrl_signal.addr(1, 0).orR, Control.LD_LH -> io.ctrl_signal.addr(0), Control.LD_LHU -> io.ctrl_signal.addr(0)))
@@ -160,14 +174,14 @@ class CSR (implicit p: Parameters) extends Module {
     Control.ST_SW -> io.ctrl_signal.addr(1, 0).orR, Control.ST_SH -> io.ctrl_signal.addr(0)))
   io.expt := io.ctrl_signal.illegal || iaddrInvalid || laddrInvalid || saddrInvalid ||
     (io.cmd(1, 0).orR && (!csrValid || !privValid)) || (wen && csrRO && false.B) ||
-    (privInst && !privValid) || isEcall || isEbreak || io.interrupt.asUInt().orR()
+    (privInst && !privValid) || isEcall || isEbreak || time_interrupt
   io.exvec := mtvec
   io.epc  := mepc
 
   when(!io.stall & io.ctrl_signal.valid) {
     when(io.expt) {
       mepc   := io.ctrl_signal.pc >> 2 << 2
-      mcause := Mux(io.interrupt.asUInt().orR(), (1.U << (p(XLen)-1).U).asUInt() | 7.U,
+      mcause := Mux(time_interrupt,               (1.U << (p(XLen)-1).U).asUInt() | 7.U,
                 Mux(iaddrInvalid,                 Causes.misaligned_fetch.U,
                 Mux(laddrInvalid,                 Causes.misaligned_load.U,
                 Mux(saddrInvalid,                 Causes.misaligned_store.U,
@@ -192,9 +206,9 @@ class CSR (implicit p: Parameters) extends Module {
         mstatus.mpie := tmp_mstatus.mpie
       }
       .elsewhen(csr_addr === CSRs.mip.U) {
-        val tmp_mip = wdata.asTypeOf(new MIP)
-        mip.mtip := tmp_mip.mtip
-        mip.msip := tmp_mip.msip
+//        val tmp_mip = wdata.asTypeOf(new MIP)
+//        mip.mtip := tmp_mip.mtip
+//        mip.msip := tmp_mip.msip
       }
       .elsewhen(csr_addr === CSRs.mie.U) {
         val tmp_mie = wdata.asTypeOf(new MIE)
@@ -203,7 +217,8 @@ class CSR (implicit p: Parameters) extends Module {
       }
       .elsewhen(csr_addr === CSRs.mepc.U) { mepc := wdata >> 2.U << 2.U }
       .elsewhen(csr_addr === CSRs.mcause.U) { mcause := wdata & (BigInt(1) << (p(XLen)-1) | 0xf).U }
-      .elsewhen(csr_addr === CSRs.mtvec.U) {mtvec := wdata}
+      .elsewhen(csr_addr === CSRs.mtvec.U) { mtvec := wdata}
+      .elsewhen(csr_addr === CSRs.mcycle.U){ mcycle := wdata}
     }
   }
 
@@ -211,24 +226,39 @@ class CSR (implicit p: Parameters) extends Module {
     val dcsr = Module(new DifftestCSRState)
     dcsr.io.clock          := clock
     dcsr.io.coreid         := 0.U
-    dcsr.io.priviledgeMode := RegNext(mstatus.prv, !io.stall)
-    dcsr.io.mstatus        := RegNext(mstatus.asUInt(), !io.stall)
-    dcsr.io.mcause         := RegNext(mcause, !io.stall)
-    dcsr.io.mepc           := RegNext(mepc, !io.stall)
+    dcsr.io.priviledgeMode := RegNext(Mux(!io.stall, mstatus.prv,       RegEnable(mstatus.prv, !io.stall)))      // RegNext(mstatus.prv, !io.stall)
+    dcsr.io.mstatus        := RegNext(Mux(!io.stall, mstatus.asUInt(),  RegEnable(mstatus.asUInt(), !io.stall))) // RegNext(mstatus.asUInt(), !io.stall)
+    dcsr.io.mcause         := RegNext(Mux(!io.stall, mcause,            RegEnable(mcause, !io.stall)))           // RegNext(mcause, !io.stall)
+    dcsr.io.mepc           := RegNext(Mux(!io.stall, mepc,              RegEnable(mepc, !io.stall)))             // RegNext(mepc, !io.stall)
+    dcsr.io.mip            := 0.U // RegNext(Mux(!io.stall, mip.asUInt(),      RegEnable(mip.asUInt(), !io.stall)))     // RegNext(mip.asUInt(), !io.stall)
+    dcsr.io.mie            := RegNext(Mux(!io.stall, mie.asUInt(),      RegEnable(mie.asUInt(), !io.stall)))     // RegNext(mie.asUInt(), !io.stall)
+    dcsr.io.mtvec          := RegNext(Mux(!io.stall, mtvec,             RegEnable(mtvec, !io.stall)))            // RegNext(mtvec, !io.stall)
     dcsr.io.sstatus        := 0.U // RegNext(0.U)
     dcsr.io.scause         := 0.U // RegNext(0.U)
     dcsr.io.sepc           := 0.U // RegNext(0.U)
     dcsr.io.satp           := 0.U // RegNext(0.U)
-    dcsr.io.mip            := RegNext(mip.asUInt(), !io.stall)
-    dcsr.io.mie            := RegNext(mie.asUInt(), !io.stall)
     dcsr.io.mscratch       := 0.U // RegNext(mscratch)
     dcsr.io.sscratch       := 0.U // RegNext(0.U)
     dcsr.io.mideleg        := 0.U // RegNext(0.U)
     dcsr.io.medeleg        := 0.U // RegNext(0.U)
     dcsr.io.mtval          := 0.U // RegNext(0.U)
     dcsr.io.stval          := 0.U // RegNext(0.U)
-    dcsr.io.mtvec          := RegNext(mtvec, !io.stall)
     dcsr.io.stvec          := 0.U // RRegNextegNext(0.U)
+
+    def change(value: UInt): UInt = {
+      Mux(value =/= RegNext(value), value, 0.U)
+    }
+
+    val except_reg = RegEnable(io.expt, false.B, !io.stall)
+    val time_interrupt_reg = RegEnable(time_interrupt, false.B, !io.stall)
+
+    val dae = Module(new DifftestArchEvent)
+    dae.io.clock := clock
+    dae.io.coreid := 0.U
+    dae.io.intrNO := RegNext(Mux(!io.stall, Mux(except_reg, Mux(time_interrupt_reg, mcause, 0.U), 0.U), 0.U))
+    dae.io.cause := RegNext(Mux(!io.stall, Mux(except_reg, Mux(!time_interrupt_reg, mcause, 0.U), 0.U), 0.U))
+    dae.io.exceptionPC := RegNext(Mux(!io.stall, RegEnable(io.ctrl_signal.pc, !io.stall), 0.U))
+    dae.io.exceptionInst := RegNext(Mux(!io.stall, RegEnable(io.ctrl_signal.inst, !io.stall), 0.U))
   }
 
 }
