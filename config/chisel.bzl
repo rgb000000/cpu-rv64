@@ -224,7 +224,7 @@ def _difftest_compile_impl(ctx):
                   "&& cp %s %s" % (root + "/dependency/difftest/vcs.mk", difftest_dir_clone.path) +
                   "&& tree && echo $NEMU_HOME && echo $SHELL" +
                   "&& cd %s" % (difftest_dir_clone.path) +
-                  "&& make emu",
+                  "&& make emu EMU_TRACE=1 #EMU_THREADS=4 WITH_DRAMSIM3=1",
         progress_message = "Compiling .v with .cpp",
         use_default_shell_env = True,
     )

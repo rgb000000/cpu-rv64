@@ -13,3 +13,6 @@
 [submodule "dependency/difftest"]
 	path = dependency/difftest
 	url = https://github.com/OpenXiangShan/difftest
+[submodule "dependency/DRAMsim3"]
+	path = dependency/DRAMsim3
+	url = https://gitee.com/oscpu/DRAMsim3.git
