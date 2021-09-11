@@ -113,7 +113,8 @@ class CSRIO(implicit p: Parameters) extends Bundle {
 class CSR (implicit p: Parameters) extends Module {
   val io = IO(new CSRIO)
 
-  val csr_addr = io.ctrl_signal.inst(31, 20).asUInt()
+  val csr_addr = Wire(UInt(12.W))
+  csr_addr := io.ctrl_signal.inst(31, 20).asUInt()
 
   val mhardid = 0.U
   val mscratch = Reg(UInt(64.W))
@@ -142,15 +143,15 @@ class CSR (implicit p: Parameters) extends Module {
 
 
   val csrFile = Seq(
-    BitPat(CSRs.mstatus.U)  -> mstatus.asUInt(),
-    BitPat(CSRs.mtvec.U)    -> mtvec,
-    BitPat(CSRs.mepc.U)     -> mepc,
-    BitPat(CSRs.mcause.U)   -> mcause,
-    BitPat(CSRs.mip.U)      -> mip.asUInt(),
-    BitPat(CSRs.mie.U)      -> mie.asUInt(),
-    BitPat(CSRs.mcycle.U)   -> mcycle,
-    BitPat(CSRs.mhartid.U)  -> mhardid,
-    BitPat(CSRs.mscratch.U) -> mscratch
+    BitPat(CSRs.mstatus.U(12.W))  -> mstatus.asUInt(),
+    BitPat(CSRs.mtvec.U(12.W))    -> mtvec,
+    BitPat(CSRs.mepc.U(12.W))     -> mepc,
+    BitPat(CSRs.mcause.U(12.W))   -> mcause,
+    BitPat(CSRs.mip.U(12.W))      -> mip.asUInt(),
+    BitPat(CSRs.mie.U(12.W))      -> mie.asUInt(),
+    BitPat(CSRs.mcycle.U(12.W))   -> mcycle,
+    BitPat(CSRs.mhartid.U(12.W))  -> mhardid,
+    BitPat(CSRs.mscratch.U(12.W)) -> mscratch
   )
 
   io.out := Lookup(csr_addr, 0.U, csrFile).asUInt()
