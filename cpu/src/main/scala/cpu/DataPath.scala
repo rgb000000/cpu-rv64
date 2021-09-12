@@ -288,16 +288,17 @@ class DataPath(implicit p: Parameters) extends Module {
 
   dontTouch(regs.io.wdata)
 
-  val cycleCnt = Counter(Int.MaxValue)
-  cycleCnt.inc()
-  BoringUtils.addSource(cycleCnt.value, "cycleCnt")
-  val instCnt = Counter(Int.MaxValue)
-  when(commit_valid){
-    instCnt.inc()
-  }
 
   if(p(Difftest)){
     println(">>>>>>>> difftest mode!")
+
+    val cycleCnt = Counter(Int.MaxValue)
+    cycleCnt.inc()
+    BoringUtils.addSource(cycleCnt.value, "cycleCnt")
+    val instCnt = Counter(Int.MaxValue)
+    when(commit_valid){
+      instCnt.inc()
+    }
 
     val dcache_op = WireInit(false.B)
     val dcache_data = WireInit(0.asUInt(p(XLen).W))
