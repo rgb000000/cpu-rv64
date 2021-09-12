@@ -16,7 +16,7 @@ object AXI4Parameters {
   val respBits  = 2
 
   // These are not fixed:
-  val idBits    = 1
+  val idBits    = 4
   val addrBits  = 64
   val dataBits  = 64
   val userBits  = 1
