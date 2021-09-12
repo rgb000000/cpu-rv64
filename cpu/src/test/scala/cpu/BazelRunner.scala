@@ -19,7 +19,8 @@ object BazelRunner {
     //   System.exit(1)
     // }
     println("Generating Verilog for {MODULECODE}")
-    implicit val p = new DefaultConfig
+    println("Generating Verilog for {CONFIGNAME}")
+    implicit val p = new {CONFIGNAME}
     (new ChiselStage).execute(
       Array(
         "-X", "verilog",

@@ -57,7 +57,10 @@ def _chisel_verilog_scala_source_impl(ctx):
     ctx.actions.expand_template(
         output = out,
         template = ctx.file._template,
-        substitutions = {"{MODULECODE}": ctx.attr.module_code},
+        substitutions = {
+            "{MODULECODE}": ctx.attr.module_code,
+            "{CONFIGNAME}": ctx.attr.config_name,
+        },
     )
     return [DefaultInfo(files = depset([out]))]
 
@@ -65,6 +68,7 @@ _chisel_verilog_scala_source = rule(
     implementation = _chisel_verilog_scala_source_impl,
     attrs = {
         "module_code": attr.string(mandatory = True),
+        "config_name": attr.string(mandatory = True),
         "_template": attr.label(
             allow_single_file = True,
             default = "//cpu:src/test/scala/cpu/BazelRunner.scala",
@@ -116,6 +120,7 @@ def chisel_verilog(
     _chisel_verilog_scala_source(
         name = name + "_emit_verilog_scala",
         module_code = module_code,
+        config_name = "DefaultConfig",
     )
     scala_binary(
         name = name + "_emit_verilog_binary",
@@ -224,7 +229,7 @@ def _difftest_compile_impl(ctx):
                   "&& cp %s %s" % (root + "/dependency/difftest/vcs.mk", difftest_dir_clone.path) +
                   "&& tree && echo $NEMU_HOME && echo $SHELL" +
                   "&& cd %s" % (difftest_dir_clone.path) +
-                  "&& make emu EMU_TRACE=1 #EMU_THREADS=4 WITH_DRAMSIM3=1",
+                  "&& make emu EMU_TRACE=1 #WITH_DRAMSIM3=1",
         progress_message = "Compiling .v with .cpp",
         use_default_shell_env = True,
     )
@@ -252,6 +257,7 @@ def verilator_test(
     _chisel_verilog_scala_source(
         name = name + "_emit_verilog_scala",
         module_code = module_code,
+        config_name = "DefaultConfig",
     )
     scala_binary(
         name = name + "_emit_verilog_binary",
@@ -291,6 +297,7 @@ def difftest(
     _chisel_verilog_scala_source(
         name = name + "_emit_verilog_scala",
         module_code = module_code,
+        config_name = "DefaultConfig",
     )
     scala_binary(
         name = name + "_emit_verilog_binary",
@@ -311,4 +318,34 @@ def difftest(
     _difftest_compile(
         name = name,
         SimTop = name + "_files",
+    )
+
+def getVerilog(
+        name,
+        module_name,
+        module_code,
+        deps,
+        srcs,
+        inst_file = [],
+        visibility = None):
+    _chisel_verilog_scala_source(
+        name = name + "_emit_verilog_scala",
+        module_code = module_code,
+        config_name = "FPGAConfig",
+    )
+    scala_binary(
+        name = name + "_emit_verilog_binary",
+        main_class = "cpu.BazelRunner",
+        srcs = [
+            "%s_emit_verilog_scala" % name,
+        ],
+        deps = deps + _chisel_deps,
+        plugins = _chisel_plugins,
+        visibility = ["//visibility:private"],
+    )
+    _chisel_verilog_run_generator(
+        name = name,
+        visibility = visibility,
+        tool = name + "_emit_verilog_binary",
+        module_name = module_name,
     )

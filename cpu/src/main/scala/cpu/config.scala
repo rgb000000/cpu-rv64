@@ -1,6 +1,7 @@
 package cpu
 
 import chipsalliance.rocketchip.config._
+import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 
 // register width
 case object XLen extends Field[Int]
@@ -11,12 +12,15 @@ case object PCEVec extends Field[String]
 
 case object Difftest extends Field[Boolean]
 
+case object DRAM3Sim extends Field[Boolean]
+
 //                                          start   range   isCache? type(MEMBus:0, AXI:1)
 case object AddressSpace extends Field[Seq[(String, String, Boolean, Int)]]
 
 case object CLINTRegs extends Field[Map[String, String]]
 
-class DefaultConfig extends Config ((site, here, up)=>{
+
+class BaseConfig extends Config ((site, here, up)=>{
   case XLen           => 64
   case PCStart        => "h8000_0000"
   case PCEVec         => "h9000_0000"
@@ -27,9 +31,6 @@ class DefaultConfig extends Config ((site, here, up)=>{
   case NWay           => 4
   case NBank          => 4
   case IDBits         => 4
-
-  case Difftest       => true
-//  case Difftest       => false
 
   case AddressSpace   => Seq(
     //   start       range   isCache? port_type
@@ -45,3 +46,22 @@ class DefaultConfig extends Config ((site, here, up)=>{
     "mtimecmp"  -> "h0200_4000"
   )
 })
+
+class DifftestEnableConfig extends Config((site, here,up)=>{
+  case Difftest       => true
+  case DRAM3Sim       => false
+})
+
+class DifftestDisableConfig extends Config((site, here,up)=>{
+  case Difftest       => false
+  case DRAM3Sim       => false
+})
+
+
+class DefaultConfig extends Config (
+  new BaseConfig ++ new DifftestEnableConfig
+)
+
+class FPGAConfig extends Config(
+  new BaseConfig ++ new DifftestDisableConfig
+)
