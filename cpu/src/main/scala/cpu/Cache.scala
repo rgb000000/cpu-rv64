@@ -36,6 +36,7 @@ object MemCmdConst{
   def ReadOnce    = "b0000".U
   def ReadBurst   = "b0001".U
   def ReadLast    = "b0010".U
+  def ReadData    = "b0011".U
 
   def WriteOnce   = "b1000".U
   def WriteBurst  = "b1001".U

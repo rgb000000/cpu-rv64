@@ -13,13 +13,16 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
 
   val s_idle :: s_read :: s_write :: s_resp :: Nil = Enum(4)
   val state = RegInit(s_idle)
+  val isBurst = Reg(Bool())
 
   switch(state){
     is(s_idle){
-      when(io.in.req.fire() & ((io.in.req.bits.cmd === MemCmdConst.WriteBurst) | (io.in.req.bits.cmd === MemCmdConst.WriteOnce) | (io.in.req.bits.cmd === MemCmdConst.WriteLast))){
+      when(io.in.req.fire() & ((io.in.req.bits.cmd === MemCmdConst.WriteBurst) | (io.in.req.bits.cmd === MemCmdConst.WriteOnce))){
         state := s_write
+        isBurst := (io.in.req.bits.cmd === MemCmdConst.WriteBurst)
       }.elsewhen(io.in.req.fire() & ((io.in.req.bits.cmd === MemCmdConst.ReadBurst) | (io.in.req.bits.cmd === MemCmdConst.ReadOnce))){
         state := s_read
+        isBurst := (io.in.req.bits.cmd === MemCmdConst.ReadBurst)
       }
     }
     is(s_write){
@@ -45,7 +48,7 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
     io.in.resp.bits.id := r.bits.id
     io.in.resp.bits.data := r.bits.data
     io.in.resp.valid := r.valid
-    io.in.resp.bits.cmd := Mux(r.bits.last, MemCmdConst.ReadLast, 0.U)
+    io.in.resp.bits.cmd := Mux(isBurst, Mux(r.bits.last, MemCmdConst.ReadLast, 0.U), MemCmdConst.ReadLast)
   }.elsewhen(state === s_resp){
     io.in.resp.bits.id := b.bits.id
     io.in.resp.bits.data := 0.U
