@@ -11,12 +11,20 @@ class SimTop(implicit p: Parameters) extends Module {
     val logCtrl = new LogCtrlIO
     val perfInfo = new PerfInfoIO
     val uart = new UARTIO
+    val memAXI_0 = if(p(DRAM3Sim)) Some(new AXI4()) else None
   })
 
-  val core = Module(new Core)
+  if(p(DRAM3Sim)){
+    val core = Module(new Core)
+    io.memAXI_0.get <> core.io.memAXI.head
+  }else{
+    val core = Module(new Core)
+    val aximem = Module(new AXIMem)
+    dontTouch(aximem.io)
+    core.io.memAXI.head <> aximem.io
+  }
 
   io.uart.in.valid := false.B
-
   val difftest_uart_valid = WireInit(false.B)
   val difftest_uart_ch    = WireInit(0.U(8.W))
   BoringUtils.addSink(difftest_uart_valid, "difftest_uart_valid")
