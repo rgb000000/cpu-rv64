@@ -71,10 +71,10 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
   ar.bits.qos := 0.U
   ar.bits.id := io.in.req.bits.id
   ar.bits.addr := io.in.req.bits.addr
-  ar.bits.len := (1.U << io.in.req.bits.len) // (p(CacheLineSize) / AXI4Parameters.dataBits).U
+  ar.bits.len := (1.U << io.in.req.bits.len).asUInt() - 1.U // (p(CacheLineSize) / AXI4Parameters.dataBits).U
   ar.bits.size := 3.U // 8 * 8bits = 64bits
   ar.bits.burst := AXI4Parameters.BURST_INCR
-  ar.valid := (io.in.req.bits.cmd === MemCmdConst.ReadBurst) & io.in.req.valid
+  ar.valid := ((io.in.req.bits.cmd === MemCmdConst.ReadBurst) | (io.in.req.bits.cmd === MemCmdConst.ReadOnce)) & io.in.req.valid
 
   aw.bits.lock := 0.U
   aw.bits.cache := 0.U
@@ -83,10 +83,10 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
   aw.bits.qos := 0.U
   aw.bits.id := io.in.req.bits.id
   aw.bits.addr := io.in.req.bits.addr
-  aw.bits.len := (1.U << io.in.req.bits.len)
+  aw.bits.len := (1.U << io.in.req.bits.len).asUInt() - 1.U
   aw.bits.size := 3.U // 8 * 8bits = 64bits
   aw.bits.burst := AXI4Parameters.BURST_INCR
-  aw.valid := (io.in.req.bits.cmd === MemCmdConst.WriteBurst) & io.in.req.valid
+  aw.valid := ((io.in.req.bits.cmd === MemCmdConst.WriteBurst) | (io.in.req.bits.cmd === MemCmdConst.WriteOnce)) & io.in.req.valid
 
   w.bits.data := io.in.req.bits.data
   w.bits.strb := Cat(Seq.fill(p(XLen) / 8)(1.U(1.W))) // 0xff
