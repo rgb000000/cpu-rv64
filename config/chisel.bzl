@@ -221,15 +221,16 @@ def _difftest_compile_impl(ctx):
         outputs = [build_dir, difftest_dir_clone],
         command = "echo $PWD && tree && source ~/.zshrc" +
                   "&& cp %s %s" % (simtop.path, build_dir.path) +
+                  "&& cp %s %s" % (root + "/dependency/difftest/SimTop_wrap.v", build_dir.path + "/SimTop.v") +
                   "&& cp -r %s %s" % (root + "/dependency/difftest/src", difftest_dir_clone.path) +
-                  #                  "&& cp -r %s %s" % (root + "/dependency/difftest/scripts", difftest_dir_clone.path)     +
+                  # "&& cp -r %s %s" % (root + "/dependency/difftest/scripts", difftest_dir_clone.path) +
                   "&& cp -r %s %s" % (root + "/dependency/difftest/config", difftest_dir_clone.path) +
                   "&& cp %s %s" % (root + "/dependency/difftest/Makefile", difftest_dir_clone.path) +
                   "&& cp %s %s" % (root + "/dependency/difftest/verilator.mk", difftest_dir_clone.path) +
                   "&& cp %s %s" % (root + "/dependency/difftest/vcs.mk", difftest_dir_clone.path) +
                   "&& tree && echo $NEMU_HOME && echo $SHELL" +
                   "&& cd %s" % (difftest_dir_clone.path) +
-                  "&& make emu EMU_TRACE=1 #WITH_DRAMSIM3=1",
+                  "&& make emu EMU_TRACE=1 WITH_DRAMSIM3=1",
         progress_message = "Compiling .v with .cpp",
         use_default_shell_env = True,
     )
@@ -293,11 +294,12 @@ def difftest(
         deps,
         srcs,
         inst_file = [],
+        config_name = "DefaultConfig",
         visibility = None):
     _chisel_verilog_scala_source(
         name = name + "_emit_verilog_scala",
         module_code = module_code,
-        config_name = "DefaultConfig",
+        config_name = config_name,
     )
     scala_binary(
         name = name + "_emit_verilog_binary",
@@ -327,11 +329,12 @@ def getVerilog(
         deps,
         srcs,
         inst_file = [],
+        config_name = "FPGAConfig",
         visibility = None):
     _chisel_verilog_scala_source(
         name = name + "_emit_verilog_scala",
         module_code = module_code,
-        config_name = "FPGAConfig",
+        config_name = config_name,
     )
     scala_binary(
         name = name + "_emit_verilog_binary",

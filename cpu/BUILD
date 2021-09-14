@@ -82,6 +82,19 @@ difftest(
     ],
 )
 
+difftest(
+    name = "DRAM3Sim",
+    srcs = glob(["src/test/resources/Core-harness.cpp"]),
+    config_name = "DRAM3SimConfig",
+    inst_file = glob(["src/main/resources/inst*.hex"]),
+    module_code = "cpu.MySimTop",
+    module_name = "MySimTop",
+    deps = [
+        "cpu",
+        "//dependency:config",
+    ],
+)
+
 getVerilog(
     name = "Core",
     srcs = glob(["src/test/resources/Core-harness.cpp"]),

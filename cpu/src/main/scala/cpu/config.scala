@@ -57,9 +57,18 @@ class DifftestDisableConfig extends Config((site, here,up)=>{
   case DRAM3Sim       => false
 })
 
+class DifftestEnableWithDRAM3SimConfig extends Config((site, here,up)=>{
+  case Difftest       => true
+  case DRAM3Sim       => true
+})
+
 
 class DefaultConfig extends Config (
   new BaseConfig ++ new DifftestEnableConfig
+)
+
+class DRAM3SimConfig extends Config(
+  new BaseConfig ++ new DifftestEnableWithDRAM3SimConfig
 )
 
 class FPGAConfig extends Config(

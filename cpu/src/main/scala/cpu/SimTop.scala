@@ -6,7 +6,7 @@ import chipsalliance.rocketchip.config._
 import chisel3.util.experimental.BoringUtils
 import difftest._
 
-class SimTop(implicit p: Parameters) extends Module {
+class MySimTop(implicit p: Parameters) extends Module {
   val io = IO(new Bundle{
     val logCtrl = new LogCtrlIO
     val perfInfo = new PerfInfoIO
