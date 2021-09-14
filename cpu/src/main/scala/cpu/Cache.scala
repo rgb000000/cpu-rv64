@@ -492,6 +492,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
         // uncache
 
       }
+//    printf("state === refill & resp.fire(), get data: %x   cmd: %x   write_buffer_data: %x \n", io.mem.resp.bits.data, io.mem.resp.bits.cmd, write_buffer.bits.data);
     }
 
 
@@ -514,7 +515,9 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
         state := lookup
       }.otherwise{
         // miss   need to prepare miss_info and replace_info
-        when(io.mem.req.ready === 1.U){
+        when(((req_isCached & ((rand_way_data.v =/= 1.U) | (rand_way_data.d =/= 1.U))) | (!req_isCached & (req_reg.op === 0.U))) |
+          (io.mem.req.fire() & ((req_isCached & ((rand_way_data.v === 1.U) & (rand_way_data.d === 1.U))) | (!req_isCached & (req_reg.op === 1.U))))
+        ){
           // send cmd to write replace
           state := miss
         }
