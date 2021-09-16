@@ -110,7 +110,7 @@ class InnerCrossBar12N(val n: Int=2)(implicit p: Parameters) extends Module {
     out.req.bits := io.in.req.bits
     out.req.valid := io.in.req.valid & sel & ((state === s_idle) | (state === s_writeResp))
   })
-  io.in.req.ready := (outSel.req.ready || reqInvalidAddr) & ((state === s_idle) | (state === s_writeResp))
+  io.in.req.ready := (outSel.req.ready || reqInvalidAddr) & ((state === s_idle) | (state === s_writeResp) | (state === s_bad))
 
   // resp connect
   io.in.resp.valid := io.out(cur_idx).resp.valid || (state === s_bad)

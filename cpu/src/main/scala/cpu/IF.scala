@@ -24,6 +24,9 @@ class IF (implicit p: Parameters) extends Module {
     val kill = Input(Bool())
 
     val icache = Flipped(new CacheCPUIO)
+
+    val fence_i_done = Input(Bool())
+    val fence_pc = Input(UInt(32.W))
   })
 
   val cur_pc = RegInit(p(PCStart).asUInt(p(XLen).W) - 4.U)
@@ -38,12 +41,13 @@ class IF (implicit p: Parameters) extends Module {
 
   val pc_next = Mux(io.stall, cur_pc,
                   Mux(io.pc_except_entry.valid, io.pc_except_entry.bits,
-                    Mux(io.br_taken, io.pc_alu, MuxLookup(io.pc_sel, 0.U, Array(
+                    Mux(io.br_taken, io.pc_alu,
+                      Mux(io.fence_i_done, io.fence_pc, MuxLookup(io.pc_sel, 0.U, Array(
                       Control.PC_0   -> (cur_pc),
                       Control.PC_4   -> (cur_pc + 4.U),
                       Control.PC_ALU -> (io.pc_alu),
                       Control.PC_EPC -> (io.pc_epc)
-                    )))))
+                    ))))))
 
   // always read instructions from icache
   io.icache.req.valid := !io.stall

@@ -76,6 +76,9 @@ class DataPath(implicit p: Parameters) extends Module {
 
     val control = Flipped(new ControlIO)
     val time_interrupt = Input(Bool())
+
+    val fence_i_do   = Output(Bool())
+    val fence_i_done = Input(Bool())
   })
 
   import Control._
@@ -103,6 +106,8 @@ class DataPath(implicit p: Parameters) extends Module {
   val mem2if_pc_sel = Wire(UInt(2.W))
   val mem2if_pc_alu = Wire(UInt(p(XLen).W))
   val mem_kill = Wire(UInt(1.W))
+  val mem_fence_i = Wire(UInt(1.W))
+  io.fence_i_do := mem_fence_i
 
   val time_interrupt_enable = WireInit(false.B)
   BoringUtils.addSink(time_interrupt_enable, "time_interrupt_enable")
@@ -119,6 +124,7 @@ class DataPath(implicit p: Parameters) extends Module {
   ifet.io.kill := mem_kill
   ifet.io.pc_except_entry.valid := csr_except
   ifet.io.pc_except_entry.bits := csr.io.exvec
+  ifet.io.fence_i_done := io.fence_i_done
 
   val if_pc    = RegEnable(ifet.io.out.bits.pc, !stall & !loadrisk.io.stall)
   val if_inst  = RegEnable(ifet.io.out.bits.inst, !stall & !loadrisk.io.stall)
@@ -204,6 +210,9 @@ class DataPath(implicit p: Parameters) extends Module {
 
   // mem /////////////////////////////////////
 
+  mem_fence_i := ex_valid & (ex_inst === ISA.fence_i)
+  ifet.io.fence_pc := ex_pc
+
   bypass.io.mem.rd := ex_rd
   bypass.io.mem.valid := ex_valid & ex_ctrl.asTypeOf(new CtrlSignal).wen
 
@@ -260,7 +269,7 @@ class DataPath(implicit p: Parameters) extends Module {
   } else {
     csr_except := csr.io.expt & ex_valid
   }
-  mem_kill := (ex_ctrl.asTypeOf(new CtrlSignal).kill | ex_taken | csr_except) & ex_valid
+  mem_kill := (ex_ctrl.asTypeOf(new CtrlSignal).kill | ex_taken | csr_except | mem_fence_i) & ex_valid
   mem2if_pc_sel := Mux(ex_valid === 1.U, ex_ctrl.asTypeOf(new CtrlSignal).pc_sel, 0.U)
   mem2if_pc_alu := ex_alu_out
   dontTouch(mem2if_pc_sel)

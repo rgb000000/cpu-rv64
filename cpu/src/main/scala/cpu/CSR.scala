@@ -175,10 +175,10 @@ class CSR (implicit p: Parameters) extends Module {
   BoringUtils.addSource(time_interrupt_enable, "time_interrupt_enable")
   val time_interrupt = mip.mtip & time_interrupt_enable
 
-  val iaddrInvalid = io.pc_check && io.ctrl_signal.addr(1)
-  val laddrInvalid = MuxLookup(io.ctrl_signal.ld_type, false.B, Seq(
+  val iaddrInvalid = io.pc_check && io.ctrl_signal.addr(1)            // pc isvalid?
+  val laddrInvalid = MuxLookup(io.ctrl_signal.ld_type, false.B, Seq(  // load isvalid?
     Control.LD_LW -> io.ctrl_signal.addr(1, 0).orR, Control.LD_LH -> io.ctrl_signal.addr(0), Control.LD_LHU -> io.ctrl_signal.addr(0)))
-  val saddrInvalid = MuxLookup(io.ctrl_signal.st_type, false.B, Seq(
+  val saddrInvalid = MuxLookup(io.ctrl_signal.st_type, false.B, Seq(  // store isvalid?
     Control.ST_SW -> io.ctrl_signal.addr(1, 0).orR, Control.ST_SH -> io.ctrl_signal.addr(0)))
   io.expt := (io.ctrl_signal.illegal || iaddrInvalid || laddrInvalid || saddrInvalid ||
     (io.cmd(1, 0).orR && (!csrValid || !privValid) && false.B) || (wen && csrRO && false.B) ||
