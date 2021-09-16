@@ -95,7 +95,7 @@ class AXI4BundleA(override val idBits: Int) extends AXI4LiteBundleA with AXI4Has
   val cache = Output(UInt(AXI4Parameters.cacheBits.W))
   val qos   = Output(UInt(AXI4Parameters.qosBits.W))  // 0=no QoS, bigger = higher priority
   // val region = UInt(width = 4) // optional
-import chisel3.util.experimental.loadMemoryFromFile
+
   override def toPrintable: Printable = p"addr = 0x${Hexadecimal(addr)}, id = ${id}, len = ${len}, size = ${size}"
 }
 
@@ -210,6 +210,7 @@ class AXIMem(val width: Int = 64, val depth: Int = 256)(implicit p: Parameters) 
   when(r_state === r_idle){
     when(io.ar.fire()){
       read_req := io.ar.bits
+      read_req.len := io.ar.bits.len + 1.U
     }
   }.elsewhen(r_state === r_burst){
     when(io.r.ready === 1.U){
@@ -224,6 +225,7 @@ class AXIMem(val width: Int = 64, val depth: Int = 256)(implicit p: Parameters) 
   when(w_state === w_idle){
     when(io.aw.fire()){
       write_req := io.aw.bits
+      write_req.len := io.aw.bits.len + 1.U
     }
   }.elsewhen(w_state === w_burst){
     when(io.w.fire()){
