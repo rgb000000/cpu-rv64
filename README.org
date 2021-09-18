@@ -9,5 +9,7 @@
 3. =mill __.test.testOnly xxx.xxx= 进行测试
 
 * bazel tutorial
-1. =bazel build cpu:SimTop=   构建SimTop外加difftest，生成的可执行程序在 =./bazel-out/k8-fastbuild/bin/cpu/build/emu=
-2. [TODO] difftest的构建在bazel里面复用了difftest自己的makefile，后期尝试全部使用bazel all in one
+1. =bazel build cpu:SimTop=   构建SimTop外加difftest，使用自建的AXIMem(基于RAMHelper)，生成的可执行程序在 =./bazel-out/k8-fastbuild/bin/cpu/build/emu=
+2. =bazel build cpu:DRAM3Sim= 使用DRAM3Sim仿真RAM
+3. =bazel build cpu:ysyx= 引入重命名的transform，并生成verilog代码
+4. [TODO] difftest的构建在bazel里面复用了difftest自己的makefile，后期尝试全部使用bazel all in one
