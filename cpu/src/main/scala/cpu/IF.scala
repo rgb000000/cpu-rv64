@@ -64,7 +64,7 @@ class IF (implicit p: Parameters) extends Module {
   inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data, inst)
   dontTouch(inst)
 
-  val stall_negedge = (!io.stall) & RegNext(io.stall)
+  val stall_negedge = (!io.stall) & RegNext(io.stall, false.B)
   val is_valid_when_stall = RegInit(0.U)
   when(io.stall & io.out.valid){
     is_valid_when_stall := 1.U

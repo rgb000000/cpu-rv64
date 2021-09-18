@@ -25,7 +25,7 @@ class MEM (implicit p: Parameters) extends Module {
   import Control._
 
   // handle cacahe read conflict_bank
-  val dcache_ready_reg = RegNext(io.dcache.req.valid & !io.dcache.req.ready)
+  val dcache_ready_reg = RegNext(io.dcache.req.valid & !io.dcache.req.ready, false.B)
 
   val ld_type = RegInit(0.asUInt(3.W))
   val st_type = RegInit(0.asUInt(3.W))
@@ -74,12 +74,12 @@ class MEM (implicit p: Parameters) extends Module {
   // get reps
 
   val stall_data_valid = io.dcache.resp.fire() & (io.dcache.resp.bits.cmd === 2.U) & io.stall
-  val stall_data_valid_posedge = stall_data_valid & !RegNext(stall_data_valid)
+  val stall_data_valid_posedge = stall_data_valid & !RegNext(stall_data_valid, false.B)
 
-  val l_data = RegEnable(io.l_data.bits, stall_data_valid_posedge)
-  val l_data_valid = RegEnable(io.l_data.valid, stall_data_valid_posedge)
+  val l_data = RegEnable(io.l_data.bits,        0.U,     stall_data_valid_posedge)
+  val l_data_valid = RegEnable(io.l_data.valid, false.B, stall_data_valid_posedge)
 
-  val stall_negedge = !io.stall & RegNext(io.stall)
+  val stall_negedge = !io.stall & RegNext(io.stall, false.B)
   when(stall_negedge){
     io.l_data.bits := l_data
     io.l_data.valid := l_data_valid
@@ -110,7 +110,7 @@ class MEM (implicit p: Parameters) extends Module {
     val cycleCnt = WireInit(0.asUInt(64.W))
     BoringUtils.addSink(cycleCnt, "cycleCnt")
 //    when(io.dcache.req.fire() & (io.dcache.req.bits.op === 1.U)){
-//      when(io.dcache.req.bits.addr === BitPat("b0000_0000_0000_0000_0000_0000_0000_0000_1000_0000_0000_0010_0110_0011_101?_????")){
+//      when(io.dcache.req.bits.addr === BitPat("b0000_0000_0000_0000_0000_0000_0000_0000_1000_0000_0000_0000_1000_1110_1000_????")){
 //        printf("addr: %x, data: %x, sd_type: %x, time: %d \n", io.dcache.req.bits.addr, io.dcache.req.bits.data, io.st_type, cycleCnt)
 //      }
 //    }

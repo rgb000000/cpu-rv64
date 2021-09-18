@@ -21,7 +21,7 @@ class InnerCrossBarN21(val n: Int)(implicit p: Parameters) extends Module{
   val state = RegInit(s_idle)
   val thisReq = arbiter.io.out
 
-  val cur_idx = Reg(UInt(log2Ceil(n).W))
+  val cur_idx = RegInit(0.U(log2Ceil(n).W))
 
   switch (state) {
     is (s_idle) {

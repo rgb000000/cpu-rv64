@@ -13,7 +13,7 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
 
   val s_idle :: s_read :: s_write :: s_resp :: Nil = Enum(4)
   val state = RegInit(s_idle)
-  val isBurst = Reg(Bool())
+  val isBurst = RegInit(false.B)
 
   switch(state){
     is(s_idle){

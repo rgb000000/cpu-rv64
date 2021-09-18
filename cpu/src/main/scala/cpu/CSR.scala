@@ -117,12 +117,12 @@ class CSR (implicit p: Parameters) extends Module {
   csr_addr := io.ctrl_signal.inst(31, 20).asUInt()
 
   val mhardid = 0.U
-  val mscratch = Reg(UInt(64.W))
+  val mscratch = RegInit(0.U(64.W))
 
   val mtvec   = RegInit(p(PCEVec).U(p(XLen).W))
-  val mepc = Reg(UInt(p(XLen).W))
-  val mcause = RegInit(0.U(p(XLen).W))
-  val mcycle = RegInit(0.U(p(XLen).W))
+  val mepc    = RegInit(0.U(p(XLen).W))
+  val mcause  = RegInit(0.U(p(XLen).W))
+  val mcycle  = RegInit(0.U(p(XLen).W))
 
   mcycle := mcycle + 1.U
 

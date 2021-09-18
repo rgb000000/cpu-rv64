@@ -126,8 +126,8 @@ class DataPath(implicit p: Parameters) extends Module {
   ifet.io.pc_except_entry.bits := csr.io.exvec
   ifet.io.fence_i_done := io.fence_i_done
 
-  val if_pc    = RegEnable(ifet.io.out.bits.pc, !stall & !loadrisk.io.stall)
-  val if_inst  = RegEnable(ifet.io.out.bits.inst, !stall & !loadrisk.io.stall)
+  val if_pc    = RegEnable(ifet.io.out.bits.pc,                           0.U, !stall & !loadrisk.io.stall)
+  val if_inst  = RegEnable(ifet.io.out.bits.inst,                         0.U, !stall & !loadrisk.io.stall)
   val if_valid = RegEnable(Mux(mem_kill === 1.U, 0.U, ifet.io.out.valid), 0.U, !stall & !loadrisk.io.stall)
 
   // decode /////////////////////////////////////
@@ -143,18 +143,18 @@ class DataPath(implicit p: Parameters) extends Module {
   loadrisk.io.id.rs1 := id.io.rs1_addr
   loadrisk.io.id.rs2 := id.io.rs2_addr
 
-  val id_rs1   = RegEnable(id.io.rs1_addr, !stall)
-  val id_rs2   = RegEnable(id.io.rs2_addr, !stall)
-  val id_rdata1= RegEnable(regs.io.rdata1, !stall)
-  val id_rdata2= RegEnable(regs.io.rdata2, !stall)
-  val id_A     = RegEnable(Mux(ctrl.a_sel === A_PC, if_pc, regs.io.rdata1), !stall)
-  val id_B     = RegEnable(Mux(ctrl.b_sel === B_IMM, id.io.imm, regs.io.rdata2), !stall)
-  val id_rd    = RegEnable(id.io.rd_addr, !stall)
-  val id_ctrl  = RegEnable(ctrl.asUInt(), !stall)
-  val id_inst  = RegEnable(if_inst, !stall)
-  val id_pc    = RegEnable(if_pc, !stall)
+  val id_rs1   = RegEnable(id.io.rs1_addr,                                             0.U, !stall)
+  val id_rs2   = RegEnable(id.io.rs2_addr,                                             0.U, !stall)
+  val id_rdata1= RegEnable(regs.io.rdata1,                                             0.U, !stall)
+  val id_rdata2= RegEnable(regs.io.rdata2,                                             0.U, !stall)
+  val id_A     = RegEnable(Mux(ctrl.a_sel === A_PC, if_pc, regs.io.rdata1),            0.U, !stall)
+  val id_B     = RegEnable(Mux(ctrl.b_sel === B_IMM, id.io.imm, regs.io.rdata2),       0.U, !stall)
+  val id_rd    = RegEnable(id.io.rd_addr,                                              0.U, !stall)
+  val id_ctrl  = RegEnable(ctrl.asUInt(),                                              0.U, !stall)
+  val id_inst  = RegEnable(if_inst,                                                    0.U, !stall)
+  val id_pc    = RegEnable(if_pc,                                                      0.U, !stall)
   val id_valid = RegEnable(Mux((mem_kill === 1.U) | loadrisk.io.stall, 0.U, if_valid), 0.U, !stall)
-  val id_interrupt = RegEnable(io.time_interrupt & time_interrupt_enable, 0.U(1.W), !stall)
+  val id_interrupt = RegEnable(io.time_interrupt & time_interrupt_enable,              0.U(1.W), !stall)
 
   // ex /////////////////////////////////////
   bypass.io.ex.isrs1 := true.B // id_ctrl.asTypeOf(new CtrlSignal).a_sel === A_RS1
@@ -194,17 +194,17 @@ class DataPath(implicit p: Parameters) extends Module {
   ))
   br.io.br_type := Mux(id_valid === 1.U, id_ctrl.asTypeOf(new CtrlSignal).br_type, 0.U)
 
-  val ex_rs1     = RegEnable(id_rs1, !stall)
-  val ex_rs2     = RegEnable(id_rs2, !stall)
-  val ex_taken   = RegEnable(br.io.taken, !stall)
-  val ex_alu_out = RegEnable(ex.io.out, !stall)
-  val ex_rdata2  = RegEnable(id_rdata2, !stall)
-  val ex_rd      = RegEnable(id_rd, !stall)
-  val ex_ctrl    = RegEnable(id_ctrl, !stall)
-  val ex_inst    = RegEnable(id_inst, !stall)
-  val ex_pc      = RegEnable(id_pc, !stall)
+  val ex_rs1     = RegEnable(id_rs1,                               0.U, !stall)
+  val ex_rs2     = RegEnable(id_rs2,                               0.U, !stall)
+  val ex_taken   = RegEnable(br.io.taken,                          0.U, !stall)
+  val ex_alu_out = RegEnable(ex.io.out,                            0.U, !stall)
+  val ex_rdata2  = RegEnable(id_rdata2,                            0.U, !stall)
+  val ex_rd      = RegEnable(id_rd,                                0.U, !stall)
+  val ex_ctrl    = RegEnable(id_ctrl,                              0.U, !stall)
+  val ex_inst    = RegEnable(id_inst,                              0.U, !stall)
+  val ex_pc      = RegEnable(id_pc,                                0.U, !stall)
   val ex_valid   = RegEnable(Mux(mem_kill === 1.U, 0.U, id_valid), 0.U, !stall)
-  val ex_interrupt = RegEnable(id_interrupt, 0.U, !stall)
+  val ex_interrupt = RegEnable(id_interrupt,                       0.U, !stall)
 
   bypass_ex_alu_out := ex_alu_out
 
@@ -250,16 +250,16 @@ class DataPath(implicit p: Parameters) extends Module {
   csr.io.interrupt.soft     := false.B
   csr.io.interrupt.external := false.B
 
-  val mem_alu_out    = RegEnable(ex_alu_out, !stall)
-  val mem_l_data     = RegEnable(mem.io.l_data, !stall)
-  val mem_s_complete = RegEnable(mem.io.s_complete, !stall)
-  val mem_rd         = RegEnable(ex_rd, !stall)
-  val mem_ctrl       = RegEnable(ex_ctrl, !stall)
-  val mem_inst       = RegEnable(ex_inst, !stall)
-  val mem_pc         = RegEnable(ex_pc, !stall)
-  val mem_valid_true = RegEnable(ex_valid, 0.U, !stall)
-  val mem_csr        = RegEnable(csr.io.out, !stall)
-  val mem_csr_except  = RegEnable(csr_except, 0.U, !stall)
+  val mem_alu_out    = RegEnable(ex_alu_out,        0.U, !stall)
+  val mem_l_data     = RegEnable(mem.io.l_data,     0.U.asTypeOf(mem.io.l_data), !stall)
+  val mem_s_complete = RegEnable(mem.io.s_complete, 0.U, !stall)
+  val mem_rd         = RegEnable(ex_rd,             0.U, !stall)
+  val mem_ctrl       = RegEnable(ex_ctrl,           0.U, !stall)
+  val mem_inst       = RegEnable(ex_inst,           0.U, !stall)
+  val mem_pc         = RegEnable(ex_pc,             0.U, !stall)
+  val mem_valid_true = RegEnable(ex_valid,          0.U, !stall)
+  val mem_csr        = RegEnable(csr.io.out,        0.U, !stall)
+  val mem_csr_except  = RegEnable(csr_except,       0.U, !stall)
 
   val mem_valid = mem_valid_true & !mem_csr_except
 

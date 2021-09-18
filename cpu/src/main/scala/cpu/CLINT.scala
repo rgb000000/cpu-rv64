@@ -23,9 +23,9 @@ class CLINT(implicit p: Parameters) extends Module{
   val s_idle :: s_w :: s_resp :: Nil = Enum(3)
   val state = RegInit(s_idle)
 
-  val op = Reg(Bool()) // 0: read     1: write
-  val id = Reg(UInt(p(IDBits).W))
-  val addr = Reg(UInt(64.W))
+  val op = RegInit(false.B) // 0: read     1: write
+  val id = RegInit(0.U(p(IDBits).W))
+  val addr = RegInit(0.U(64.W))
 
   val sel_data = Wire(UInt(64.W))
   sel_data := MuxLookup(addr, 0x7fffffff.U, Array(
