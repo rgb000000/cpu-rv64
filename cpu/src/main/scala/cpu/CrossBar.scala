@@ -15,7 +15,7 @@ class InnerCrossBarN21(val n: Int)(implicit p: Parameters) extends Module{
 //  val arbiter = Module(new Arbiter(chiselTypeOf(io.in.head.req.bits), n))
 
   val lockfunc = (x: MemReq) => (x.cmd === MemCmdConst.WriteBurst) | ((x.cmd === MemCmdConst.WriteData) & (x.len =/= 0.U)) | ((x.cmd === MemCmdConst.WriteLast) & (x.len =/= 0.U))
-  val arbiter = Module(new LockingArbiter(chiselTypeOf(io.in.head.req.bits), n, 5, Some(lockfunc)))
+  val arbiter = Module(new LockingArbiter(chiselTypeOf(io.in.head.req.bits), n, (p(CacheLineSize)/64)+1, Some(lockfunc)))
 
   val s_idle :: s_readResp :: s_writeResp ::Nil = Enum(3)
   val state = RegInit(s_idle)

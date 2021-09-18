@@ -25,11 +25,11 @@ class BaseConfig extends Config ((site, here, up)=>{
   case PCStart        => "h8000_0000"
   case PCEVec         => "h9000_0000"
   case L2$Size        => -1
-  case I$Size         => here(CacheLineSize) * here(NWay) * 32
-  case D$Size         => here(CacheLineSize) * here(NWay) * 32
-  case CacheLineSize  => 64 * here(NBank)
+  case I$Size         => here(CacheLineSize) * here(NWay) * 64
+  case D$Size         => here(CacheLineSize) * here(NWay) * 64
+  case CacheLineSize  => 128
   case NWay           => 4
-  case NBank          => 4
+  case NBank          => 1
   case IDBits         => 4
 
   case AddressSpace   => Seq(
