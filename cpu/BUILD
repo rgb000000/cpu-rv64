@@ -74,6 +74,7 @@ difftest(
     name = "SimTop",
     srcs = glob(["src/test/resources/Core-harness.cpp"]),
     inst_file = glob(["src/main/resources/inst*.hex"]),
+    mode = "SimTop",
     module_code = "cpu.SimTop",
     module_name = "SimTop",
     deps = [
@@ -87,6 +88,7 @@ difftest(
     srcs = glob(["src/test/resources/Core-harness.cpp"]),
     config_name = "DRAM3SimConfig",
     inst_file = glob(["src/main/resources/inst*.hex"]),
+    mode = "DRAM3Sim",
     module_code = "cpu.MySimTop",
     module_name = "MySimTop",
     deps = [
@@ -99,8 +101,22 @@ getVerilog(
     name = "Core",
     srcs = glob(["src/test/resources/Core-harness.cpp"]),
     inst_file = glob(["src/main/resources/inst*.hex"]),
+    mode = "genVerilog",
     module_code = "cpu.Core",
     module_name = "Core",
+    deps = [
+        "cpu",
+        "//dependency:config",
+    ],
+)
+
+getVerilog(
+    name = "ysyx",
+    srcs = glob(["src/test/resources/Core-harness.cpp"]),
+    inst_file = glob(["src/main/resources/inst*.hex"]),
+    mode = "genVerilog",
+    module_code = "cpu.ysyx_210013",
+    module_name = "ysyx_210013",
     deps = [
         "cpu",
         "//dependency:config",

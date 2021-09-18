@@ -1,6 +1,7 @@
 package cpu
 
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
+import firrtl.AnnotationSeq
 
 object BazelRunner {
   def main(args: Array[String]): Unit = {
@@ -21,12 +22,23 @@ object BazelRunner {
     println("Generating Verilog for {MODULECODE}")
     println("Generating Verilog for {CONFIGNAME}")
     implicit val p = new {CONFIGNAME}
+
+    var runner: AnnotationSeq = Seq(chisel3.stage.ChiselGeneratorAnnotation(() => new {MODULECODE}))
+    val mode = "{MODE}"
+    println("Generating Verilog in {MODE} mode")
+    if (mode == "genVerilog"){
+      runner = runner ++ Seq(
+        firrtl.stage.RunFirrtlTransformAnnotation(new AddModulePrefix()),
+        ModulePrefixAnnotation("ysyx_210013_")
+      )
+    }
+
     (new ChiselStage).execute(
       Array(
         "-X", "verilog",
         "--target-dir", args(0)
       ),
-      Seq(ChiselGeneratorAnnotation(() => new {MODULECODE}))
+      runner
     )
     println("Success!")
   }

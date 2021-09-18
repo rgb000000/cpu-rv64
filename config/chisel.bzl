@@ -60,6 +60,7 @@ def _chisel_verilog_scala_source_impl(ctx):
         substitutions = {
             "{MODULECODE}": ctx.attr.module_code,
             "{CONFIGNAME}": ctx.attr.config_name,
+            "{MODE}": ctx.attr.mode,
         },
     )
     return [DefaultInfo(files = depset([out]))]
@@ -73,6 +74,7 @@ _chisel_verilog_scala_source = rule(
             allow_single_file = True,
             default = "//cpu:src/test/scala/cpu/BazelRunner.scala",
         ),
+        "mode": attr.string(mandatory = True),
     },
 )
 
@@ -216,21 +218,33 @@ def _difftest_compile_impl(ctx):
     build_dir = ctx.actions.declare_directory("build")
     root = "/home/Prj/cpu-rv64"
 
+    cmd = ""
+    if ctx.attr.mode == "SimTop":
+        cmd = "echo $PWD && tree && source ~/.zshrc" + \
+              "&& cp %s %s" % (simtop.path, build_dir.path) + \
+              "&& cp -r %s %s" % (root + "/dependency/difftest/src", difftest_dir_clone.path) + \
+              "&& cp -r %s %s" % (root + "/dependency/difftest/config", difftest_dir_clone.path) + \
+              "&& cp %s %s" % (root + "/dependency/difftest/Makefile", difftest_dir_clone.path) + \
+              "&& cp %s %s" % (root + "/dependency/difftest/verilator.mk", difftest_dir_clone.path) + \
+              "&& cp %s %s" % (root + "/dependency/difftest/vcs.mk", difftest_dir_clone.path) + \
+              "&& cd %s" % (difftest_dir_clone.path) + \
+              "&& make emu EMU_TRACE=1"
+    elif ctx.attr.mode == "DRAM3Sim":
+        cmd = "echo $PWD && tree && source ~/.zshrc" + \
+              "&& cp %s %s" % (simtop.path, build_dir.path) + \
+              "&& cp %s %s" % (root + "/dependency/difftest/SimTop_wrap.v", build_dir.path + "/SimTop.v") + \
+              "&& cp -r %s %s" % (root + "/dependency/difftest/src", difftest_dir_clone.path) + \
+              "&& cp -r %s %s" % (root + "/dependency/difftest/config", difftest_dir_clone.path) + \
+              "&& cp %s %s" % (root + "/dependency/difftest/Makefile", difftest_dir_clone.path) + \
+              "&& cp %s %s" % (root + "/dependency/difftest/verilator.mk", difftest_dir_clone.path) + \
+              "&& cp %s %s" % (root + "/dependency/difftest/vcs.mk", difftest_dir_clone.path) + \
+              "&& cd %s" % (difftest_dir_clone.path) + \
+              "&& make emu EMU_TRACE=1 WITH_DRAMSIM3=1"
+
     ctx.actions.run_shell(
         inputs = [simtop],
         outputs = [build_dir, difftest_dir_clone],
-        command = "echo $PWD && tree && source ~/.zshrc" +
-                  "&& cp %s %s" % (simtop.path, build_dir.path) +
-                  "&& cp %s %s" % (root + "/dependency/difftest/SimTop_wrap.v", build_dir.path + "/SimTop.v") +
-                  "&& cp -r %s %s" % (root + "/dependency/difftest/src", difftest_dir_clone.path) +
-                  # "&& cp -r %s %s" % (root + "/dependency/difftest/scripts", difftest_dir_clone.path) +
-                  "&& cp -r %s %s" % (root + "/dependency/difftest/config", difftest_dir_clone.path) +
-                  "&& cp %s %s" % (root + "/dependency/difftest/Makefile", difftest_dir_clone.path) +
-                  "&& cp %s %s" % (root + "/dependency/difftest/verilator.mk", difftest_dir_clone.path) +
-                  "&& cp %s %s" % (root + "/dependency/difftest/vcs.mk", difftest_dir_clone.path) +
-                  "&& tree && echo $NEMU_HOME && echo $SHELL" +
-                  "&& cd %s" % (difftest_dir_clone.path) +
-                  "&& make emu EMU_TRACE=1 WITH_DRAMSIM3=1",
+        command = cmd,
         progress_message = "Compiling .v with .cpp",
         use_default_shell_env = True,
     )
@@ -242,6 +256,7 @@ _difftest_compile = rule(
         "SimTop": attr.label(),
         "EMU_VFILES": attr.label_list(allow_files = True),
         "EMU_CXXFILES": attr.label_list(allow_files = True),
+        "mode": attr.string(mandatory = True),
     },
 )
 
@@ -293,6 +308,7 @@ def difftest(
         module_code,
         deps,
         srcs,
+        mode,
         inst_file = [],
         config_name = "DefaultConfig",
         visibility = None):
@@ -300,6 +316,7 @@ def difftest(
         name = name + "_emit_verilog_scala",
         module_code = module_code,
         config_name = config_name,
+        mode = mode,
     )
     scala_binary(
         name = name + "_emit_verilog_binary",
@@ -320,6 +337,7 @@ def difftest(
     _difftest_compile(
         name = name,
         SimTop = name + "_files",
+        mode = mode,
     )
 
 def getVerilog(
@@ -328,6 +346,7 @@ def getVerilog(
         module_code,
         deps,
         srcs,
+        mode,
         inst_file = [],
         config_name = "FPGAConfig",
         visibility = None):
@@ -335,6 +354,7 @@ def getVerilog(
         name = name + "_emit_verilog_scala",
         module_code = module_code,
         config_name = config_name,
+        mode = mode,
     )
     scala_binary(
         name = name + "_emit_verilog_binary",
