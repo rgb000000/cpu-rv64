@@ -27,6 +27,7 @@ class IF (implicit p: Parameters) extends Module {
 
     val fence_i_done = Input(Bool())
     val fence_pc = Input(UInt(32.W))
+    val fence_i_do = Input(Bool())
   })
 
   val cur_pc = RegInit(p(PCStart).asUInt(p(XLen).W) - 4.U)
@@ -42,7 +43,7 @@ class IF (implicit p: Parameters) extends Module {
   val pc_next = Mux(io.stall, cur_pc,
                   Mux(io.pc_except_entry.valid, io.pc_except_entry.bits,
                     Mux(io.br_taken, io.pc_alu,
-                      Mux(io.fence_i_done, io.fence_pc, MuxLookup(io.pc_sel, 0.U, Array(
+                      Mux(io.fence_i_done, RegEnable(io.fence_pc, 0.U, io.fence_i_do) + 4.U, MuxLookup(io.pc_sel, 0.U, Array(
                       Control.PC_0   -> (cur_pc),
                       Control.PC_4   -> (cur_pc + 4.U),
                       Control.PC_ALU -> (io.pc_alu),

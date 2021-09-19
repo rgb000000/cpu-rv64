@@ -131,6 +131,7 @@ class InnerCrossBar12N(val n: Int=2)(implicit p: Parameters) extends Module {
     is(s_writeResp){
       when(io.out(cur_idx).resp.valid) {
         state := s_idle
+        io.out(cur_idx).resp.ready := 1.U
       }
     }
     is(s_readResp){

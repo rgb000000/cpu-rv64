@@ -14,8 +14,8 @@ case object Difftest extends Field[Boolean]
 
 case object DRAM3Sim extends Field[Boolean]
 
-//                                          start   range   isCache? type(MEMBus:0, AXI:1)
-case object AddressSpace extends Field[Seq[(String, String, Boolean, Int)]]
+//                                          start   range   isCache? type(MEMBus:0, AXI:1), width
+case object AddressSpace extends Field[Seq[(String, String, Boolean, Int,                    Int)]]
 
 case object CLINTRegs extends Field[Map[String, String]]
 
@@ -33,12 +33,13 @@ class BaseConfig extends Config ((site, here, up)=>{
   case IDBits         => 4
 
   case AddressSpace   => Seq(
-    //   start       range   isCache? port_type
-    ("h02000000", "h0000ffff", false,   0), // CLINT
-    ("h10000000", "h00000fff", false,   1), // UART16550
-    ("h10001000", "h00000fff", false,   1), // SPI Controller
-    ("h30000000", "h0fffffff", false,   1), // SPI Flash XIP mode
-    ("h80000000", "h7fffffff", true ,   1), // MEM
+    // 0 is innerInterface     1 is AXI
+    //   start       range   isCache? port_type,  width
+    ("h02000000", "h0000ffff", false,   0,         64), // CLINT
+    ("h10000000", "h00000fff", false,   1,         32), // UART16550
+    ("h10001000", "h00000fff", false,   1,         32), // SPI Controller
+    ("h30000000", "h0fffffff", false,   1,         32), // SPI Flash XIP mode
+    ("h80000000", "h7fffffff", true ,   1,         64), // MEM
   )
 
   case CLINTRegs => Map(

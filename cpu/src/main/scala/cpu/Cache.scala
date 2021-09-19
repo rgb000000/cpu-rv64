@@ -51,6 +51,7 @@ class MemReq(implicit p: Parameters) extends Bundle {
   val cmd = UInt(4.W)   // MemCmdConst
   val len = UInt(2.W)   // 0: 1(64bits)    1: 2   2: 4  3: 8
   val id = UInt(p(IDBits).W)
+  val mask = UInt((p(XLen) / 8).W)
 }
 
 class MemResp(implicit p: Parameters) extends Bundle {
@@ -291,7 +292,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   assert(fence_which_way <= p(NWay).U)
   when((state === s_fence) & ways.head.io.out.valid){
     fence_rdata := fence_which_data
-    fence_cnt.inc()
+//    fence_cnt.inc()
   }
 
   // compare ways tag, return one hot such {0,0,0,0} or {0,0,1,0}
@@ -437,6 +438,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   val w_cnt = Counter((p(CacheLineSize) / 64).toInt)
   val r_cnt = Counter((p(CacheLineSize) / 64).toInt)
 
+  io.mem.req.bits.mask := 0.U
   when((state === s_lookup) & is_miss & ((req_isCached & ((rand_way_data.v === 1.U) & (rand_way_data.d === 1.U))) |
                                        (!req_isCached & (req_reg.op === 1.U)))
   ){
@@ -447,6 +449,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     io.mem.req.bits.len := Mux(req_isCached, 1.U /* 1.U << 1 = 2*/, 0.U)
     io.mem.req.bits.data := 0.U
     io.mem.req.bits.id := id
+    io.mem.req.bits.mask := req_reg.mask
   }.elsewhen((state === s_miss) & ((req_isCached & replace_buffer.v & replace_buffer.d) |
                                  (!req_isCached & (req_reg.op === 1.U)))
   ){
@@ -472,6 +475,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     io.mem.req.bits.len := Mux(req_isCached, 1.U /* 1.U << 1 = 2*/, 0.U)
     io.mem.req.bits.data := 0.U
     io.mem.req.bits.id := id
+    io.mem.req.bits.mask := req_reg.mask
   }.elsewhen(state === s_fence){
     // send write burst cmd
     io.mem.req.valid := ways.head.io.out.valid & fence_which_data.v & fence_which_data.d
@@ -498,7 +502,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     io.mem.req.bits.data := fence_rdata_cut
     io.mem.req.bits.id := id
     when(io.mem.req.fire()){ fence_high.inc() }
-    when(io.mem.req.fire() & (io.mem.req.bits.data === MemCmdConst.WriteLast)){ fence_cnt.inc() }
+//    when(io.mem.req.fire() & (io.mem.req.bits.data === MemCmdConst.WriteLast)){ fence_cnt.inc() }
   }.otherwise{
     // get read data 4 times
     io.mem.req.valid := 0.U
@@ -662,21 +666,24 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     }
 
     is(s_fence){
-      when((!write_buffer.valid) & ways.head.io.out.valid){
+      when((!write_buffer.valid) & ways.head.io.out.valid & (io.mem.req.fire() | !io.mem.req.valid)){
         // send writeBurst req or nop
         state := s_fence_wb
+        fence_cnt.inc()
       }.otherwise{
         state := state
       }
     }
 
     is(s_fence_wb){
-      when((io.mem.req.bits.cmd === MemCmdConst.WriteLast) & io.mem.req.fire() & (fence_cnt.value === (cacheline_num -1).asUInt())){
+      when((io.mem.req.bits.cmd === MemCmdConst.WriteLast) & io.mem.req.fire() & (fence_cnt.value === 0.asUInt())){
         state := s_idle
+        fence_cnt.value := 0.U
       }.elsewhen((io.mem.req.bits.cmd === MemCmdConst.WriteLast) & io.mem.req.fire()){
         state := s_fence
-      }.elsewhen((fence_cnt.value === (cacheline_num -1).asUInt()) & !io.mem.req.valid){
+      }.elsewhen((fence_cnt.value === 0.asUInt()) & !io.mem.req.valid){
         state := s_idle
+        fence_cnt.value := 0.U
       }.elsewhen(!io.mem.req.valid){
         state := s_fence
       }.otherwise{

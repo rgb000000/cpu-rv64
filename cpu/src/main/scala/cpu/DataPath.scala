@@ -210,8 +210,9 @@ class DataPath(implicit p: Parameters) extends Module {
 
   // mem /////////////////////////////////////
 
-  mem_fence_i := ex_valid & (ex_inst === ISA.fence_i)
+  mem_fence_i := (ex_valid & (ex_inst === ISA.fence_i) & !stall) & !RegNext(ex_valid & (ex_inst === ISA.fence_i) & !stall, false.B)
   ifet.io.fence_pc := ex_pc
+  ifet.io.fence_i_do := mem_fence_i
 
   bypass.io.mem.rd := ex_rd
   bypass.io.mem.valid := ex_valid & ex_ctrl.asTypeOf(new CtrlSignal).wen
