@@ -43,6 +43,7 @@ object Control {
   val BR_GEU = 4.U(3.W) // >= unsigned
   val BR_GE  = 5.U(3.W) // >=
   val BR_NE  = 6.U(3.W) // =/=
+  val BR_J   = 7.U(3.W) // no-cond jump
 
   // st_type
   val ST_XXX = 0.U(3.W) // nonoe
@@ -89,7 +90,7 @@ object Control {
     and    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AND,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N),
 
     // I type
-    jalr   -> List(PC_ALU, A_RS1,  B_IMM, IMM_I,   ALU_ADD,    BR_XXX, Y, ST_XXX, LD_XXX, WB_PC4, Y, CSR.N, N),
+    jalr   -> List(PC_ALU, A_RS1,  B_IMM, IMM_I,   ALU_ADD,    BR_J,   N, ST_XXX, LD_XXX, WB_PC4, Y, CSR.N, N),
     addi   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N),
     slti   -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLT,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N),
     sltiu  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_SLTU,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N),
@@ -138,7 +139,7 @@ object Control {
     bgeu   -> List(PC_4,   A_PC,   B_IMM, IMM_B,   ALU_ADD,    BR_GEU, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
 
     // J type
-    jal    -> List(PC_ALU, A_PC,   B_IMM, IMM_J,   ALU_ADD,    BR_XXX, Y, ST_XXX, LD_XXX, WB_PC4, Y, CSR.N, N),
+    jal    -> List(PC_ALU, A_PC,   B_IMM, IMM_J,   ALU_ADD,    BR_J,   N, ST_XXX, LD_XXX, WB_PC4, Y, CSR.N, N),
 
     // rv64
     // R type

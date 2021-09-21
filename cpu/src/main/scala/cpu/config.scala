@@ -32,6 +32,8 @@ class BaseConfig extends Config ((site, here, up)=>{
   case NBank          => 1
   case IDBits         => 4
 
+  case BTBIndex       => 16
+
   case AddressSpace   => Seq(
     // 0 is innerInterface     1 is AXI
     //   start       range   isCache? port_type,  width
