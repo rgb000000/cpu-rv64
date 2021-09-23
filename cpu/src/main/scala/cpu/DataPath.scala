@@ -159,13 +159,28 @@ class DataPath(implicit p: Parameters) extends Module {
   val id_A     = RegEnable(Mux(ctrl.a_sel === A_PC, if_pc, regs.io.rdata1),            0.U, !stall)
   val id_B     = RegEnable(Mux(ctrl.b_sel === B_IMM, id.io.imm, regs.io.rdata2),       0.U, !stall)
   val id_rd    = RegEnable(id.io.rd_addr,                                              0.U, !stall)
-  val id_ctrl  = RegEnable(ctrl.asUInt(),                                              0.U, !stall)
+//  val id_ctrl  = RegEnable(ctrl.asUInt(),                                              0.U, !stall)
   val id_inst  = RegEnable(if_inst,                                                    0.U, !stall)
   val id_pc    = RegEnable(if_pc,                                                      0.U, !stall)
   val id_pTaken= RegEnable(if_pTaken,                                                  0.U, !stall)
   val id_pPC   = RegEnable(if_pPC,                                                     0.U, !stall)
   val id_valid = RegEnable(Mux((mem_kill === 1.U) | loadrisk.io.stall, 0.U, if_valid), 0.U, !stall)
   val id_interrupt = RegEnable(io.time_interrupt & time_interrupt_enable,              0.U(1.W), !stall)
+  val id_ctrl = Map(
+    "pc_sel"  -> RegEnable(ctrl.pc_sel,   0.U, !stall),
+    "a_sel"   -> RegEnable(ctrl.a_sel,    0.U, !stall),
+    "b_sel"   -> RegEnable(ctrl.b_sel,    0.U, !stall),
+//    "imm_sel" -> RegEnable(ctrl.imm_sel,  0.U, !stall),
+    "alu_op"  -> RegEnable(ctrl.alu_op,   0.U, !stall),
+    "br_type" -> RegEnable(ctrl.br_type,  0.U, !stall),
+    "kill"    -> RegEnable(ctrl.kill,     0.U, !stall),
+    "st_type" -> RegEnable(ctrl.st_type,  0.U, !stall),
+    "ld_type" -> RegEnable(ctrl.ld_type,  0.U, !stall),
+    "wb_type" -> RegEnable(ctrl.wb_type,  0.U, !stall),
+    "wen"     -> RegEnable(ctrl.wen,      0.U, !stall),
+    "csr_cmd" -> RegEnable(ctrl.csr_cmd,  0.U, !stall),
+    "illegal" -> RegEnable(ctrl.illegal,  0.U, !stall)
+  )
 
   // ex /////////////////////////////////////
   bypass.io.ex.isrs1 := true.B // id_ctrl.asTypeOf(new CtrlSignal).a_sel === A_RS1
@@ -176,18 +191,18 @@ class DataPath(implicit p: Parameters) extends Module {
 
   loadrisk.io.ex.valid := id_valid & !mem_kill
   loadrisk.io.ex.rd := id_rd
-  loadrisk.io.ex.isLoad := id_ctrl.asTypeOf(new CtrlSignal).ld_type.orR() | id_ctrl.asTypeOf(new CtrlSignal).csr_cmd(1,0).orR()
+  loadrisk.io.ex.isLoad := id_ctrl("ld_type").orR() | id_ctrl("csr_cmd")(1,0).orR()
 
-  ex.io.alu_op := id_ctrl.asTypeOf(new CtrlSignal).alu_op
+  ex.io.alu_op := id_ctrl("alu_op")
 
   val bypass_ex_alu_out = Wire(UInt(p(XLen).W))
   val bypass_mem_l_data = Wire(UInt(p(XLen).W))
-  ex.io.rs1 := Mux(id_ctrl.asTypeOf(new CtrlSignal).a_sel =/= A_RS1, id_A, MuxLookup(bypass.io.forwardA, id_A, Seq(
+  ex.io.rs1 := Mux(id_ctrl("a_sel") =/= A_RS1, id_A, MuxLookup(bypass.io.forwardA, id_A, Seq(
     "b00".U -> id_A,
     "b01".U -> bypass_ex_alu_out,
     "b11".U -> bypass_mem_l_data
   )))
-  ex.io.rs2 := Mux(id_ctrl.asTypeOf(new CtrlSignal).b_sel =/= B_RS2, id_B, MuxLookup(bypass.io.forwardB, id_B, Seq(
+  ex.io.rs2 := Mux(id_ctrl("b_sel") =/= B_RS2, id_B, MuxLookup(bypass.io.forwardB, id_B, Seq(
     "b00".U -> id_B,
     "b01".U -> bypass_ex_alu_out,
     "b11".U -> bypass_mem_l_data
@@ -203,7 +218,7 @@ class DataPath(implicit p: Parameters) extends Module {
     "b01".U -> bypass_ex_alu_out,
     "b11".U -> bypass_mem_l_data
   ))
-  br.io.br_type := Mux(id_valid === 1.U, id_ctrl.asTypeOf(new CtrlSignal).br_type, 0.U)
+  br.io.br_type := Mux(id_valid === 1.U, id_ctrl("br_type"), 0.U)
 
   val ex_rs1     = RegEnable(id_rs1,                               0.U, !stall)
   val ex_rs2     = RegEnable(id_rs2,                               0.U, !stall)
@@ -211,7 +226,6 @@ class DataPath(implicit p: Parameters) extends Module {
   val ex_alu_out = RegEnable(ex.io.out,                            0.U, !stall)
   val ex_rdata2  = RegEnable(id_rdata2,                            0.U, !stall)
   val ex_rd      = RegEnable(id_rd,                                0.U, !stall)
-  val ex_ctrl    = RegEnable(id_ctrl,                              0.U, !stall)
   val ex_inst    = RegEnable(id_inst,                              0.U, !stall)
   val ex_pc      = RegEnable(id_pc,                                0.U, !stall)
   val ex_pc4     = RegEnable(id_pc + 4.U,                          0.U, !stall)
@@ -219,8 +233,23 @@ class DataPath(implicit p: Parameters) extends Module {
   val ex_pPC     = RegEnable(id_pPC,                               0.U, !stall)
   val ex_valid   = RegEnable(Mux(mem_kill === 1.U, 0.U, id_valid), 0.U, !stall)
   val ex_interrupt = RegEnable(id_interrupt,                       0.U, !stall)
+  val ex_ctrl    = Map(
+    "pc_sel"  -> RegEnable(id_ctrl("pc_sel"),   0.U, !stall),
+//  "a_sel"   -> RegEnable(id_ctrl("a_sel"),    0.U, !stall),
+//  "b_sel"   -> RegEnable(id_ctrl("b_sel"),    0.U, !stall),
+//  "imm_sel" -> RegEnable(id_ctrl("imm_sel"),  0.U, !stall),
+//  "alu_op"  -> RegEnable(id_ctrl("alu_op"),   0.U, !stall),
+    "br_type" -> RegEnable(id_ctrl("br_type"),  0.U, !stall),
+    "kill"    -> RegEnable(id_ctrl("kill"),     0.U, !stall),
+    "st_type" -> RegEnable(id_ctrl("st_type"),  0.U, !stall),
+    "ld_type" -> RegEnable(id_ctrl("ld_type"),  0.U, !stall),
+    "wb_type" -> RegEnable(id_ctrl("wb_type"),  0.U, !stall),
+    "wen"     -> RegEnable(id_ctrl("wen"),      0.U, !stall),
+    "csr_cmd" -> RegEnable(id_ctrl("csr_cmd"),  0.U, !stall),
+    "illegal" -> RegEnable(id_ctrl("illegal"),  0.U, !stall)
+  )
 
-  bypass_ex_alu_out := MuxLookup(ex_ctrl.asTypeOf(new CtrlSignal).wb_type, ex_alu_out, Seq(
+  bypass_ex_alu_out := MuxLookup(ex_ctrl("wb_type"), ex_alu_out, Seq(
     WB_ALU -> ex_alu_out,
     WB_PC4 -> ex_pc4
   ))
@@ -231,7 +260,7 @@ class DataPath(implicit p: Parameters) extends Module {
   br_taken_from_mem := ex_taken & ex_valid
   br_isHit_from_mem := (((ex_taken === ex_pTaken) & (ex_alu_out === ex_pPC) & ex_taken) | ((ex_taken === ex_pTaken) & (ex_pPC === (ex_pc + 4.U)) & !ex_taken)) & ex_valid   // curPC==pPC? jalr的pc是reg+offset
   br_curPC_from_mem := ex_pc
-  br_infoValid_from_mem := ex_valid & ex_ctrl.asTypeOf(new CtrlSignal).br_type.orR()
+  br_infoValid_from_mem := ex_valid & ex_ctrl("br_type").orR()
 
 
   mem_fence_i := (ex_valid & (ex_inst === ISA.fence_i) & !stall) & !RegNext(ex_valid & (ex_inst === ISA.fence_i) & !stall, false.B)
@@ -239,13 +268,13 @@ class DataPath(implicit p: Parameters) extends Module {
   ifet.io.fence_i_do := mem_fence_i
 
   bypass.io.mem.rd := ex_rd
-  bypass.io.mem.valid := ex_valid & ex_ctrl.asTypeOf(new CtrlSignal).wen
+  bypass.io.mem.valid := ex_valid & ex_ctrl("wen")
 
   mem.io.dcache <> io.dcache
   // d$ req is sended by ex stage!
-  mem.io.ld_type    := id_ctrl.asTypeOf(new CtrlSignal).ld_type
+  mem.io.ld_type    := id_ctrl("ld_type")
   val mem_wb_interrupt = Wire(Bool())
-  mem.io.st_type    := Mux(mem_wb_interrupt, ST_XXX, id_ctrl.asTypeOf(new CtrlSignal).st_type)
+  mem.io.st_type    := Mux(mem_wb_interrupt, ST_XXX, id_ctrl("st_type"))
   mem.io.s_data     := br.io.rs2
   mem.io.alu_res    := ex.io.out
   mem.io.inst_valid := Mux((mem_kill === 1.U) | (id_interrupt === 1.U), 0.U, id_valid)
@@ -256,20 +285,20 @@ class DataPath(implicit p: Parameters) extends Module {
   } else {
     csr.io.stall := stall
   }
-  csr.io.cmd := ex_ctrl.asTypeOf(new CtrlSignal).csr_cmd
+  csr.io.cmd := ex_ctrl("csr_cmd")
   csr.io.in  := ex_alu_out
   csr.io.ctrl_signal.pc := ex_pc
   csr.io.ctrl_signal.addr := ex_alu_out
   csr.io.ctrl_signal.inst := ex_inst
   if(p(Difftest)){
-    csr.io.ctrl_signal.illegal := ex_ctrl.asTypeOf(new CtrlSignal).illegal & (ex_inst  =/= "h0000007b".U) & (ex_inst =/= "h0000006b".U)
+    csr.io.ctrl_signal.illegal := ex_ctrl("illegal") & (ex_inst  =/= "h0000007b".U) & (ex_inst =/= "h0000006b".U)
   }else{
-    csr.io.ctrl_signal.illegal := ex_ctrl.asTypeOf(new CtrlSignal).illegal
+    csr.io.ctrl_signal.illegal := ex_ctrl("illegal")
   }
-  csr.io.ctrl_signal.st_type := ex_ctrl.asTypeOf(new CtrlSignal).st_type
-  csr.io.ctrl_signal.ld_type := ex_ctrl.asTypeOf(new CtrlSignal).ld_type
+  csr.io.ctrl_signal.st_type := ex_ctrl("st_type")
+  csr.io.ctrl_signal.ld_type := ex_ctrl("ld_type")
   csr.io.ctrl_signal.valid   := ex_valid
-  csr.io.pc_check := (ex_ctrl.asTypeOf(new CtrlSignal).pc_sel === PC_ALU) & ex_valid
+  csr.io.pc_check := (ex_ctrl("pc_sel") === PC_ALU) & ex_valid
 
   csr.io.interrupt.time     := ex_interrupt & ex_valid
   csr.io.interrupt.soft     := false.B
@@ -279,13 +308,27 @@ class DataPath(implicit p: Parameters) extends Module {
   val mem_l_data     = RegEnable(mem.io.l_data,     0.U.asTypeOf(mem.io.l_data), !stall)
 //  val mem_s_complete = RegEnable(mem.io.s_complete, 0.U, !stall)
   val mem_rd         = RegEnable(ex_rd,             0.U, !stall)
-  val mem_ctrl       = RegEnable(ex_ctrl,           0.U, !stall)
   val mem_inst       = RegEnable(ex_inst,           0.U, !stall)
   val mem_pc         = RegEnable(ex_pc,             0.U, !stall)
   val mem_pc4        = RegEnable(ex_pc4,            0.U, !stall)
   val mem_valid_true = RegEnable(ex_valid,          0.U, !stall)
   val mem_csr        = RegEnable(csr.io.out,        0.U, !stall)
   val mem_csr_except  = RegEnable(csr_except,       0.U, !stall)
+  val mem_ctrl    = Map(
+//    "pc_sel"  -> RegEnable(ex_ctrl("pc_sel"),   0.U, !stall),
+//  "a_sel"   -> RegEnable(ex_ctrl("a_sel"),    0.U, !stall),
+//  "b_sel"   -> RegEnable(ex_ctrl("b_sel"),    0.U, !stall),
+//  "imm_sel" -> RegEnable(ex_ctrl("imm_sel"),  0.U, !stall),
+//  "alu_op"  -> RegEnable(ex_ctrl("alu_op"),   0.U, !stall),
+//  "br_type" -> RegEnable(ex_ctrl("br_type"),  0.U, !stall),
+//  "kill"    -> RegEnable(ex_ctrl("kill"),     0.U, !stall),
+    "st_type" -> (if (p(Difftest)) RegEnable(ex_ctrl("st_type"),  0.U, !stall) else UInt(0.W)),
+    "ld_type" -> (if (p(Difftest)) RegEnable(ex_ctrl("ld_type"),  0.U, !stall) else UInt(0.W)),
+    "wb_type" -> RegEnable(ex_ctrl("wb_type"),  0.U, !stall),
+    "wen"     -> RegEnable(ex_ctrl("wen"),      0.U, !stall),
+//  "csr_cmd" -> RegEnable(ex_ctrl("csr_cmd"),  0.U, !stall),
+//  "illegal" -> RegEnable(ex_ctrl("illegal"),  0.U, !stall)
+  )
 
   val mem_valid = mem_valid_true & !mem_csr_except
 
@@ -294,27 +337,27 @@ class DataPath(implicit p: Parameters) extends Module {
   } else {
     csr_except := csr.io.expt & ex_valid
   }
-  mem_kill := (ex_ctrl.asTypeOf(new CtrlSignal).kill | (br_infoValid_from_mem & (!br_isHit_from_mem)) | csr_except | mem_fence_i) & ex_valid
-  mem2if_pc_sel := Mux(ex_valid === 1.U, ex_ctrl.asTypeOf(new CtrlSignal).pc_sel, PC_4)
+  mem_kill := (ex_ctrl("kill") | (br_infoValid_from_mem & (!br_isHit_from_mem)) | csr_except | mem_fence_i) & ex_valid
+  mem2if_pc_sel := Mux(ex_valid === 1.U, ex_ctrl("pc_sel"), PC_4)
   mem2if_pc_alu := ex_alu_out
   dontTouch(mem2if_pc_sel)
 //  dontTouch(mem2if_pc_alu)
 
   // wb /////////////////////////////////////
   bypass.io.wb.rd := mem_rd
-  bypass.io.wb.valid := mem_valid & mem_ctrl.asTypeOf(new CtrlSignal).wen
+  bypass.io.wb.valid := mem_valid & mem_ctrl("wen")
   bypass_mem_l_data := regs.io.wdata
 
   mem_wb_interrupt := ((ex_interrupt & ex_valid) | csr.io.expt) | (mem_valid_true & mem_csr_except)
 
   regs.io.waddr := mem_rd
-  regs.io.wdata := MuxLookup(mem_ctrl.asTypeOf(new CtrlSignal).wb_type, 0.U, Array(
+  regs.io.wdata := MuxLookup(mem_ctrl("wb_type"), 0.U, Array(
     WB_ALU -> mem_alu_out,
     WB_MEM -> mem_l_data.bits,
     WB_PC4 -> mem_pc4,
     WB_CSR -> mem_csr
   ))
-  regs.io.wen := (mem_ctrl.asTypeOf(new CtrlSignal).wen & !stall & mem_valid) // | mem_l_data.valid
+  regs.io.wen := (mem_ctrl("wen") & !stall & mem_valid) // | mem_l_data.valid
 
   if(p(Difftest)){
     println(">>>>>>>> difftest mode!")
@@ -357,7 +400,7 @@ class DataPath(implicit p: Parameters) extends Module {
     dic.io.instr := RegNext(mem_inst)
     dic.io.skip := RegNext(
       ((mem_inst === "h0000007b".U) |
-      ((mem_ctrl.asTypeOf(new CtrlSignal).ld_type.orR() | mem_ctrl.asTypeOf(new CtrlSignal).st_type.orR()) & (p(CLINTRegs).values.map(mem_alu_out === _.U).reduce(_|_))) |
+      ((mem_ctrl("ld_type").orR() | mem_ctrl("st_type").orR()) & (p(CLINTRegs).values.map(mem_alu_out === _.U).reduce(_|_))) |
       (mem_inst === BitPat("b101100000000_?????_010_?????_1110011"))
       ) & !stall
     )

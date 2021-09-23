@@ -44,7 +44,7 @@ class MEM (implicit p: Parameters) extends Module {
       LD_LWU -> ("b0000_1111".U << io.alu_res(2,0).asUInt()), // <<0 or << 4
       LD_LHU -> ("b0000_0011".U << io.alu_res(2,0).asUInt()), // <<0, 2, 4, 6
       LD_LBU -> ("b0000_0001".U << io.alu_res(2,0).asUInt()), // <<0, 1, 2, 3 ... 7
-    ))
+    ))(7, 0)
     io.dcache.req.bits.op := 0.U   // read
     io.dcache.req.bits.data := 0.U // useless when load
     ld_type := Mux(!io.stall, io.ld_type, ld_type)
@@ -58,9 +58,9 @@ class MEM (implicit p: Parameters) extends Module {
       ST_SW  -> ("b0000_1111".U << io.alu_res(2,0).asUInt()), // <<0 or << 4
       ST_SH  -> ("b0000_0011".U << io.alu_res(2,0).asUInt()), // <<0, 2, 4, 6
       ST_SB  -> ("b0000_0001".U << io.alu_res(2,0).asUInt()), // <<0, 1, 2, 3 ... 7
-    ))
+    ))(7, 0)
     io.dcache.req.bits.op := 1.U   // write
-    io.dcache.req.bits.data := io.s_data << (io.alu_res(2,0) << 3.U).asUInt() // useless when load
+    io.dcache.req.bits.data := (io.s_data << (io.alu_res(2,0) << 3.U).asUInt())(63, 0) // useless when load
     st_type := Mux(!io.stall, io.st_type, st_type)
   }.otherwise{
     // not a mem inst

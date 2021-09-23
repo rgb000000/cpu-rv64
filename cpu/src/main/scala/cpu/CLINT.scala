@@ -33,7 +33,7 @@ class CLINT(implicit p: Parameters) extends Module{
     mtimecmp_addr -> mtimecmp
   ))
 
-  io.cpu.req.ready := 1.U
+  io.cpu.req.ready := state =/= s_resp
 
   io.cpu.resp.valid := state === s_resp
   io.cpu.resp.bits.id := id

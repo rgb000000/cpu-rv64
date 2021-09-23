@@ -62,7 +62,7 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
 
   when(state === s_read){
     io.in.resp.bits.id := r.bits.id
-    io.in.resp.bits.data := Mux(is32req_reg & is32high_reg, r.bits.data << 32.U, r.bits.data)
+    io.in.resp.bits.data := Mux(is32req_reg & is32high_reg, r.bits.data(63, 32) << 32.U, r.bits.data)
     io.in.resp.valid := r.valid
     io.in.resp.bits.cmd := Mux(isBurst, Mux(r.bits.last, MemCmdConst.ReadLast, 0.U), MemCmdConst.ReadLast)
   }.elsewhen(state === s_resp){

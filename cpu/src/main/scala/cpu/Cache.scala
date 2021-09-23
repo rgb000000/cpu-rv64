@@ -270,6 +270,15 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     datas := way.io.out.bits //.datas(io.cpu.req.bits.addr(log2Ceil((p(CacheLineSize) / p(NBank)) / 8) + log2Ceil(p(NBank)), log2Ceil((p(CacheLineSize) / p(NBank)) / 8)).asUInt())
   })
 
+  val fence_which_way = fence_cnt.value(log2Ceil(cacheline_num) - 1, log2Ceil(cacheline_num / p(NWay))).asUInt() // in binary
+  val fence_which_index = fence_cnt.value(log2Ceil(cacheline_num / p(NWay)) - 1, 0).asUInt()  // in binary
+  val fence_which_data = ways_ret_datas(fence_which_way)
+  assert(fence_which_way <= p(NWay).U)
+  when((state === s_fence) & ways.map(_.io.out.valid).reduce(_ & _)){
+    fence_rdata := fence_which_data
+    //    fence_cnt.inc()
+  }
+
   // read nways
   when((state =/= s_fence) & (state =/= s_fence_wb)){
     ways.foreach((way =>{
@@ -280,20 +289,12 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     }))
   }.otherwise{
     ways.foreach((way =>{
-      way.io.in.r.bits.index := fence_cnt.value
+      way.io.in.r.bits.index := fence_which_index
       way.io.in.r.bits.op := 0.U //                | only accept read req
       way.io.in.r.valid := Mux(write_buffer.valid, 0.U, state === s_fence) // req is valid and not conflict with hit write
     }))
   }
 
-  val fence_which_way = fence_cnt.value(log2Ceil(cacheline_num) - 1, log2Ceil(cacheline_num / p(NWay))).asUInt() // in binary
-  val fence_which_index = fence_cnt.value(log2Ceil(cacheline_num / p(NWay)) - 1, 0).asUInt()  // in binary
-  val fence_which_data = ways_ret_datas(fence_which_way)
-  assert(fence_which_way <= p(NWay).U)
-  when((state === s_fence) & ways.head.io.out.valid){
-    fence_rdata := fence_which_data
-//    fence_cnt.inc()
-  }
 
   // compare ways tag, return one hot such {0,0,0,0} or {0,0,1,0}
   val ways_compare_res = Cat(ways.map((way)=>{
@@ -377,7 +378,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   })
   ways.zip(write_buffer.bits.replace_way.asBools()).foreach(a => {
     val (way, way_mask) = a
-    way.io.in.w.valid := way_mask & Cat(Seq.fill(p(NWay))(write_buffer.valid))
+    way.io.in.w.valid := way_mask & write_buffer.valid
   })
   // write_buffer fsm END
 
@@ -480,7 +481,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     io.mem.req.bits.mask := req_reg.mask
   }.elsewhen(state === s_fence){
     // send write burst cmd
-    io.mem.req.valid := ways.head.io.out.valid & fence_which_data.v & fence_which_data.d
+    io.mem.req.valid := ways.map(_.io.out.valid).reduce(_ & _) & fence_which_data.v & fence_which_data.d
     val tmp_addr = 0.U.asTypeOf(infos)
     tmp_addr.tag := fence_which_data.tag
     tmp_addr.index := fence_which_index
@@ -668,7 +669,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     }
 
     is(s_fence){
-      when((!write_buffer.valid) & ways.head.io.out.valid & (io.mem.req.fire() | !io.mem.req.valid)){
+      when((!write_buffer.valid) & ways.map(_.io.out.valid).reduce(_ & _) & (io.mem.req.fire() | !io.mem.req.valid)){
         // send writeBurst req or nop
         state := s_fence_wb
         fence_cnt.inc()

@@ -80,7 +80,7 @@ class IF (implicit p: Parameters) extends Module {
 
 //  pc := Mux(io.icache.req.fire(), pc_next, pc)
   cur_pc := Mux(io.icache.req.fire(), io.icache.req.bits.addr, Mux(io.icache.req.valid & !io.icache.req.ready & !io.stall, pc_next - 4.U, cur_pc))
-  inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data, inst)
+  inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(31, 0), inst)
 //  dontTouch(inst)
 
   val stall_negedge = (!io.stall) & RegNext(io.stall, false.B)
