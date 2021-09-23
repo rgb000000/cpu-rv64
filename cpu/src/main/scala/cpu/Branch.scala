@@ -41,7 +41,7 @@ class BTBIO(implicit p: Parameters) extends Bundle {
 
     val res = Valid(new Bundle {
       val tgt = UInt(p(XLen).W)
-      val bht = UInt(2.W)
+      val pTaken = Bool()
       val is_miss = Bool()
     })
   }
@@ -71,13 +71,13 @@ class BTB(implicit p: Parameters) extends Module{
   val query_select_data = Mux1H(for(i <- query_compare_res.asBools().zipWithIndex) yield (i._1, cam(i._2)))
   io.query.res.valid := io.query.pc.valid
   io.query.res.bits.tgt := query_select_data.tgt
-  io.query.res.bits.bht := query_select_data.bht
-  io.query.res.bits.is_miss := query_is_miss
+  io.query.res.bits.pTaken := query_select_data.bht(1)
+  io.query.res.bits.is_miss := query_is_miss // | true.B
 
   // update
   val update_compare_res = Cat(cam.map(_.pc).map(_ === io.update.bits.pc))
   val update_is_miss = update_compare_res.orR() === 0.U
-  val update_index = PriorityEncoderOH(Cat(update_compare_res.asBools().reverse))
+  val update_index = PriorityEncoder(Cat(update_compare_res.asBools()))
   when(io.update.valid & !update_is_miss){
     // update and hit
     cam(update_index).tgt := io.update.bits.tgt

@@ -7,7 +7,7 @@ import Control._
 
 class ImmGen (implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
-    val inst = Input(UInt(p(XLen).W))
+    val inst = Input(UInt(32.W))
     val sel = Input(UInt(3.W))
     val out = Output(UInt(p(XLen).W))
   })

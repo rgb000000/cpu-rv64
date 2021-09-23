@@ -277,7 +277,7 @@ class DataPath(implicit p: Parameters) extends Module {
 
   val mem_alu_out    = RegEnable(ex_alu_out,        0.U, !stall)
   val mem_l_data     = RegEnable(mem.io.l_data,     0.U.asTypeOf(mem.io.l_data), !stall)
-  val mem_s_complete = RegEnable(mem.io.s_complete, 0.U, !stall)
+//  val mem_s_complete = RegEnable(mem.io.s_complete, 0.U, !stall)
   val mem_rd         = RegEnable(ex_rd,             0.U, !stall)
   val mem_ctrl       = RegEnable(ex_ctrl,           0.U, !stall)
   val mem_inst       = RegEnable(ex_inst,           0.U, !stall)
@@ -298,7 +298,7 @@ class DataPath(implicit p: Parameters) extends Module {
   mem2if_pc_sel := Mux(ex_valid === 1.U, ex_ctrl.asTypeOf(new CtrlSignal).pc_sel, PC_4)
   mem2if_pc_alu := ex_alu_out
   dontTouch(mem2if_pc_sel)
-  dontTouch(mem2if_pc_alu)
+//  dontTouch(mem2if_pc_alu)
 
   // wb /////////////////////////////////////
   bypass.io.wb.rd := mem_rd
@@ -316,15 +316,12 @@ class DataPath(implicit p: Parameters) extends Module {
   ))
   regs.io.wen := (mem_ctrl.asTypeOf(new CtrlSignal).wen & !stall & mem_valid) // | mem_l_data.valid
 
-  val commit_valid  = Wire(Bool())
-  commit_valid := (mem_valid_true & !mem_csr_except & !stall) // | mem_l_data.valid | mem_s_complete
-  dontTouch(commit_valid)
-
-  dontTouch(regs.io.wdata)
-
-
   if(p(Difftest)){
     println(">>>>>>>> difftest mode!")
+
+    val commit_valid  = Wire(Bool())
+    commit_valid := (mem_valid_true & !mem_csr_except & !stall) // | mem_l_data.valid | mem_s_complete
+    dontTouch(commit_valid)
 
     val cycleCnt = Counter(Int.MaxValue)
     cycleCnt.inc()

@@ -59,7 +59,6 @@ class ALU (implicit p: Parameters) extends Module {
     ALU_SUB    -> (io.rs1 - io.rs2),
     ALU_SRA    -> (io.rs1.asSInt >> shamt_6).asUInt,
     ALU_SRL    -> (io.rs1 >> shamt_6),
-    ALU_SLL    -> (io.rs1 << shamt_6),
     ALU_SLT    -> (io.rs1.asSInt < io.rs2.asSInt),
     ALU_SLTU   -> (io.rs1 < io.rs2),
     ALU_AND    -> (io.rs1 & io.rs2),
@@ -67,15 +66,16 @@ class ALU (implicit p: Parameters) extends Module {
     ALU_XOR    -> (io.rs1 ^ io.rs2),
     ALU_COPY_A -> io.rs1,
     ALU_COPY_B -> io.rs2,
-    ALU_SLLW   -> uint32_sext_64((io.rs1 << io.rs2(4, 0).asUInt())(31, 0).asUInt()),
     ALU_SRLW   -> uint32_sext_64((io.rs1(31, 0).asUInt() >> shamt_5).asUInt()),
     ALU_SRAW   -> uint32_sext_64((io.rs1(31, 0).asSInt() >> shamt_5).asUInt()),
-    ALU_ADDW   -> uint32_sext_64((io.rs1 + io.rs2)(31, 0).asUInt()),
-    ALU_SUBW   -> uint32_sext_64((io.rs1 - io.rs2)(31, 0).asUInt()),
-    ALU_SLLIW  -> uint32_sext_64((io.rs1 << shamt_6)(31, 0).asUInt()),
     ALU_SRLIW  -> uint32_sext_64((io.rs1(31, 0).asUInt() >> shamt_6).asUInt()),
     ALU_SRAIW  -> uint32_sext_64((io.rs1(31, 0).asSInt() >> shamt_6).asUInt()),
+    ALU_ADDW   -> uint32_sext_64((io.rs1 + io.rs2)(31, 0).asUInt()),
+    ALU_SUBW   -> uint32_sext_64((io.rs1 - io.rs2)(31, 0).asUInt()),
     ALU_ADDIW  -> uint32_sext_64((io.rs1 + io.rs2)(31, 0).asUInt()),
+    ALU_SLLW   -> uint32_sext_64((io.rs1 << io.rs2(4, 0).asUInt())(31, 0).asUInt()),
+    ALU_SLLIW  -> uint32_sext_64((io.rs1 << shamt_6)(31, 0).asUInt()),
+    ALU_SLL    -> (io.rs1 << shamt_6)(63, 0),
   ))
 
   io.out := out

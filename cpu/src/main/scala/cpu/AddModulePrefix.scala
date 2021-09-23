@@ -25,7 +25,8 @@ class AddModulePrefix extends Transform with DependencyAPIMigration {
 
     val blacklist = List(
       "S011HD1P_X32Y2D128",
-      "S011HD1P_X32Y2D128_BW"
+      "S011HD1P_X32Y2D128_BW",
+      "ysyx_210013"
     )
 
     val extModules = state.circuit.modules.filter({ m =>

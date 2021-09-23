@@ -104,7 +104,7 @@ class MEM (implicit p: Parameters) extends Module {
   // reso cmd : 1 write cache resp     2 read cache resp
 //  io.s_complete := Mux((io.dcache.resp.fire() & (io.dcache.resp.bits.cmd =/= 0.U)) & !io.stall & io.st_type.orR(), 1.U, 0.U)
   io.s_complete := Mux((io.dcache.resp.fire() & (io.dcache.resp.bits.cmd === 1.U)), 1.U, 0.U)
-  dontTouch(io.s_complete)
+//  dontTouch(io.s_complete)
 
   if(p(Difftest)){
     val cycleCnt = WireInit(0.asUInt(64.W))

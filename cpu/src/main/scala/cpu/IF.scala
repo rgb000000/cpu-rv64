@@ -54,7 +54,7 @@ class IF (implicit p: Parameters) extends Module {
   btb.io.query.pc.bits := io.out.bits.pc
   btb.io.query.pc.valid := io.out.valid
   val pnpc = btb.io.query.res.bits.tgt
-  val pTaken  = Mux(btb.io.query.res.bits.is_miss, 0.U, btb.io.query.res.bits.bht(1))
+  val pTaken  = Mux(btb.io.query.res.bits.is_miss, 0.U, btb.io.query.res.bits.pTaken)
 
   val pc_next = Mux(io.stall, cur_pc,
                   Mux(io.pc_except_entry.valid, io.pc_except_entry.bits,
@@ -75,13 +75,13 @@ class IF (implicit p: Parameters) extends Module {
   io.icache.req.bits.mask := Mux(io.icache.req.bits.addr(2) === 1.U, "b1111_0000".U, "b0000_1111".U)  // need 32 bit instructions
   io.icache.req.bits.data := 0.U // nerver use because op is read
 
-  dontTouch(pc_next)
-  dontTouch(io.out)
+//  dontTouch(pc_next)
+//  dontTouch(io.out)
 
 //  pc := Mux(io.icache.req.fire(), pc_next, pc)
   cur_pc := Mux(io.icache.req.fire(), io.icache.req.bits.addr, Mux(io.icache.req.valid & !io.icache.req.ready & !io.stall, pc_next - 4.U, cur_pc))
   inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data, inst)
-  dontTouch(inst)
+//  dontTouch(inst)
 
   val stall_negedge = (!io.stall) & RegNext(io.stall, false.B)
   val is_valid_when_stall = RegInit(0.U)
@@ -103,5 +103,5 @@ class IF (implicit p: Parameters) extends Module {
   io.out.bits.pPC := Mux(btb.io.query.res.bits.is_miss, 0.U, btb.io.query.res.bits.tgt)
   io.out.valid := Mux(io.kill, 0.U, io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U)) | (is_valid_when_stall & stall_negedge)
 
-  dontTouch(io.icache)
+//  dontTouch(io.icache)
 }

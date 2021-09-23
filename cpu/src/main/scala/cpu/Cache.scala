@@ -127,7 +127,7 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
 
   io.out.bits := result
   io.out.valid := RegNext(io.in.r.valid, 0.U)
-  dontTouch(io.out.valid)
+//  dontTouch(io.out.valid)
 
   // write logic
     // write bank data
@@ -312,12 +312,14 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   // selected data from all way by tag==tag
   val select_data = Mux1H(for(i <- ways_compare_res.asBools().reverse.zipWithIndex) yield (i._1, ways_ret_datas(i._2).datas)) // todo: check order
 //  val select_data_rev = Wire(Vec(p(NBank), UInt((p(CacheLineSize) / p(NBank)).W)))
-  dontTouch(select_data)
+
+//  dontTouch(select_data)
+
 //  dontTouch(select_data_rev)
 //  (select_data_rev, select_data.reverse).zipped.foreach(_ := _)
 
   // use LFSR to generate rand in binary, need to be converted to ont-hot to use as mask
-  val rand_num = LFSR(128, seed = Some(9987))(log2Ceil(p(NWay))-1 , 0).asUInt()
+  val rand_num = LFSR(8, seed = Some(2))(log2Ceil(p(NWay))-1 , 0).asUInt()
   val write_buffer_conflict_with_replace = write_buffer.valid & (rand_num === OHToUInt(write_buffer.bits.replace_way))
   val rand_way = UIntToOH(Mux(write_buffer_conflict_with_replace, (rand_num + 1.U)(log2Ceil(p(NWay))-1 , 0).asUInt(), rand_num))
   assert(rand_way.orR() === 1.U)
@@ -363,7 +365,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   }
   // write ways
   ways.foreach(way => {
-    dontTouch(way.io.in.w)
+//    dontTouch(way.io.in.w)
     way.io.in.w.bits.tag := write_buffer.bits.tag
     way.io.in.w.bits.index := write_buffer.bits.index
     way.io.in.w.bits.offset := write_buffer.bits.offset
@@ -381,10 +383,10 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
 
   // cpu resp
-  dontTouch(io.cpu.req.bits.mask)
-  dontTouch(io.cpu.resp.bits.data)
-  dontTouch(io.cpu.resp.valid)
-  dontTouch(req_reg)
+//  dontTouch(io.cpu.req.bits.mask)
+//  dontTouch(io.cpu.resp.bits.data)
+//  dontTouch(io.cpu.resp.valid)
+//  dontTouch(req_reg)
 
   val refill_cnt = Counter(p(CacheLineSize) / 64)
 

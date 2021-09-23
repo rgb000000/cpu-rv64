@@ -135,9 +135,9 @@ class CSR (implicit p: Parameters) extends Module {
   val mip = WireInit(0.U.asTypeOf(new MIP))
   mip.mtip := io.interrupt.time
 
-  dontTouch(mstatus)
-  dontTouch(mie)
-  dontTouch(mip)
+//  dontTouch(mstatus)
+//  dontTouch(mie)
+//  dontTouch(mip)
 
   val mbadaddr = RegInit(0.U(p(XLen).W))
 

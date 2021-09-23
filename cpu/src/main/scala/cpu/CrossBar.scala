@@ -80,7 +80,7 @@ class InnerCrossBar12N(val n: Int=2)(implicit p: Parameters) extends Module {
     val out = Vec(n, new CacheMemIO)
   })
 
-  io.out.foreach(dontTouch(_))
+//  io.out.foreach(dontTouch(_))
 
   val s_idle :: s_readResp :: s_writeResp :: s_bad :: Nil = Enum(4)
   val state = RegInit(s_idle)
