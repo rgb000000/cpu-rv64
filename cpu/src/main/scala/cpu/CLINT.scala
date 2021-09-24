@@ -3,12 +3,20 @@ package cpu
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
+import chisel3.util.experimental.BoringUtils
 
 class CLINT(implicit p: Parameters) extends Module{
   // (0x02000000L, 0x0000ffffL, false,   0), // CLINT
   val addrs = p(CLINTRegs)
   val mtime_addr = addrs("mtime").U
   val mtimecmp_addr = addrs("mtimecmp").U
+
+  val soft_int_addr = addrs("soft_int").U
+  val external_int_addr = addrs("external_int").U
+
+  val uc_start_addr = addrs("uc_start").U
+  val uc_range_addr = addrs("uc_range").U
+  val branch_on_addr = addrs("branch_on").U
 
   val io = IO(new Bundle{
     val cpu = Flipped(new CacheMemIO())
@@ -20,6 +28,22 @@ class CLINT(implicit p: Parameters) extends Module{
   val mtime = RegInit(1.U(64.W))
   val mtimecmp = RegInit(2.U(64.W))
 
+  val soft_int = RegInit(false.B)
+  val external_int = RegInit(false.B)
+  val external_in = WireInit(false.B)
+  BoringUtils.addSink(external_in, "external_in")
+  external_int := external_in
+
+  val uc_start = RegInit(0.U(64.W))
+  val uc_range = RegInit(0.U(64.W))
+  val branch_on = RegInit(true.B)
+
+  BoringUtils.addSource(soft_int, "soft_int")
+  BoringUtils.addSource(external_int, "external_int")
+  BoringUtils.addSource(uc_start, "uc_start")
+  BoringUtils.addSource(uc_range, "uc_range")
+  BoringUtils.addSource(branch_on, "branch_on")
+
   val s_idle :: s_w :: s_resp :: Nil = Enum(3)
   val state = RegInit(s_idle)
 
@@ -30,7 +54,14 @@ class CLINT(implicit p: Parameters) extends Module{
   val sel_data = Wire(UInt(64.W))
   sel_data := MuxLookup(addr, 0x7fffffff.U, Array(
     mtime_addr    -> mtime,
-    mtimecmp_addr -> mtimecmp
+    mtimecmp_addr -> mtimecmp,
+
+    soft_int_addr -> soft_int,
+    external_int_addr -> external_int,
+
+    uc_start_addr -> uc_start,
+    uc_range_addr -> uc_range,
+    branch_on_addr-> branch_on
   ))
 
   io.cpu.req.ready := state =/= s_resp
@@ -53,6 +84,16 @@ class CLINT(implicit p: Parameters) extends Module{
       mtime := io.cpu.req.bits.data
     }.elsewhen(io.cpu.req.bits.addr === mtimecmp_addr){
       mtimecmp := io.cpu.req.bits.data
+    }.elsewhen(io.cpu.req.bits.addr === soft_int_addr){
+      soft_int := io.cpu.req.bits.data(0)
+    }.elsewhen(io.cpu.req.bits.addr === external_int_addr){
+      external_int := false.B
+    }.elsewhen(io.cpu.req.bits.addr === uc_start_addr){
+      uc_start := io.cpu.req.bits.data
+    }.elsewhen(io.cpu.req.bits.addr === uc_range_addr){
+      uc_range := io.cpu.req.bits.data
+    }.elsewhen(io.cpu.req.bits.addr === branch_on_addr){
+      branch_on := io.cpu.req.bits.data(0)
     }
   }.elsewhen((state === s_resp)){
     when(op === 1.U){

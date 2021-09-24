@@ -3,6 +3,7 @@ package cpu
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
+import chisel3.util.experimental.BoringUtils
 import chisel3.util.random.LFSR
 
 // define in bytes
@@ -519,13 +520,18 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
   io.cpu.req.ready := ((state === s_idle) | ((state === s_lookup) & (!is_miss))) & !conflict_hit_write
   req_reg := Mux(io.cpu.req.fire(), io.cpu.req.bits, req_reg)
+
+  val uc_start = WireInit(0.U(64.W))
+  val uc_range = WireInit(0.U(64.W))
+  BoringUtils.addSink(uc_start, "uc_start")
+  BoringUtils.addSink(uc_range, "uc_range")
   req_isCached := Mux(io.cpu.req.fire(), addressSpace(true).map(info => {
     val start = info._1
     val range = info._2
     val isCache = info._3
     val port_id = info._4
     (io.cpu.req.bits.addr >= start.U(64.W)) & (io.cpu.req.bits.addr < (start.U(64.W) + range.U(64.W)))
-  }).reduce(_ | _), req_isCached)
+  }).reduce(_ | _) & !((io.cpu.req.bits.addr >= uc_start) & (io.cpu.req.bits.addr < (uc_start + uc_range))), req_isCached)
 
   when((state === s_lookup) & is_miss){
     // miss and goto miss state

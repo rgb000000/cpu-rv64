@@ -134,6 +134,8 @@ class CSR (implicit p: Parameters) extends Module {
   val mie = RegInit(0.U.asTypeOf(new MIE))
   val mip = WireInit(0.U.asTypeOf(new MIP))
   mip.mtip := io.interrupt.time
+  mip.msip := io.interrupt.soft
+  mip.meip := io.interrupt.external
 
 //  dontTouch(mstatus)
 //  dontTouch(mie)
@@ -172,8 +174,16 @@ class CSR (implicit p: Parameters) extends Module {
   ))
 
   val time_interrupt_enable = WireInit(mie.mtie & mstatus.mie)
+  val soft_interrupt_enable = WireInit(mie.msie & mstatus.mie)
+  val external_interrupt_ebale = WireInit(mie.meie & mstatus.mie)
   BoringUtils.addSource(time_interrupt_enable, "time_interrupt_enable")
+  BoringUtils.addSource(soft_interrupt_enable, "soft_interrupt_enable")
+  BoringUtils.addSource(external_interrupt_ebale, "external_interrupt_enable")
   val time_interrupt = mip.mtip & time_interrupt_enable
+  val soft_interrupt = mip.msip & soft_interrupt_enable
+  val external_interrupt = mip.meip & external_interrupt_ebale
+
+  val interrupt = WireInit(Cat(Seq(time_interrupt, soft_interrupt, external_interrupt)))
 
   val iaddrInvalid = io.pc_check && io.ctrl_signal.addr(1)            // pc isvalid?
   val laddrInvalid = MuxLookup(io.ctrl_signal.ld_type, false.B, Seq(  // load isvalid?
@@ -185,7 +195,7 @@ class CSR (implicit p: Parameters) extends Module {
     Control.ST_SH -> io.ctrl_signal.addr(0)))
   io.expt := (io.ctrl_signal.illegal || iaddrInvalid || laddrInvalid || saddrInvalid ||
     (io.cmd(1, 0).orR && (!csrValid || !privValid) && false.B) || (wen && csrRO && false.B) ||
-    (privInst && !privValid && false.B) || isEcall || isEbreak || time_interrupt) & io.ctrl_signal.valid
+    (privInst && !privValid && false.B) || isEcall || isEbreak || interrupt.orR()) & io.ctrl_signal.valid
   io.exvec := mtvec
   io.epc  := mepc
 
@@ -193,12 +203,14 @@ class CSR (implicit p: Parameters) extends Module {
     when(io.expt) {
       mepc   := io.ctrl_signal.pc >> 2 << 2
       mcause := Mux(time_interrupt,               (1.U << (p(XLen)-1).U).asUInt() | 7.U,
+                Mux(soft_interrupt,               (1.U << (p(XLen)-1).U).asUInt() | 3.U,
+                Mux(external_interrupt,           (1.U << (p(XLen)-1).U).asUInt() | 11.U,
                 Mux(iaddrInvalid,                 Causes.misaligned_fetch.U,
                 Mux(laddrInvalid,                 Causes.misaligned_load.U,
                 Mux(saddrInvalid,                 Causes.misaligned_store.U,
                 Mux(isEcall,                      Causes.user_ecall.U + mstatus.prv,
                 Mux(isEbreak,                     Causes.breakpoint.U,
-                                                  Causes.illegal_instruction.U))))))
+                                                  Causes.illegal_instruction.U))))))))
       mstatus.mpie := mstatus.mie
       mstatus.mie := false.B
       when(iaddrInvalid || laddrInvalid || saddrInvalid) { mbadaddr := io.ctrl_signal.addr }
@@ -229,6 +241,7 @@ class CSR (implicit p: Parameters) extends Module {
         val tmp_mie = wdata.asTypeOf(new MIE)
         mie.mtie := tmp_mie.mtie
         mie.msie := tmp_mie.msie
+        mie.meie := tmp_mie.meie
       }
       .elsewhen(csr_addr === CSRs.mepc.U) { mepc := wdata >> 2.U << 2.U }
       .elsewhen(csr_addr === CSRs.mcause.U) { mcause := wdata & (BigInt(1) << (p(XLen)-1) | 0xf).U }
@@ -268,7 +281,7 @@ class CSR (implicit p: Parameters) extends Module {
     }
 
     val except_reg = RegEnable(io.expt, false.B, !io.stall)
-    val time_interrupt_reg = RegEnable(time_interrupt, false.B, !io.stall)
+    val time_interrupt_reg = RegEnable(interrupt.orR(), false.B, !io.stall)
 
     val dae = Module(new DifftestArchEvent)
     dae.io.clock := clock

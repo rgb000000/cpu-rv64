@@ -46,7 +46,14 @@ class BaseConfig extends Config ((site, here, up)=>{
 
   case CLINTRegs => Map(
     "mtime"     -> "h0200_bff8",
-    "mtimecmp"  -> "h0200_4000"
+    "mtimecmp"  -> "h0200_4000",
+
+    "soft_int"  -> "h0200_e000",      // pass
+    "external_int"  -> "h0200_e008",  // pass
+
+    "uc_start"  -> "h0200_f000",      // pass
+    "uc_range"  -> "h0200_f008",      // pass
+    "branch_on" -> "h0200_f010"       // pass
   )
 })
 

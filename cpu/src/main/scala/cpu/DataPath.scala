@@ -110,7 +110,17 @@ class DataPath(implicit p: Parameters) extends Module {
   io.fence_i_do := mem_fence_i
 
   val time_interrupt_enable = WireInit(false.B)
+  val soft_interrupt_enable = WireInit(false.B)
+  val external_interrupt_enable = WireInit(false.B)
   BoringUtils.addSink(time_interrupt_enable, "time_interrupt_enable")
+  BoringUtils.addSink(soft_interrupt_enable, "soft_interrupt_enable")
+  BoringUtils.addSink(external_interrupt_enable, "external_interrupt_enable")
+
+  val soft_int = WireInit(false.B)
+  BoringUtils.addSink(soft_int, "soft_int")
+
+  val external_int = WireInit(false.B)
+  BoringUtils.addSink(external_int, "external_int")
 
   // fetch /////////////////////////////////////
 
@@ -165,7 +175,11 @@ class DataPath(implicit p: Parameters) extends Module {
   val id_pTaken= RegEnable(if_pTaken,                                                  0.U, !stall)
   val id_pPC   = RegEnable(if_pPC,                                                     0.U, !stall)
   val id_valid = RegEnable(Mux((mem_kill === 1.U) | loadrisk.io.stall, 0.U, if_valid), 0.U, !stall)
-  val id_interrupt = RegEnable(io.time_interrupt & time_interrupt_enable,              0.U(1.W), !stall)
+  val id_interrupt = RegEnable(Cat(Seq(
+    io.time_interrupt & time_interrupt_enable,
+    soft_int & soft_interrupt_enable,
+    external_int & external_interrupt_enable
+  )), 0.U(3.W), !stall)
   val id_ctrl = Map(
     "pc_sel"  -> RegEnable(ctrl.pc_sel,   0.U, !stall),
     "a_sel"   -> RegEnable(ctrl.a_sel,    0.U, !stall),
@@ -277,7 +291,7 @@ class DataPath(implicit p: Parameters) extends Module {
   mem.io.st_type    := Mux(mem_wb_interrupt, ST_XXX, id_ctrl("st_type"))
   mem.io.s_data     := br.io.rs2
   mem.io.alu_res    := ex.io.out
-  mem.io.inst_valid := Mux((mem_kill === 1.U) | (id_interrupt === 1.U), 0.U, id_valid)
+  mem.io.inst_valid := Mux((mem_kill === 1.U) | (id_interrupt.orR() === 1.U), 0.U, id_valid)
   mem.io.stall      := stall
 
   if (p(Difftest)) {
@@ -300,9 +314,9 @@ class DataPath(implicit p: Parameters) extends Module {
   csr.io.ctrl_signal.valid   := ex_valid
   csr.io.pc_check := (ex_ctrl("pc_sel") === PC_ALU) & ex_valid
 
-  csr.io.interrupt.time     := ex_interrupt & ex_valid
-  csr.io.interrupt.soft     := false.B
-  csr.io.interrupt.external := false.B
+  csr.io.interrupt.time     := ex_interrupt(2) & ex_valid
+  csr.io.interrupt.soft     := ex_interrupt(1) & ex_valid
+  csr.io.interrupt.external := ex_interrupt(0) & ex_valid
 
   val mem_alu_out    = RegEnable(ex_alu_out,        0.U, !stall)
   val mem_l_data     = RegEnable(mem.io.l_data,     0.U.asTypeOf(mem.io.l_data), !stall)
@@ -348,7 +362,7 @@ class DataPath(implicit p: Parameters) extends Module {
   bypass.io.wb.valid := mem_valid & mem_ctrl("wen")
   bypass_mem_l_data := regs.io.wdata
 
-  mem_wb_interrupt := ((ex_interrupt & ex_valid) | csr.io.expt) | (mem_valid_true & mem_csr_except)
+  mem_wb_interrupt := ((ex_interrupt.orR() & ex_valid) | csr.io.expt) | (mem_valid_true & mem_csr_except)
 
   regs.io.waddr := mem_rd
   regs.io.wdata := MuxLookup(mem_ctrl("wb_type"), 0.U, Array(

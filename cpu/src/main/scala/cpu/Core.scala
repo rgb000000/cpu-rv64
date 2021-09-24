@@ -3,6 +3,7 @@ package cpu
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
+import chisel3.util.experimental.BoringUtils
 
 class Core (implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
@@ -124,4 +125,7 @@ class ysyx_210013(implicit p: Parameters) extends Module {
 
   core.io.memAXI.head.b.bits.user := 0.U
   core.io.memAXI.head.r.bits.user := 0.U
+
+  val external_in = WireInit(io.interrupt)
+  BoringUtils.addSource(external_in, "external_in")
 }

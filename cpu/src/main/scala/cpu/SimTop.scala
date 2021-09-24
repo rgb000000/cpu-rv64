@@ -25,6 +25,9 @@ class MySimTop(implicit p: Parameters) extends Module {
     core.io.memAXI.head <> aximem.io
   }
 
+  val external_in = WireInit(false.B)
+  BoringUtils.addSource(external_in, "external_in")
+
   io.uart.in.valid := false.B
   val difftest_uart_valid = WireInit(false.B)
   val difftest_uart_ch    = WireInit(0.U(8.W))
@@ -51,6 +54,9 @@ class SimTop(implicit p: Parameters) extends Module {
     dontTouch(aximem.io)
     core.io.memAXI.head <> aximem.io
   }
+
+  val external_in = WireInit(false.B)
+  BoringUtils.addSource(external_in, "external_in")
 
   io.uart.in.valid := false.B
   val difftest_uart_valid = WireInit(false.B)

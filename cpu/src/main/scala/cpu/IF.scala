@@ -3,7 +3,7 @@ package cpu
 import chipsalliance.rocketchip.config._
 import chisel3._
 import chisel3.util._
-import chisel3.util.experimental.loadMemoryFromFileInline
+import chisel3.util.experimental.{BoringUtils, loadMemoryFromFileInline}
 
 class BrInfo(implicit p: Parameters) extends Bundle {
   val isHit = Bool()
@@ -50,11 +50,14 @@ class IF (implicit p: Parameters) extends Module {
 //    Control.PC_EPC -> (io.pc_epc)
 //  ))))
 
+  val branch_on = WireInit(0.U)
+  BoringUtils.addSink(branch_on, "branch_on")
+
   // query
   btb.io.query.pc.bits := io.out.bits.pc
   btb.io.query.pc.valid := io.out.valid
   val pnpc = btb.io.query.res.bits.tgt
-  val pTaken  = Mux(btb.io.query.res.bits.is_miss, 0.U, btb.io.query.res.bits.pTaken)
+  val pTaken  = Mux(btb.io.query.res.bits.is_miss, 0.U, btb.io.query.res.bits.pTaken) & branch_on
 
   val pc_next = Mux(io.stall, cur_pc,
                   Mux(io.pc_except_entry.valid, io.pc_except_entry.bits,
