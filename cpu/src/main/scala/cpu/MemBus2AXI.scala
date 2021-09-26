@@ -33,11 +33,14 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
       when(io.in.req.fire() & ((io.in.req.bits.cmd === MemCmdConst.WriteBurst) | (io.in.req.bits.cmd === MemCmdConst.WriteOnce))){
         state := s_write
         isBurst := (io.in.req.bits.cmd === MemCmdConst.WriteBurst)
+        is32req_reg := is32req
+        is32high_reg := is32high
+        req_mask_reg := io.in.req.bits.mask
       }.elsewhen(io.in.req.fire() & ((io.in.req.bits.cmd === MemCmdConst.ReadBurst) | (io.in.req.bits.cmd === MemCmdConst.ReadOnce))){
         state := s_read
         isBurst := (io.in.req.bits.cmd === MemCmdConst.ReadBurst)
         is32req_reg := is32req
-        is32high_reg := is32high_reg
+        is32high_reg := is32high
         req_mask_reg := io.in.req.bits.mask
       }
     }
@@ -62,7 +65,7 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
 
   when(state === s_read){
     io.in.resp.bits.id := r.bits.id
-    io.in.resp.bits.data := Mux(is32req_reg & is32high_reg, r.bits.data(63, 32) << 32.U, r.bits.data)
+    io.in.resp.bits.data := Mux(is32req_reg & is32high_reg, r.bits.data(31, 0) << 32.U, r.bits.data)
     io.in.resp.valid := r.valid
     io.in.resp.bits.cmd := Mux(isBurst, Mux(r.bits.last, MemCmdConst.ReadLast, 0.U), MemCmdConst.ReadLast)
   }.elsewhen(state === s_resp){
