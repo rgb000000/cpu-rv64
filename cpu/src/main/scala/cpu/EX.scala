@@ -3,7 +3,6 @@ package cpu
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
-import cpu.ALU.ALU_ADD
 
 object ALU {
   val ALU_ADD    =  0.U(5.W) // +
