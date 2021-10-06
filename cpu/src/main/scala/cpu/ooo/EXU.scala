@@ -52,12 +52,20 @@ class FixPointU(implicit p: Parameters) extends Module{
 class MemUIn(implicit p: Parameters) extends Bundle{
   val A = UInt(p(XLen).W)
   val B = UInt(p(XLen).W)
+  val alu_op = UInt(5.W)
 
   val ld_type = UInt(3.W)
   val st_type = UInt(3.W)
   val s_data  = UInt(p(XLen).W)
 
   val csr_cmd = UInt(3.W)
+  val csr_in = UInt(p(XLen).W)
+  val illegal = Bool()
+  val interrupt = new Bundle{
+    val time = Bool()
+    val soft = Bool()
+    val external = Bool()
+  }
 }
 
 class MemU(implicit p: Parameters) extends Module{
@@ -68,5 +76,30 @@ class MemU(implicit p: Parameters) extends Module{
 
     val cdb = Decoupled(new CDB)
   })
+
+  val addr = io.A + io.B
+
+  val isCSR = io.in.csr_cmd.orR()
+
+  // Mem op
+  val mem = Module(new MEM)
+  mem.io.ld_type := io.in.ld_type
+  mem.io.st_type := io.in.st_type
+  mem.io.s_data := io.in.s_data
+  mem.io.alu_res := addr
+  // mem.io.inst_valid := 
+
+  // CSR op
+  val csr = Module(new CSR)
+  csr.io.cmd := io.in.csr_cmd
+  csr.io.in := Mux(io.in.alu_op === Control.ALU_COPY_A, A, B)
+  csr.io.illegal := io.in.illegal
+  csr.io.interrupt := io.in.interrupt
+
+  when(io.in.fire() & isCSR){
+    // csr op
+  }.otherwise{
+    // mem op
+  }
 
 }
