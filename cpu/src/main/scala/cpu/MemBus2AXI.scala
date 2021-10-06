@@ -101,7 +101,7 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
   aw.bits.user := 0.U
   aw.bits.qos := 0.U
   aw.bits.id := io.in.req.bits.id
-  aw.bits.addr := Mux(is32req & is32high, io.in.req.bits.addr | "h0000_0000_0000_0004".U(64.W), io.in.req.bits.addr)
+  aw.bits.addr := Mux(is32req & is32high, io.in.req.bits.addr | "h0000_0004".U(p(AddresWidth).W), io.in.req.bits.addr)
   aw.bits.len := (1.U << io.in.req.bits.len).asUInt() - 1.U
   aw.bits.size := Mux(is32req, 2.U, 3.U) // 8 * 8bits = 64bits
   aw.bits.burst := AXI4Parameters.BURST_INCR
