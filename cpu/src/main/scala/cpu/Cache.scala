@@ -47,7 +47,7 @@ object MemCmdConst{
 }
 class MemReq(implicit p: Parameters) extends Bundle {
   //
-  val addr = UInt(p(XLen).W)
+  val addr = UInt(p(AddresWidth).W)
   val data = UInt(p(XLen).W)
   val cmd = UInt(4.W)   // MemCmdConst
   val len = UInt(2.W)   // 0: 1(64bits)    1: 2   2: 4  3: 8
@@ -197,9 +197,13 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
   val offset_width = log2Ceil(p(CacheLineSize) / 8)
   val index_width = log2Ceil(cache_size / (p(NWay) * p(CacheLineSize)) )
-  val tag_width = p(XLen) - offset_width - index_width
+  val tag_width = p(AddresWidth) - offset_width - index_width
 
-  require((offset_width + index_width + tag_width) == p(XLen))
+  println(s"offset width is ${offset_width}")
+  println(s"index width is ${index_width}")
+  println(s"tag width is ${tag_width}")
+
+  require((offset_width + index_width + tag_width) == p(AddresWidth))
 
   val infos = new Bundle{
     val tag = UInt(tag_width.W)
@@ -530,7 +534,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     val range = info._2
     val isCache = info._3
     val port_id = info._4
-    (io.cpu.req.bits.addr >= start.U(64.W)) & (io.cpu.req.bits.addr < (start.U(64.W) + range.U(64.W)))
+    (io.cpu.req.bits.addr >= start.U(p(AddresWidth).W)) & (io.cpu.req.bits.addr < (start.U(p(AddresWidth).W) + range.U(p(AddresWidth).W)))
   }).reduce(_ | _) & !((io.cpu.req.bits.addr >= uc_start) & (io.cpu.req.bits.addr < (uc_start + uc_range))), req_isCached)
 
   when((state === s_lookup) & is_miss){

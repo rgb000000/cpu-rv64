@@ -94,7 +94,7 @@ class InnerCrossBar12N(val n: Int=2)(implicit p: Parameters) extends Module {
   val outSelVec = VecInit(Seq.fill(n)(false.B))
   for(i <- 0 until n) {
     outSelVec(i) := addressSpace(i).map(space => {
-      (addr_in >= space._1.U(64.W)) & (addr_in < (space._1.U(64.W) + space._2.U(64.W)))
+      (addr_in >= space._1.U(p(AddresWidth).W)) & (addr_in < (space._1.U(p(AddresWidth).W) + space._2.U(p(AddresWidth).W)))
     }).reduce(_ | _)
   }
 

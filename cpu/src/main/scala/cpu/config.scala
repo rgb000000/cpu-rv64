@@ -6,6 +6,8 @@ import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 // register width
 case object XLen extends Field[Int]
 
+case object AddresWidth extends Field[Int]
+
 case object PCStart extends Field[String]
 
 case object PCEVec extends Field[String]
@@ -31,6 +33,7 @@ class BaseConfig extends Config ((site, here, up)=>{
   case NWay           => 4
   case NBank          => 1
   case IDBits         => 4
+  case AddresWidth    => 32
 
   case BTBIndex       => 16
 

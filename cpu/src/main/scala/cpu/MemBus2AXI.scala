@@ -16,7 +16,7 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
 
   val addr_in = io.in.req.bits.addr
   val is32req = addressSpace(32).map(space => {
-    (addr_in >= space._1.U(64.W)) & (addr_in < (space._1.U(64.W) + space._2.U(64.W)))
+    (addr_in >= space._1.U(p(AddresWidth).W)) & (addr_in < (space._1.U(p(AddresWidth).W) + space._2.U(p(AddresWidth).W)))
   }).reduce(_ | _)
   val is32high = Mux(io.in.req.bits.mask(3, 0) === "h0".U(4.W), true.B, false.B)
 
@@ -89,7 +89,7 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
   ar.bits.user := 0.U
   ar.bits.qos := 0.U
   ar.bits.id := io.in.req.bits.id
-  ar.bits.addr := Mux(is32req & is32high, io.in.req.bits.addr | "h0000_0000_0000_0004".U(64.W), io.in.req.bits.addr)
+  ar.bits.addr := Mux(is32req & is32high, io.in.req.bits.addr | "h0000_0004".U(p(AddresWidth).W), io.in.req.bits.addr)
   ar.bits.len := (1.U << io.in.req.bits.len).asUInt() - 1.U // (p(CacheLineSize) / AXI4Parameters.dataBits).U
   ar.bits.size := Mux(is32req, 2.U, 3.U) // 8 * 8bits = 64bits
   ar.bits.burst := AXI4Parameters.BURST_INCR
