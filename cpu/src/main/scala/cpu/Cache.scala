@@ -637,7 +637,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
     is(s_miss){
       when(
-        (req_isCached & (io.mem.req.fire() & (io.mem.req.bits.cmd === MemCmdConst.WriteLast)) | ((replace_buffer.v === 0.U) | (replace_buffer.d === 0.U))) |
+        (req_isCached & ((io.mem.req.fire() & (io.mem.req.bits.cmd === MemCmdConst.WriteLast)) | ((replace_buffer.v === 0.U) | (replace_buffer.d === 0.U)))) |
           (!req_isCached & (((req_reg.op === 1.U) & (io.mem.req.fire() & (io.mem.req.bits.cmd === MemCmdConst.WriteLast))) |
                              (req_reg.op === 0.U)))
       ){
