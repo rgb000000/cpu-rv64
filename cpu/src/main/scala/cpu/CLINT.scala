@@ -71,7 +71,7 @@ class CLINT(implicit p: Parameters) extends Module{
   io.cpu.resp.bits.data := 0.U
   io.cpu.resp.bits.cmd :=  Mux(op === 1.U, 1.U, MemCmdConst.ReadLast)
 
-  io.interrupt := RegNext(mtime >= mtimecmp)
+  io.interrupt := RegNext(mtime >= mtimecmp, 0.U)
 
   mtime := mtime + 1.U
 

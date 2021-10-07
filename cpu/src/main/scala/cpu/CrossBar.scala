@@ -103,7 +103,7 @@ class InnerCrossBar12N(val n: Int=2)(implicit p: Parameters) extends Module {
   val outSelIdx = PriorityEncoder(outSelVec)
   val outSel = io.out(outSelIdx)
 
-  val cur_idx = RegEnable(outSelIdx, io.in.req.fire() & (state === s_idle))
+  val cur_idx = RegEnable(outSelIdx, 0.U, io.in.req.fire() & (state === s_idle))
 
   // req connect    in.req  <>   io.out(xxx).req
   (io.out, outSelVec).zipped.foreach((out, sel) => {

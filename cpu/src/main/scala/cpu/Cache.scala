@@ -120,9 +120,9 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
   // TODO: check data order in simulator
   //            tag,v,   d,    data
   result := Cat(
-    Seq(RegNext(tag_tab(io.in.r.bits.index))) ++
-      Seq(RegNext(v_tab(io.in.r.bits.index))) ++
-      Seq(RegNext(dirty_tab(io.in.r.bits.index))) ++
+    Seq(RegNext(tag_tab(io.in.r.bits.index), 0.U)) ++
+      Seq(RegNext(v_tab(io.in.r.bits.index), 0.U)) ++
+      Seq(RegNext(dirty_tab(io.in.r.bits.index), 0.U)) ++
       Seq(bankn.io.Q)
   ).asUInt().asTypeOf(new WayOut(tag_width))
 
@@ -711,5 +711,5 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   }
 
 //  io.fence_i_done := (((io.mem.req.bits.cmd === MemCmdConst.WriteLast) & io.mem.req.fire()) | !io.mem.req.valid) & (fence_cnt.value === (cacheline_num -1).asUInt()) & (state === s_fence_wb)
-  io.fence_i_done := (state === s_idle) & (RegNext(state) === s_fence_wb)
+  io.fence_i_done := (state === s_idle) & (RegNext(state, 0.U) === s_fence_wb)
 }
