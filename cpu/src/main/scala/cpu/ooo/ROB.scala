@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
 
-class ROBIO(implicit p: Parameters) extends Module{
+class ROBIO(implicit p: Parameters) extends Bundle{
     val cdb = Vec(2, Flipped(Decoupled(cdb)))
 
     val idxWantCommit = Input(Valid(UInt(4.W)))
@@ -22,25 +22,25 @@ class ROB(implicit p: Parameters) extends Module{
         val valid = Bool()
     }
 
-    val rob = RegInit(0.U.asTypeOf(info))
+    val rob = RegInit(VecInit(Seq.fill(16)(0.U.asTypeOf(info))))
 
     // write rob
     val cnt = Counter(16)
     when(io.in.cdb(0).fire() & !io.in.cdb(1).fire()){
         // wr cdb0
-        cnt.value += 1.U
+        cnt.value := cnt.value + 1.U
     }.elsewhen(!io.in.cdb(0).fire() & io.in.cdb(1).fire()){
         // wr cdb1
-        cnt.value += 1.U
+        cnt.value := cnt.value + 1.U
     }.elsewhen(io.in.cdb(0).fire() & io.in.cdb(1).fire()){
         // wr cdb0 and cdb1
-        cnt.value += 2.U
+        cnt.value := cnt.value + 2.U
     }.otherwise{
         // no wr
     }
 
     // commit
-    val isIdxWantCommit = rob.map(_.idx).map(_ === io.in.idxWantCommit)
+    val isIdxWantCommit = Cat(rob.map(_.idx).map(_ === io.in.idxWantCommit.bits))
     val whichROBidx = PriorityEncoder(isIdxWantCommit)
     when(io.in.idxWantCommit.valid & isIdxWantCommit.orR()){
         rob(whichROBidx).valid := false.B

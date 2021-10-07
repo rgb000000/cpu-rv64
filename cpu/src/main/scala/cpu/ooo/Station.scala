@@ -10,13 +10,13 @@ class StationIn(implicit p: Parameters) extends Bundle{
 
   // rs1
   val pr1 = UInt(6.W)
-  val pr1_s = Bool()
+  val pr1_s = Bool()    // pr1 state
   val pc  = UInt(64.W)
   val A_sel = UInt(1.W)
 
   // rs2
   val pr2 = UInt(6.W)
-  val pr2_s = Bool()
+  val pr2_s = Bool()    // pr2 state
   val imm = UInt(64.W)
   val B_sel = UInt(1.W)
 
@@ -52,6 +52,7 @@ class CDB(implicit p: Parameters) extends Bundle{
   val data = UInt(64.W)
   val wen = Bool()
   val brHit = Bool()
+  val expt = Bool()
 }
 
 class Station(implicit p: Parameters) extends Module{
@@ -59,7 +60,12 @@ class Station(implicit p: Parameters) extends Module{
     val in = Flipped(Decoupled(new StationIn))
     val cdb = Flipped(Valid(new CDB))
 
-    val out = Decoupled(new StationIn)
+    val out = Decoupled(new Bundle{
+      val info = new StationIn
+      val exid = UInt(1.W)
+    })
+
+    val exu_statu = Input(Vec(2, Bool()))
 
     val commit = Flipped(Valid(new Bundle{
       val idx = UInt(4.W)
@@ -93,7 +99,7 @@ class Station(implicit p: Parameters) extends Module{
 
   io.out.valid := which_station_ready.orR()
   when(which_station_ready.orR()){
-    io.out.bits := station(readyIdx)
+    io.out.bits.info := station(readyIdx)
     station(readyIdx).state := S_ISSUE
   }
 

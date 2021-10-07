@@ -9,8 +9,8 @@ class RenameMap(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
 
     val query_a = new Bundle{
-      val lr = Flipped(Valid(UInt(5.W)))
-      val pr = Valid(UInt(6.W))
+      val lr = Flipped(Valid(UInt(5.W)))  // logic register
+      val pr = Valid(UInt(6.W))           // physics register
     }
 
     val query_b = new Bundle{
@@ -42,6 +42,7 @@ class RenameMap(implicit p: Parameters) extends Module{
     val state = UInt(2.W)
   }
 
+  // 初始化的时候 逻辑寄存器0-31对应物理寄存器的0-31
   val cam = RegInit(VecInit(Seq.tabulate(32)(n => {
     val tmp = info.cloneType
     tmp.PRIdx := n.U
