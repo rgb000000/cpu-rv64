@@ -7,6 +7,7 @@ import chipsalliance.rocketchip.config._
 
 // 定点执行单元
 class FixPointIn(implicit p: Parameters) extends Bundle{
+  val idx = UInt(4.W)
   val A = UInt(p(XLen).W)
   val B = UInt(p(XLen).W)
   val alu_op = UInt(5.W)
@@ -40,6 +41,7 @@ class FixPointU(implicit p: Parameters) extends Module{
   br.io.br_type := io.in.bits.br_type
   val br_taken = br.io.taken
 
+  io.cdb.bits.idx := io.in.bits.idx
   io.cdb.bits.prn := io.in.bits.prd
   io.cdb.bits.data := alu_res
   io.cdb.bits.wen := io.in.bits.wen
@@ -49,6 +51,7 @@ class FixPointU(implicit p: Parameters) extends Module{
 
 // 访储执行单元 and CSR单元
 class MemUIn(implicit p: Parameters) extends Bundle{
+  val idx = UInt(4.W)
   val A = UInt(p(XLen).W)
   val B = UInt(p(XLen).W)
   val alu_op = UInt(5.W)
@@ -59,7 +62,6 @@ class MemUIn(implicit p: Parameters) extends Bundle{
   val s_data  = UInt(p(XLen).W)
 
   val csr_cmd = UInt(3.W)
-  val csr_in = UInt(p(XLen).W)
   // ctrl signals
   val pc      = UInt(p(XLen).W)
   val addr    = UInt(p(XLen).W)
@@ -105,7 +107,7 @@ class MemU(implicit p: Parameters) extends Module{
   csr.io.cmd := io.in.bits.csr_cmd
   csr.io.in := alu_res
   csr.io.ctrl_signal.pc := io.in.bits.pc
-  csr.io.ctrl_signal.addr := io.in.bits.addr
+  csr.io.ctrl_signal.addr := alu_res
   csr.io.ctrl_signal.inst := io.in.bits.inst
   csr.io.ctrl_signal.illegal := io.in.bits.illegal
   csr.io.ctrl_signal.st_type := io.in.bits.st_type
@@ -113,6 +115,8 @@ class MemU(implicit p: Parameters) extends Module{
   csr.io.pc_check := false.B
   csr.io.interrupt := io.in.bits.interrupt
 
+
+  io.cdb.bits.idx := io.in.bits.idx
   when(io.in.fire() & isCSR){
     // csr op
     io.cdb.bits.prn := io.in.bits.prd

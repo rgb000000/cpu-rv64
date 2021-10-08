@@ -10,12 +10,18 @@ class RenameMap(implicit p: Parameters) extends Module{
 
     val query_a = new Bundle{
       val lr = Flipped(Valid(UInt(5.W)))  // logic register
-      val pr = Valid(UInt(6.W))           // physics register
+      val pr = Valid(new Bundle{
+        val idx = UInt(6.W)
+        val isReady = Bool()
+      })           // physics register
     }
 
     val query_b = new Bundle{
       val lr = Flipped(Valid(UInt(5.W)))
-      val pr = Valid(UInt(6.W))
+      val pr = Valid(new Bundle{
+        val idx = UInt(6.W)
+        val isReady = Bool()
+      })
     }
 
     val allocate_c = new Bundle {
@@ -23,9 +29,8 @@ class RenameMap(implicit p: Parameters) extends Module{
       val pr = Valid(UInt(6.W))           // physics register
     }
 
-    val wb = Flipped(Valid(UInt(6.W)))
-    val commit = Flipped(Valid(UInt(6.W)))
-
+    val cdb = Vec(2, Flipped(Valid(new CDB)))         // wb
+    val robCommit = Vec(2, Flipped(Valid(UInt(6.W)))) // commit
   })
 
   val STATECONST = new Bundle{
@@ -63,14 +68,16 @@ class RenameMap(implicit p: Parameters) extends Module{
   val query_a = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === io.query_a.lr.bits))))
   assert(Cat(query_a).orR() =/= 0.U)
   val query_a_idx = PriorityEncoder(query_a)
-  io.query_a.pr.bits := query_a_idx
-  io.query_a.pr.bits := io.query_a.lr.fire()
+  io.query_a.pr.bits.idx := query_a_idx
+  io.query_a.pr.bits.isReady := (cam(query_a_idx).state === STATECONST.WB) | (cam(query_a_idx).state === STATECONST.COMMIT)
+  io.query_a.pr.valid := io.query_a.lr.fire()
 
   // quary b
   val query_b = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === io.query_b.lr.bits))))
   assert(Cat(query_b).orR() =/= 0.U)
   val query_b_idx = PriorityEncoder(query_b)
-  io.query_b.pr.bits := query_b_idx
+  io.query_b.pr.bits.idx := query_b_idx
+  io.query_b.pr.bits.isReady := (cam(query_b_idx).state === STATECONST.WB) | (cam(query_b_idx).state === STATECONST.COMMIT)
   io.query_b.pr.valid := io.query_b.lr.fire()
 
   // allocate c
@@ -83,12 +90,16 @@ class RenameMap(implicit p: Parameters) extends Module{
   io.allocate_c.pr.valid := Mux(io.allocate_c.lr.fire(), 1.U, 0.U)
   io.allocate_c.pr.bits := Mux(io.allocate_c.lr.fire(), emptyPRIdx, 0.U)
 
-  when(io.wb.fire()){
-    cam(io.wb.bits).state := STATECONST.WB
-  }
+  io.cdb.foreach(cdb => {
+    when(cdb.fire()){
+      cam(cdb.bits.prn).state := STATECONST.WB
+    }
+  })
 
-  when(io.commit.fire()){
-    cam(io.commit.bits).state := STATECONST.EMPRY
-  }
+  io.robCommit.foreach(robcommit => {
+    when(robcommit.fire()){
+      cam(robcommit.bits).state := STATECONST.COMMIT
+    }
+  })
 
 }

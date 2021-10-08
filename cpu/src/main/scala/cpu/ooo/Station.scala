@@ -48,6 +48,7 @@ class StationIn(implicit p: Parameters) extends Bundle{
 }
 
 class CDB(implicit p: Parameters) extends Bundle{
+  val idx = UInt(4.W)
   val prn = UInt(6.W)
   val data = UInt(64.W)
   val wen = Bool()
@@ -58,12 +59,11 @@ class CDB(implicit p: Parameters) extends Bundle{
 class Station(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
     val in = Flipped(Decoupled(new StationIn))
-    val cdb = Flipped(Valid(new CDB))
+    val cdb = Vec(2, Flipped(Valid(new CDB)))
 
-    val out = Decoupled(new Bundle{
+    val out = Vec(2, Decoupled(new Bundle{
       val info = new StationIn
-      val exid = UInt(1.W)
-    })
+    }))
 
     val exu_statu = Input(Vec(2, Bool()))
 
@@ -71,6 +71,9 @@ class Station(implicit p: Parameters) extends Module{
       val idx = UInt(4.W)
       val state = Bool()  // 1 taken      0 withdraw
     }))
+
+    val idxWaitCommit = Valid(Vec(2, UInt(4.W)))
+
   })
 
   val S_INVALID = 0.U(2.W)
@@ -83,24 +86,40 @@ class Station(implicit p: Parameters) extends Module{
   val station = RegInit(VecInit(Seq.fill(16)(0.U.asTypeOf(new StationIn))))
 
   // instructions status change
-  station.map(x => {
-    when(io.cdb.valid & ((x.A_sel === A_RS1) & (!x.pr1_s) & (x.pr1 === io.cdb.bits.prn))){
-      x.pr1_s := true.B
-    }.elsewhen(io.cdb.valid & ((x.B_sel === B_RS2) & (!x.pr2_s) & (x.pr2 === io.cdb.bits.prn))){
-      x.pr2_s := true.B
-    }
+  io.cdb.foreach(cdb => {
+    station.map(x => {
+      when(cdb.valid & ((x.A_sel === A_RS1) & (!x.pr1_s) & (x.pr1 === cdb.bits.prn))){
+        x.pr1_s := true.B
+      }.elsewhen(cdb.valid & ((x.B_sel === B_RS2) & (!x.pr2_s) & (x.pr2 === cdb.bits.prn))){
+        x.pr2_s := true.B
+      }
+    })
   })
 
   // issue
-  val which_station_ready = Cat(station.map(x => {
-    x.pr1_s & x.pr2_s
+  val which_station_ready_0 = Cat(station.map(x => {
+    // alu op and branch, no ld/st and csr
+    x.pr1_s & x.pr2_s & (!x.ld_type.orR()) & (!x.st_type.orR()) & (!x.csr_op.orR())
   }).reverse)
-  val readyIdx = PriorityEncoder(which_station_ready)
+  val readyIdx_0 = PriorityEncoder(which_station_ready_0)
 
-  io.out.valid := which_station_ready.orR()
-  when(which_station_ready.orR()){
-    io.out.bits.info := station(readyIdx)
-    station(readyIdx).state := S_ISSUE
+  val which_station_ready_1 = Cat(station.map(x => {
+    // alu ld/st csr, no branch
+    x.pr1_s & x.pr2_s & (!x.br_type.orR())
+  }).reverse)
+  val readyIdx_1 = PriorityEncoder(which_station_ready_1)
+
+  // fixpointU
+  io.out(0).valid := which_station_ready_0.orR()
+  when(which_station_ready_0.orR()){
+    io.out(0).bits.info := station(readyIdx_0)
+    station(readyIdx_0).state := S_ISSUE
+  }
+  // memU
+  io.out(1).valid := which_station_ready_1.orR() & (readyIdx_1 =/= readyIdx_0)
+  when(which_station_ready_1.orR() & (readyIdx_1 =/= readyIdx_0)){
+    io.out(1).bits.info := station(readyIdx_1)
+    station(readyIdx_1).state := S_ISSUE
   }
 
   // input
@@ -125,4 +144,7 @@ class Station(implicit p: Parameters) extends Module{
       })
     }
   }
+
+  io.idxWaitCommit.bits(0) := commitPtr.value
+  io.idxWaitCommit.bits(1) := commitPtr.value + 1.U
 }
