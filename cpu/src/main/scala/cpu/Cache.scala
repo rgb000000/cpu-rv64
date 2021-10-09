@@ -325,7 +325,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 //  (select_data_rev, select_data.reverse).zipped.foreach(_ := _)
 
   // use LFSR to generate rand in binary, need to be converted to ont-hot to use as mask
-  val rand_num = LFSR(8, seed = Some(2))(log2Ceil(p(NWay))-1 , 0).asUInt()
+  val rand_num = LFSR(8, seed = Some(8))(log2Ceil(p(NWay))-1 , 0).asUInt()
   val write_buffer_conflict_with_replace = write_buffer.valid & (rand_num === OHToUInt(write_buffer.bits.replace_way))
   val rand_way = UIntToOH(Mux(write_buffer_conflict_with_replace, (rand_num + 1.U)(log2Ceil(p(NWay))-1 , 0).asUInt(), rand_num))
   assert(rand_way.orR() === 1.U)

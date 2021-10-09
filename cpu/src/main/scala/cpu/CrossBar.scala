@@ -4,6 +4,51 @@ import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
 
+abstract class MyLockingArbiterLike[T <: Data](gen: T, n: Int, count: Int, needsLock: Option[T => Bool]) extends Module {
+  def grant: Seq[Bool]
+  def choice: UInt
+  val io = IO(new ArbiterIO(gen, n))
+
+  io.chosen := choice
+  io.out.valid := io.in(io.chosen).valid
+  io.out.bits := io.in(io.chosen).bits
+
+  if (count > 1) {
+    val lockCount = Counter(count)
+    val lockIdx = RegInit(0.U)
+    val locked = lockCount.value =/= 0.U
+    val wantsLock = needsLock.map(_(io.out.bits)).getOrElse(true.B)
+
+    when (io.out.fire() && wantsLock) {
+      lockIdx := io.chosen
+      lockCount.inc()
+    }
+
+    when (locked) { io.chosen := lockIdx }
+    for ((in, (g, i)) <- io.in zip grant.zipWithIndex)
+      in.ready := Mux(locked, lockIdx === i.asUInt, g) && io.out.ready
+  } else {
+    for ((in, g) <- io.in zip grant)
+      in.ready := g && io.out.ready
+  }
+}
+
+private object MyArbiterCtrl {
+  def apply(request: Seq[Bool]): Seq[Bool] = request.length match {
+    case 0 => Seq()
+    case 1 => Seq(true.B)
+    case _ => true.B +: request.tail.init.scanLeft(request.head)(_ || _).map(!_)
+  }
+}
+
+class MyLockingArbiter[T <: Data](gen: T, n: Int, count: Int, needsLock: Option[T => Bool] = None)
+  extends MyLockingArbiterLike[T](gen, n, count, needsLock) {
+  def grant: Seq[Bool] = MyArbiterCtrl(io.in.map(_.valid))
+
+  override lazy val choice = WireDefault((n-1).asUInt)
+  for (i <- n-2 to 0 by -1)
+    when (io.in(i).valid) { choice := i.asUInt }
+}
 
 class InnerCrossBarN21(val n: Int)(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
@@ -15,7 +60,7 @@ class InnerCrossBarN21(val n: Int)(implicit p: Parameters) extends Module{
 //  val arbiter = Module(new Arbiter(chiselTypeOf(io.in.head.req.bits), n))
 
   val lockfunc = (x: MemReq) => (x.cmd === MemCmdConst.WriteBurst) | ((x.cmd === MemCmdConst.WriteData) & (x.len =/= 0.U)) | ((x.cmd === MemCmdConst.WriteLast) & (x.len =/= 0.U))
-  val arbiter = Module(new LockingArbiter(chiselTypeOf(io.in.head.req.bits), n, (p(CacheLineSize)/64)+1, Some(lockfunc)))
+  val arbiter = Module(new MyLockingArbiter(chiselTypeOf(io.in.head.req.bits), n, (p(CacheLineSize)/64)+1, Some(lockfunc)))
 
   val s_idle :: s_readResp :: s_writeResp ::Nil = Enum(3)
   val state = RegInit(s_idle)
