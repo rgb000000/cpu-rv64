@@ -34,16 +34,16 @@ class CacheResp(implicit p: Parameters) extends Bundle{
 
 // ====================== L1 to L2 IO =========================
 object MemCmdConst{
-  def ReadOnce    = "b0000".U
-  def ReadBurst   = "b0001".U
-  def ReadLast    = "b0010".U
-  def ReadData    = "b0011".U
+  def ReadOnce    = "b0000".U(4.W)
+  def ReadBurst   = "b0001".U(4.W)
+  def ReadLast    = "b0010".U(4.W)
+  def ReadData    = "b0011".U(4.W)
 
-  def WriteOnce   = "b1000".U
-  def WriteBurst  = "b1001".U
-  def WriteLast   = "b1010".U
-  def WriteResp   = "b1011".U
-  def WriteData   = "b1100".U
+  def WriteOnce   = "b1000".U(4.W)
+  def WriteBurst  = "b1001".U(4.W)
+  def WriteLast   = "b1010".U(4.W)
+  def WriteResp   = "b1011".U(4.W)
+  def WriteData   = "b1100".U(4.W)
 }
 class MemReq(implicit p: Parameters) extends Bundle {
   //

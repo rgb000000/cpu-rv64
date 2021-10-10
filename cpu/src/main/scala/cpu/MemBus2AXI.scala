@@ -55,7 +55,7 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
       }
     }
     is(s_resp){
-      when(io.in.resp.valid){
+      when(io.in.resp.fire()){
         state := s_idle
       }
     }
@@ -81,7 +81,7 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
   }
 
 
-  io.in.req.ready := ar.ready | aw.ready | w.ready
+  io.in.req.ready := ((state === s_idle) & ar.ready) | ((state === s_idle) & aw.ready) | ((state === s_write) & w.ready)
 
   ar.bits.lock := 0.U
   ar.bits.cache := 0.U
@@ -93,7 +93,7 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
   ar.bits.len := (1.U << io.in.req.bits.len).asUInt() - 1.U // (p(CacheLineSize) / AXI4Parameters.dataBits).U
   ar.bits.size := Mux(is32req, 2.U, 3.U) // 8 * 8bits = 64bits
   ar.bits.burst := AXI4Parameters.BURST_INCR
-  ar.valid := ((io.in.req.bits.cmd === MemCmdConst.ReadBurst) | (io.in.req.bits.cmd === MemCmdConst.ReadOnce)) & io.in.req.valid
+  ar.valid := (state === s_idle) & ((io.in.req.bits.cmd === MemCmdConst.ReadBurst) | (io.in.req.bits.cmd === MemCmdConst.ReadOnce)) & io.in.req.valid
 
   aw.bits.lock := 0.U
   aw.bits.cache := 0.U
@@ -105,14 +105,14 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
   aw.bits.len := (1.U << io.in.req.bits.len).asUInt() - 1.U
   aw.bits.size := Mux(is32req, 2.U, 3.U) // 8 * 8bits = 64bits
   aw.bits.burst := AXI4Parameters.BURST_INCR
-  aw.valid := ((io.in.req.bits.cmd === MemCmdConst.WriteBurst) | (io.in.req.bits.cmd === MemCmdConst.WriteOnce)) & io.in.req.valid
+  aw.valid := (state === s_idle) & ((io.in.req.bits.cmd === MemCmdConst.WriteBurst) | (io.in.req.bits.cmd === MemCmdConst.WriteOnce)) & io.in.req.valid
 
   w.bits.data := Mux(is32req_reg & is32high_reg, io.in.req.bits.data >> 32.U, io.in.req.bits.data)
   w.bits.strb := Mux(is32req_reg & is32high_reg, req_mask_reg >> 4.U, Cat(Seq.fill(p(XLen) / 8)(1.U(1.W)))) // 0xff
   w.bits.last := io.in.req.bits.cmd === MemCmdConst.WriteLast
-  w.valid := ((io.in.req.bits.cmd === MemCmdConst.WriteData) | (io.in.req.bits.cmd === MemCmdConst.WriteLast)) & io.in.req.valid
+  w.valid := (state === s_write) & ((io.in.req.bits.cmd === MemCmdConst.WriteData) | (io.in.req.bits.cmd === MemCmdConst.WriteLast)) & io.in.req.valid
 
-  r.ready := io.in.resp.ready
+  r.ready := io.in.resp.ready & (state === s_read) // ???
 
-  b.ready := io.in.resp.ready
+  b.ready := io.in.resp.ready & (state === s_resp) // ???
 }
