@@ -39,4 +39,8 @@ class S011HD1P_X32Y2D128_BW extends BlackBox(Map(
     io.D := 0.U
     io.Q
   }
+
+  def idle() = {
+    read(0.U)
+  }
 }

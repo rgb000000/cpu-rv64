@@ -135,6 +135,7 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
   val bank_sel = WireInit(io.in.w.bits.offset(log2Ceil(p(XLen) / 8)))
   val w_data = WireInit(0.U(128.W))
   val w_mask = WireInit(0.U((128 / 8).W))
+  bankn.idle()
   when(io.in.w.fire()){
     when(io.in.w.bits.op === 1.U){
       // write tag,v
@@ -331,6 +332,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   assert(rand_way.orR() === 1.U)
   // rand way data (tag, v, d, data)
   val rand_way_data = Mux1H(for(i <- rand_way.asBools().zipWithIndex) yield (i._1, ways_ret_datas(i._2)))
+  val rand_way_data_reg = RegEnable(rand_way_data, 0.U.asTypeOf(ways_ret_datas.head), (req_isCached & (state === s_lookup) & is_miss & RegNext(io.cpu.req.fire(), false.B)) === 1.U)
+  val rand_way_data_reg_valid = RegNext((state === s_lookup) & is_miss & req_isCached & (io.mem.req.valid & !io.mem.req.ready), false.B) // mem req not send
 
   // miss info reg
   val miss_info = RegInit(0.U.asTypeOf(new Bundle{
@@ -447,12 +450,12 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   val r_cnt = Counter((p(CacheLineSize) / 64).toInt)
 
   io.mem.req.bits.mask := 0.U
-  when((state === s_lookup) & is_miss & ((req_isCached & ((rand_way_data.v === 1.U) & (rand_way_data.d === 1.U))) |
+  when((state === s_lookup) & is_miss & ((req_isCached & (((rand_way_data.v === 1.U) & (rand_way_data.d === 1.U) & !rand_way_data_reg_valid) | ((rand_way_data_reg.v === 1.U) & (rand_way_data_reg.d === 1.U) & rand_way_data_reg_valid))) |
                                        (!req_isCached & (req_reg.op === 1.U)))
   ){
     // send write burst cmd or write once cmd
     io.mem.req.valid := 1.U
-    io.mem.req.bits.addr := Mux(req_isCached, Cat(rand_way_data.tag, req_reg.addr.asTypeOf(infos).index, 0.U(offset_width.W)), req_reg.addr)
+    io.mem.req.bits.addr := Mux(req_isCached, Mux(rand_way_data_reg_valid, Cat(rand_way_data_reg.tag, req_reg.addr.asTypeOf(infos).index, 0.U(offset_width.W)), Cat(rand_way_data.tag, req_reg.addr.asTypeOf(infos).index, 0.U(offset_width.W))), req_reg.addr)
     io.mem.req.bits.cmd := Mux(req_isCached, MemCmdConst.WriteBurst, MemCmdConst.WriteOnce)
     io.mem.req.bits.len := Mux(req_isCached, 1.U /* 1.U << 1 = 2*/, 0.U)
     io.mem.req.bits.data := 0.U
@@ -545,11 +548,13 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     miss_info.data := req_reg.data
 
     // replace info, use rand way data
-    replace_buffer.addr := Cat(rand_way_data.tag, req_reg.addr.asTypeOf(infos).index, 0.U(offset_width.W))
-    replace_buffer.data := rand_way_data.datas
-    replace_buffer.way_num := rand_way
-    replace_buffer.v := rand_way_data.v
-    replace_buffer.d := rand_way_data.d
+    when(RegNext(io.cpu.req.fire(), false.B)){
+      replace_buffer.addr := Cat(rand_way_data.tag, req_reg.addr.asTypeOf(infos).index, 0.U(offset_width.W))
+      replace_buffer.data := rand_way_data.datas
+      replace_buffer.way_num := rand_way
+      replace_buffer.v := rand_way_data.v
+      replace_buffer.d := rand_way_data.d
+    }
   }
 
   io.mem.resp.ready := (state === s_refill)
