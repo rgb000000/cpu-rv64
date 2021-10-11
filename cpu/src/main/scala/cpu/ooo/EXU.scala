@@ -83,6 +83,7 @@ class MemU(implicit p: Parameters) extends Module{
     val dcache = Flipped(new CacheCPUIO)
 
     val cdb = Decoupled(new CDB)
+    val memCDB = Decoupled(new MEMCDB)
   })
 
   val alu = Module(new ALU)
@@ -95,9 +96,9 @@ class MemU(implicit p: Parameters) extends Module{
   val isMem = (io.in.bits.ld_type.orR() | io.in.bits.st_type.orR()) & !isCSR
 
   // Mem op
-  val mem = Module(new MEM)
+  val mem = Module(new OOOMEM)
   mem.io.ld_type := io.in.bits.ld_type
-  mem.io.st_type := io.in.bits.st_type
+  mem.io.st_type := 0.U    // OOOMEM only handle ld inst
   mem.io.s_data := io.in.bits.s_data
   mem.io.alu_res := alu_res
   // mem.io.inst_valid := 
@@ -126,11 +127,27 @@ class MemU(implicit p: Parameters) extends Module{
     io.cdb.bits.expt := csr.io.expt
   }.elsewhen(io.in.fire() & isMem){
     // mem op
-    io.cdb.bits.prn := io.in.bits.prd
-    io.cdb.bits.data := mem.io.l_data
-    io.cdb.bits.wen := io.in.bits.wen
-    io.cdb.bits.brHit := true.B
-    io.cdb.bits.expt := false.B
+    when(io.in.bits.ld_type.orR()){
+      // ld inst
+      io.cdb.bits.prn := io.in.bits.prd
+      io.cdb.bits.data := mem.io.l_data
+      io.cdb.bits.wen := io.in.bits.wen
+      io.cdb.bits.brHit := true.B
+      io.cdb.bits.expt := false.B
+    }.otherwise{
+      // st inst
+      io.cdb.bits.prn   := 0.U
+      io.cdb.bits.data  := 0.U
+      io.cdb.bits.wen   := 0.U
+      io.cdb.bits.brHit := true.B
+      io.cdb.bits.expt  := false.B
+
+      io.memCDB.bits.prn   := alu_res
+      io.memCDB.bits.data  := io.in.bits.s_data
+      io.memCDB.bits.wen   := 0.U
+      io.memCDB.bits.brHit := true.B
+      io.memCDB.bits.expt  := false.B
+    }
   }.otherwise{
     // fix point op (NOT including branch)
     io.cdb.bits.prn := io.in.bits.prd

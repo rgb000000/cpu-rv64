@@ -21,6 +21,13 @@ class ROBIO(implicit p: Parameters) extends Bundle {
     val data = Valid(UInt(p(XLen).W))
   }))
 
+  val memRead = new Bundle{
+    val addr = Flipped(Valid(UInt(p(AddresWidth).W)))
+    val data = Valid(UInt(p(XLen).W))
+  }
+
+  val memCDB = Flipped(Decoupled(new MEMCDB))
+
   val out = Vec(2, Valid(new Bundle {
     val prdORaddr = UInt(p(AddresWidth).W)
     val isPrd = Bool()
@@ -101,6 +108,12 @@ class ROB(implicit p: Parameters) extends Module {
     }
   })
 
+  // memCDB
+  when(io.memCDB.fire()){
+    rob(io.memCDB.bits.idx).state := GETDATA
+    rob(io.memCDB.bits.idx).data := io.memCDB.bits.data
+  }
+
   def write_prfile(portIdx: Int, rob_info: ROBInfo) = {
     io.commit.reg(portIdx).prn := rob_info.prdORaddr
     io.commit.reg(portIdx).data := rob_info.data
@@ -173,13 +186,28 @@ class ROB(implicit p: Parameters) extends Module {
   // station read rob in issue stage
   for (i <- 0 until 2) {
     for (j <- 0 until 2) {
-      io.read(i)(j).data := 0.U
-      io.read(i)(j).data.valid := false.B
       when(io.read(i)(j).stationIdx.fire()) {
         io.read(i)(j).data := rob(io.read(i)(j).stationIdx.bits).data
         io.read(i)(j).data.valid := true.B
+      }.otherwise{
+        io.read(i)(j).data := 0.U
+        io.read(i)(j).data.valid := false.B
       }
     }
   }
+
+  // memU can read rob when execute ld inst
+  val memQueryResult = rob.map(x => {
+    (x.prdORaddr === io.memRead.addr.bits) & !x.isPrd
+  })
+  val memQueryIdx = PriorityEncoder(memQueryResult)
+  when(io.memRead.addr.fire()){
+    io.memRead.data.bits := memQueryIdx
+    io.memRead.data.valid := Cat(memQueryResult).orR()
+  }.otherwise{
+    io.memRead.data.bits := 0.U
+    io.memRead.data.valid := false.B
+  }
+
 
 }

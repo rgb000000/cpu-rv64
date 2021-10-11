@@ -67,6 +67,15 @@ class CDB(implicit p: Parameters) extends Bundle{
   val expt = Bool()
 }
 
+class MEMCDB(implicit p: Parameters) extends Bundle{
+  val idx = UInt(4.W)
+  val prn = UInt(p(AddresWidth).W)
+  val data = UInt(64.W)
+  val wen = Bool()
+  val brHit = Bool()
+  val expt = Bool()
+}
+
 class Station(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
     val in = Flipped(Decoupled(Vec(2, new StationIn)))

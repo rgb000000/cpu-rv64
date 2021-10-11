@@ -166,6 +166,7 @@ class OOO(implicit p: Parameters) extends Module {
   //= commit ==================================================
   rob.io.in.cdb(0) <> fixPointU.io.cdb
   rob.io.in.cdb(1) <> mem.io.cdb
+  rob.io.memCDB <> mem.io.memCDB
   rob.io.in.idxWantCommit.bits(0) := station.io.idxWaitCommit.bits(0)
   rob.io.in.idxWantCommit.bits(1) := station.io.idxWaitCommit.bits(1)
 
