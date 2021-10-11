@@ -5,29 +5,32 @@ import chisel3.util._
 import chisel3.util.experimental.loadMemoryFromFile
 import chipsalliance.rocketchip.config._
 
+class QueryAllocate(implicit p: Parameters) extends Bundle {
+  val query_a = new Bundle{
+    val lr = Flipped(Valid(UInt(5.W)))  // logic register
+    val pr = Valid(new Bundle{
+      val idx = UInt(6.W)
+      val isReady = Bool()
+    })           // physics register
+  }
+
+  val query_b = new Bundle{
+    val lr = Flipped(Valid(UInt(5.W)))
+    val pr = Valid(new Bundle{
+      val idx = UInt(6.W)
+      val isReady = Bool()
+    })
+  }
+
+  val allocate_c = new Bundle {
+    val lr = Flipped(Valid(UInt(5.W)))  // logic register
+    val pr = Valid(UInt(6.W))           // physics register
+  }
+}
+
 class RenameMap(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
-
-    val query_a = new Bundle{
-      val lr = Flipped(Valid(UInt(5.W)))  // logic register
-      val pr = Valid(new Bundle{
-        val idx = UInt(6.W)
-        val isReady = Bool()
-      })           // physics register
-    }
-
-    val query_b = new Bundle{
-      val lr = Flipped(Valid(UInt(5.W)))
-      val pr = Valid(new Bundle{
-        val idx = UInt(6.W)
-        val isReady = Bool()
-      })
-    }
-
-    val allocate_c = new Bundle {
-      val lr = Flipped(Valid(UInt(5.W)))  // logic register
-      val pr = Valid(UInt(6.W))           // physics register
-    }
+    val port = Vec(2, Valid(new QueryAllocate))
 
     val cdb = Vec(2, Flipped(Valid(new CDB)))         // wb
     val robCommit = Vec(2, Flipped(Valid(UInt(6.W)))) // commit
@@ -64,31 +67,78 @@ class RenameMap(implicit p: Parameters) extends Module{
     tmp
   })))
 
-  // query a
-  val query_a = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === io.query_a.lr.bits))))
-  assert(Cat(query_a).orR() =/= 0.U)
-  val query_a_idx = PriorityEncoder(query_a)
-  io.query_a.pr.bits.idx := query_a_idx
-  io.query_a.pr.bits.isReady := (cam(query_a_idx).state === STATECONST.WB) | (cam(query_a_idx).state === STATECONST.COMMIT)
-  io.query_a.pr.valid := io.query_a.lr.fire()
+  def quert_a_and_b(port: QueryAllocate): Unit = {
+    // query a
+    val query_a = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === port.query_a.lr.bits))))
+    assert(Cat(query_a).orR() =/= 0.U)
+    val query_a_idx = PriorityEncoder(query_a)
+    port.query_a.pr.bits.idx := query_a_idx
+    port.query_a.pr.bits.isReady := (cam(query_a_idx).state === STATECONST.WB) | (cam(query_a_idx).state === STATECONST.COMMIT)
+    port.query_a.pr.valid := port.query_a.lr.fire()
 
-  // quary b
-  val query_b = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === io.query_b.lr.bits))))
-  assert(Cat(query_b).orR() =/= 0.U)
-  val query_b_idx = PriorityEncoder(query_b)
-  io.query_b.pr.bits.idx := query_b_idx
-  io.query_b.pr.bits.isReady := (cam(query_b_idx).state === STATECONST.WB) | (cam(query_b_idx).state === STATECONST.COMMIT)
-  io.query_b.pr.valid := io.query_b.lr.fire()
-
-  // allocate c
-  val emptyPR = WireInit(VecInit(cam.map(_.state).map(_ === STATECONST.EMPRY)))
-  val emptyPRIdx = PriorityEncoder(emptyPR)
-  when(io.allocate_c.lr.fire()){
-    cam(emptyPRIdx).state := STATECONST.MAPPED
-    cam(emptyPRIdx).LRIdx := io.allocate_c.lr.bits
+    // quary b
+    val query_b = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === port.query_b.lr.bits))))
+    assert(Cat(query_b).orR() =/= 0.U)
+    val query_b_idx = PriorityEncoder(query_b)
+    port.query_b.pr.bits.idx := query_b_idx
+    port.query_b.pr.bits.isReady := (cam(query_b_idx).state === STATECONST.WB) | (cam(query_b_idx).state === STATECONST.COMMIT)
+    port.query_b.pr.valid := port.query_b.lr.fire()
   }
-  io.allocate_c.pr.valid := Mux(io.allocate_c.lr.fire(), 1.U, 0.U)
-  io.allocate_c.pr.bits := Mux(io.allocate_c.lr.fire(), emptyPRIdx, 0.U)
+
+  def allocate_c(port: QueryAllocate, emptyPRIdx: UInt) = {
+    // allocate c
+    when(port.allocate_c.lr.fire()){
+      cam(emptyPRIdx).state := STATECONST.MAPPED
+      cam(emptyPRIdx).LRIdx := port.allocate_c.lr.bits
+    }
+    port.allocate_c.pr.valid := Mux(port.allocate_c.lr.fire(), 1.U, 0.U)
+    port.allocate_c.pr.bits := Mux(port.allocate_c.lr.fire(), emptyPRIdx, 0.U)
+  }
+
+  when(io.port(0).valid & io.port(1).valid){
+    // 0 and 1
+    io.port.map(_.bits).foreach(port => {
+      quert_a_and_b(port)
+    })
+
+    // allocate c0 and c1
+    val emptyPR = WireInit(VecInit(cam.map(_.state).map(_ === STATECONST.EMPRY)))
+    val emptyPRIdx_0 = PriorityEncoder(emptyPR)
+    val emptyPRIdx_1 = 64.U - PriorityEncoder(emptyPR.reverse)
+    assert(emptyPRIdx_0 =/= emptyPRIdx_1)
+    allocate_c(io.port(0).bits, emptyPRIdx_0)
+    allocate_c(io.port(1).bits, emptyPRIdx_1)
+
+  }.elsewhen(io.port(0).valid & !io.port(1).valid){
+    // 0
+    val port = io.port(0).bits
+    quert_a_and_b(port)
+
+    // allocate c
+    val emptyPR = WireInit(VecInit(cam.map(_.state).map(_ === STATECONST.EMPRY)))
+    val emptyPRIdx = PriorityEncoder(emptyPR)
+    allocate_c(port, emptyPRIdx)
+  }.elsewhen((!io.port(0).valid) & io.port(1).valid){
+    // 1
+    val port = io.port(1).bits
+    quert_a_and_b(port)
+
+    // allocate c
+    val emptyPR = WireInit(VecInit(cam.map(_.state).map(_ === STATECONST.EMPRY)))
+    val emptyPRIdx = PriorityEncoder(emptyPR)
+    allocate_c(port, emptyPRIdx)
+  }.otherwise{
+    // none
+    io.port.map(_.bits).foreach(port => {
+      port.query_a.pr.bits.idx := 0.U
+      port.query_a.pr.bits.isReady := 0.U
+      port.query_a.pr.valid := 0.U
+
+      port.query_b.pr.bits.idx := 0.U
+      port.query_b.pr.bits.isReady := 0.U
+      port.query_b.pr.valid := 0.U
+    })
+  }
 
   io.cdb.foreach(cdb => {
     when(cdb.fire()){

@@ -37,8 +37,15 @@ class StationIn(implicit p: Parameters) extends Bundle{
   // csr op
   val csr_op = UInt(3.W)
 
+  // illeage
+  val illeage = Bool()
+
+  // inst
+  val inst = UInt(32.W)
+
   // wb type
   val wb_type = UInt(2.W)
+  val wen = Bool()
 
   // state
   val state = UInt(2.W) // 00: 无效
@@ -58,7 +65,7 @@ class CDB(implicit p: Parameters) extends Bundle{
 
 class Station(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
-    val in = Flipped(Decoupled(new StationIn))
+    val in = Flipped(Decoupled(Vec(2, new StationIn)))
     val cdb = Vec(2, Flipped(Valid(new CDB)))
 
     val out = Vec(2, Decoupled(new Bundle{
@@ -67,10 +74,9 @@ class Station(implicit p: Parameters) extends Module{
 
     val exu_statu = Input(Vec(2, Bool()))
 
-    val commit = Flipped(Valid(new Bundle{
+    val commit = Vec(2, Flipped(Valid(new Bundle{
       val idx = UInt(4.W)
-      val state = Bool()  // 1 taken      0 withdraw
-    }))
+    })))
 
     val idxWaitCommit = Valid(Vec(2, UInt(4.W)))
 
@@ -125,13 +131,44 @@ class Station(implicit p: Parameters) extends Module{
   // input
   val inPtr = Counter(16)
   when(io.in.fire()){
-    inPtr.inc()
-    station(inPtr.value) := io.in.bits
-    station(inPtr.value).state := S_WAIT
+    val a = io.in.bits(0)
+    val b = io.in.bits(1)
+    when(a.valid & b.valid){
+      // input a and b
+      inPtr.value := inPtr.value + 2.U
+      station(inPtr.value) := a
+      station(inPtr.value).state := S_WAIT
+
+      station(inPtr.value + 1.U) := b
+      station(inPtr.value + 1.U).state := S_WAIT
+    }.elsewhen(a.valid & !b.valid){
+      // input a
+      inPtr.inc()
+      station(inPtr.value) := a
+      station(inPtr.value).state := S_WAIT
+    }.elsewhen((!a.valid) & b.valid){
+      // input b
+      inPtr.inc()
+      station(inPtr.value) := b
+      station(inPtr.value).state := S_WAIT
+    }.otherwise{
+      // none
+    }
   }
   io.in.ready := station.map(_.state).map(x => {(x === S_INVALID)}).reduce(_ | _)
 
   // commit
+  when(io.commit(0).fire() & io.commit(1).fire()){
+    // commit 0, 1
+    station
+  }.elsewhen(io.commit(0).fire() & !io.commit(1).fire()){
+    // commit 0
+  }.elsewhen((!io.commit(0).fire()) & io.commit(1).fire()){
+    // commit 1
+  }.otherwise{
+    // none
+  }
+
   val commitPtr = Counter(16)
   when(io.commit.fire()){
     assert(station(io.commit.bits.idx).state === S_COMMIT)
