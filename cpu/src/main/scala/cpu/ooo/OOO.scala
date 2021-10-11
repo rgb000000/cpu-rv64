@@ -10,7 +10,6 @@ class OOO(implicit p: Parameters) extends Module {
     val icache = Flipped(new CacheCPUIO)
     val dcache = Flipped(new CacheCPUIO)
 
-    val control = Flipped(new ControlIO)
     val time_interrupt = Input(Bool())
   })
 
@@ -30,6 +29,8 @@ class OOO(implicit p: Parameters) extends Module {
   val mem = Module(new MemU)
   // commit
   val rob = Module(new ROB)
+
+  val dcacheCrossBar = Module(new CPUCacheCrossBarN21(2))
 
 
   // some intermediate signals
@@ -180,4 +181,9 @@ class OOO(implicit p: Parameters) extends Module {
 
   rename.io.robCommit(0) <> rob.io.commit2rename(0)
   rename.io.robCommit(1) <> rob.io.commit2rename(1)
+
+
+  dcacheCrossBar.io.in(0) <> mem.io.dcache
+  dcacheCrossBar.io.in(1) <> rob.io.commit.dcache
+  dcacheCrossBar.io.out <> io.dcache
 }
