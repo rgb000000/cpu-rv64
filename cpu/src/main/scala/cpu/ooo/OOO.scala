@@ -79,24 +79,28 @@ class OOO(implicit p: Parameters) extends Module {
   )), 0.U(3.W), !station_isfull)
 
   for(i <- 0 until 2){
-    station.io.in.bits(i).pr1     := rename.io.port(i).bits.query_a.pr.bits.idx
-    station.io.in.bits(i).pr1_s   := rename.io.port(i).bits.query_a.pr.bits.isReady
-    station.io.in.bits(i).pc      := if_reg(i).bits.pc
-    station.io.in.bits(i).pr2     := rename.io.port(i).bits.query_b.pr.bits.idx
-    station.io.in.bits(i).pr2_s   := rename.io.port(i).bits.query_b.pr.bits.isReady
-    station.io.in.bits(i).imm     := id(i).io.imm
-    station.io.in.bits(i).prd     := rename.io.port(i).bits.allocate_c.pr.bits
-    station.io.in.bits(i).A_sel   := ctrl(i).a_sel
-    station.io.in.bits(i).B_sel   := ctrl(i).b_sel
-    station.io.in.bits(i).alu_op  := ctrl(i).alu_op
-    station.io.in.bits(i).ld_type := ctrl(i).ld_type
-    station.io.in.bits(i).st_type := ctrl(i).st_type
-    station.io.in.bits(i).csr_op  := ctrl(i).csr_cmd
-    station.io.in.bits(i).wb_type := ctrl(i).wb_type
-    station.io.in.bits(i).wen     := ctrl(i).wen
-    station.io.in.bits(i).illeage := ctrl(i).illegal
-    station.io.in.bits(i).inst    := if_reg(i).bits.inst
-    station.io.in.bits(i).state   := 1.U // wait to issue
+    station.io.in.bits(i).pr1       := rename.io.port(i).bits.query_a.pr.bits.idx
+    station.io.in.bits(i).pr1_s     := rename.io.port(i).bits.query_a.pr.bits.isReady
+    station.io.in.bits(i).pr1_inROB := rename.io.port(i).bits.query_a.pr.bits.inROB
+    station.io.in.bits(i).pr1_robIdx:= rename.io.port(i).bits.query_a.pr.bits.robIdx
+    station.io.in.bits(i).pc        := if_reg(i).bits.pc
+    station.io.in.bits(i).pr2       := rename.io.port(i).bits.query_b.pr.bits.idx
+    station.io.in.bits(i).pr2_s     := rename.io.port(i).bits.query_b.pr.bits.isReady
+    station.io.in.bits(i).pr2_inROB := rename.io.port(i).bits.query_b.pr.bits.inROB
+    station.io.in.bits(i).pr2_robIdx:= rename.io.port(i).bits.query_b.pr.bits.robIdx
+    station.io.in.bits(i).imm       := id(i).io.imm
+    station.io.in.bits(i).prd       := rename.io.port(i).bits.allocate_c.pr.bits
+    station.io.in.bits(i).A_sel     := ctrl(i).a_sel
+    station.io.in.bits(i).B_sel     := ctrl(i).b_sel
+    station.io.in.bits(i).alu_op    := ctrl(i).alu_op
+    station.io.in.bits(i).ld_type   := ctrl(i).ld_type
+    station.io.in.bits(i).st_type   := ctrl(i).st_type
+    station.io.in.bits(i).csr_op    := ctrl(i).csr_cmd
+    station.io.in.bits(i).wb_type   := ctrl(i).wb_type
+    station.io.in.bits(i).wen       := ctrl(i).wen
+    station.io.in.bits(i).illeage   := ctrl(i).illegal
+    station.io.in.bits(i).inst      := if_reg(i).bits.inst
+    station.io.in.bits(i).state     := 1.U // wait to issue
   }
 
   //= issue ==================================================
@@ -110,11 +114,16 @@ class OOO(implicit p: Parameters) extends Module {
   })
 
   for(i <- 0 until 2){
-    prfile.io.read(i).raddr1      := station.io.out(i).bits.info.pr1
-    prfile.io.read(i).raddr2      := station.io.out(i).bits.info.pr2
+    prfile.io.read(i).raddr1 := station.io.out(i).bits.info.pr1
+    prfile.io.read(i).raddr2 := station.io.out(i).bits.info.pr2
 
-    tmp_ex_data(i).a := prfile.io.read(i).rdata1
-    tmp_ex_data(i).b := prfile.io.read(i).rdata2
+    rob.io.read(i)(0).stationIdx.valid := station.io.out(i).valid
+    rob.io.read(i)(0).stationIdx.bits  := station.io.out(i).bits.info.pr1_robIdx
+    rob.io.read(i)(1).stationIdx.valid := station.io.out(i).valid
+    rob.io.read(i)(1).stationIdx.bits  := station.io.out(i).bits.info.pr2_robIdx
+
+    tmp_ex_data(i).a := Mux(station.io.out(i).bits.info.pr1_inROB, rob.io.read(i)(0).data.bits, prfile.io.read(i).rdata1)
+    tmp_ex_data(i).b := Mux(station.io.out(i).bits.info.pr2_inROB, rob.io.read(i)(1).data.bits, prfile.io.read(i).rdata2)
   }
 
   val ex_data_0 = RegEnable(tmp_ex_data(0), 0.U.asTypeOf(tmp_ex_data.head), fixPointU.io.in.ready)

@@ -11,6 +11,9 @@ class QueryAllocate(implicit p: Parameters) extends Bundle {
     val pr = Valid(new Bundle{
       val idx = UInt(6.W)
       val isReady = Bool()
+
+      val robIdx = UInt(4.W)
+      val inROB = Bool()
     })           // physics register
   }
 
@@ -19,6 +22,9 @@ class QueryAllocate(implicit p: Parameters) extends Bundle {
     val pr = Valid(new Bundle{
       val idx = UInt(6.W)
       val isReady = Bool()
+
+      val robIdx = UInt(4.W)
+      val inROB = Bool()
     })
   }
 
@@ -48,6 +54,7 @@ class RenameMap(implicit p: Parameters) extends Module{
     val LRIdx = UInt(5.W)
     val valid = Bool()
     val state = UInt(2.W)
+    val robIdx = UInt(4.W)
   }
 
   // 初始化的时候 逻辑寄存器0-31对应物理寄存器的0-31
@@ -57,6 +64,7 @@ class RenameMap(implicit p: Parameters) extends Module{
     tmp.LRIdx := n.U
     tmp.valid := true.B
     tmp.state := STATECONST.COMMIT
+    tmp.robIdx := 0.U
     tmp
   }) ++ Seq.tabulate(32)(n => {
     val tmp = info.cloneType
@@ -64,6 +72,7 @@ class RenameMap(implicit p: Parameters) extends Module{
     tmp.LRIdx := 0.U
     tmp.valid := false.B
     tmp.state := STATECONST.EMPRY
+    tmp.robIdx := 0.U
     tmp
   })))
 
@@ -74,6 +83,8 @@ class RenameMap(implicit p: Parameters) extends Module{
     val query_a_idx = PriorityEncoder(query_a)
     port.query_a.pr.bits.idx := query_a_idx
     port.query_a.pr.bits.isReady := (cam(query_a_idx).state === STATECONST.WB) | (cam(query_a_idx).state === STATECONST.COMMIT)
+    port.query_a.pr.bits.inROB := cam(query_a_idx).state === STATECONST.WB
+    port.query_a.pr.bits.robIdx := cam(query_a_idx).robIdx
     port.query_a.pr.valid := port.query_a.lr.fire()
 
     // quary b
@@ -82,6 +93,8 @@ class RenameMap(implicit p: Parameters) extends Module{
     val query_b_idx = PriorityEncoder(query_b)
     port.query_b.pr.bits.idx := query_b_idx
     port.query_b.pr.bits.isReady := (cam(query_b_idx).state === STATECONST.WB) | (cam(query_b_idx).state === STATECONST.COMMIT)
+    port.query_b.pr.bits.inROB := cam(query_b_idx).state === STATECONST.WB
+    port.query_b.pr.bits.robIdx := cam(query_b_idx).robIdx
     port.query_b.pr.valid := port.query_b.lr.fire()
   }
 
@@ -143,6 +156,7 @@ class RenameMap(implicit p: Parameters) extends Module{
   io.cdb.foreach(cdb => {
     when(cdb.fire()){
       cam(cdb.bits.prn).state := STATECONST.WB
+      cam(cdb.bits.prn).robIdx := cdb.bits.idx
     }
   })
 

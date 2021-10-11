@@ -10,13 +10,17 @@ class StationIn(implicit p: Parameters) extends Bundle{
 
   // rs1
   val pr1 = UInt(6.W)
-  val pr1_s = Bool()    // pr1 state
+  val pr1_s = Bool()     // pr1 state
+  val pr1_inROB = Bool() // pr1 data in ROB, need to read rob to get it
+  val pr1_robIdx = UInt(4.W)
   val pc  = UInt(64.W)
   val A_sel = UInt(1.W)
 
   // rs2
   val pr2 = UInt(6.W)
-  val pr2_s = Bool()    // pr2 state
+  val pr2_s = Bool()     // pr2 state
+  val pr2_inROB = Bool() // pr2 data in ROB, need to read rob to get it
+  val pr2_robIdx = UInt(4.W)
   val imm = UInt(64.W)
   val B_sel = UInt(1.W)
 

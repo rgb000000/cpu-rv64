@@ -16,6 +16,11 @@ class ROBIO(implicit p: Parameters) extends Bundle {
     val idxWantCommit = Input(Valid(Vec(2, UInt(4.W))))
   }
 
+  val read = Vec(2, Vec(2, new Bundle {
+    val stationIdx = Flipped(Valid(UInt(4.W)))
+    val data = Valid(UInt(p(XLen).W))
+  }))
+
   val out = Vec(2, Valid(new Bundle {
     val prdORaddr = UInt(p(AddresWidth).W)
     val isPrd = Bool()
@@ -62,11 +67,11 @@ class ROB(implicit p: Parameters) extends Module {
 
   def write_rob(fromIDport: Int, idx: UInt, wen: Bool, mask: UInt) = {
     rob(cnt.value).prdORaddr := io.in.fromID(fromIDport).bits.prdORaddr
-    rob(cnt.value).needData  := io.in.fromID(fromIDport).bits.needData
-    rob(cnt.value).isPrd     := io.in.fromID(fromIDport).bits.isPrd
-    rob(cnt.value).wen       := wen
-    rob(cnt.value).mask      := mask
-    rob(cnt.value).state     := WAITDATA
+    rob(cnt.value).needData := io.in.fromID(fromIDport).bits.needData
+    rob(cnt.value).isPrd := io.in.fromID(fromIDport).bits.isPrd
+    rob(cnt.value).wen := wen
+    rob(cnt.value).mask := mask
+    rob(cnt.value).state := WAITDATA
   }
 
   // write rob
@@ -76,15 +81,15 @@ class ROB(implicit p: Parameters) extends Module {
     cnt.value := cnt.value + 2.U
     write_rob(0, cnt.value, true.B, "hff".U)
     write_rob(1, cnt.value + 1.U, true.B, "hff".U)
-  }.elsewhen(io.in.fromID(0).fire() & !io.in.fromID(1).fire()){
+  }.elsewhen(io.in.fromID(0).fire() & !io.in.fromID(1).fire()) {
     // 0
     cnt.value := cnt.value + 1.U
     write_rob(0, cnt.value, true.B, "hff".U)
-  }.elsewhen((!io.in.fromID(0).fire()) & io.in.fromID(1).fire()){
+  }.elsewhen((!io.in.fromID(0).fire()) & io.in.fromID(1).fire()) {
     // 1
     cnt.value := cnt.value + 1.U
     write_rob(1, cnt.value, true.B, "hff".U)
-  }.otherwise{
+  }.otherwise {
     // none
   }
 
@@ -163,6 +168,18 @@ class ROB(implicit p: Parameters) extends Module {
     write_prfile(0, 0.U.asTypeOf(new ROBInfo))
     write_prfile(1, 0.U.asTypeOf(new ROBInfo))
     write_dcache(0.U.asTypeOf(new ROBInfo))
+  }
+
+  // station read rob in issue stage
+  for (i <- 0 until 2) {
+    for (j <- 0 until 2) {
+      io.read(i)(j).data := 0.U
+      io.read(i)(j).data.valid := false.B
+      when(io.read(i)(j).stationIdx.fire()) {
+        io.read(i)(j).data := rob(io.read(i)(j).stationIdx.bits).data
+        io.read(i)(j).data.valid := true.B
+      }
+    }
   }
 
 }
