@@ -20,10 +20,7 @@ class ROBIO(implicit p: Parameters) extends Bundle {
     val data = Valid(UInt(p(XLen).W))
   }))
 
-  val memRead = new Bundle{
-    val addr = Flipped(Valid(UInt(p(AddresWidth).W)))
-    val data = Valid(UInt(p(XLen).W))
-  }
+  val memRead = Flipped(new MemReadROBIO)
 
   val memCDB = Flipped(Valid(new MEMCDB))
 

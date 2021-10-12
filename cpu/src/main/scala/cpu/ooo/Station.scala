@@ -6,8 +6,6 @@ import chisel3.util.experimental.loadMemoryFromFile
 import chipsalliance.rocketchip.config._
 
 class StationIn(implicit p: Parameters) extends Bundle{
-  val valid = Bool()
-
   // rs1
   val pr1 = UInt(6.W)
   val pr1_s = Bool()     // pr1 state
@@ -82,6 +80,7 @@ class Station(implicit p: Parameters) extends Module{
     val cdb = Vec(2, Flipped(Valid(new CDB)))
 
     val out = Vec(2, Decoupled(new Bundle{
+      val idx = UInt(4.W)
       val info = new StationIn
     }))
 
@@ -134,12 +133,14 @@ class Station(implicit p: Parameters) extends Module{
   // fixpointU
   io.out(0).valid := which_station_ready_0.orR()
   io.out(0).bits.info := station(readyIdx_0)
+  io.out(0).bits.idx := readyIdx_0
   when(which_station_ready_0.orR()){
     station(readyIdx_0).state := S_ISSUE
   }
   // memU
   io.out(1).valid := which_station_ready_1.orR() & (readyIdx_1 =/= readyIdx_0)
   io.out(1).bits.info := station(readyIdx_1)
+  io.out(1).bits.idx := readyIdx_1
   when(which_station_ready_1.orR() & (readyIdx_1 =/= readyIdx_0)){
     station(readyIdx_1).state := S_ISSUE
   }

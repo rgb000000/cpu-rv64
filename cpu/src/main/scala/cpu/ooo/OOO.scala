@@ -153,43 +153,49 @@ class OOO(implicit p: Parameters) extends Module {
   val issue_0_valid = RegInit(false.B)
   issue_0_valid := Mux(station.io.out(0).fire(), true.B, Mux(fixPointU.io.in.fire(), false.B, issue_0_valid))
   val ex_data_0 = RegEnable(tmp_ex_data(0), 0.U.asTypeOf(tmp_ex_data.head), station.io.out(0).fire())
-  val issue_0 = RegEnable(station.io.out(0).bits.info, 0.U.asTypeOf(station.io.out(0).bits.info), station.io.out(0).fire())
+  val issue_0 = RegEnable(station.io.out(0).bits, 0.U.asTypeOf(station.io.out(0).bits), station.io.out(0).fire())
   station.io.out(0).ready := fixPointU.io.in.ready | !issue_0_valid
 
   val issue_1_valid = RegInit(false.B)
   issue_1_valid := Mux(station.io.out(1).fire(), true.B, Mux(mem.io.in.fire(), false.B, issue_1_valid))
   val ex_data_1 = RegEnable(tmp_ex_data(1), 0.U.asTypeOf(tmp_ex_data.head), station.io.out(1).fire())
-  val issue_1 = RegEnable(station.io.out(1).bits.info, 0.U.asTypeOf(station.io.out(1).bits.info), mem.io.in.ready)
+  val issue_1 = RegEnable(station.io.out(1).bits, 0.U.asTypeOf(station.io.out(1).bits), mem.io.in.ready)
   station.io.out(1).ready := mem.io.in.ready | !issue_1_valid
 
   //= ex ==================================================
   // fixpointU
   fixPointU.io.in.valid         := issue_0_valid
-  fixPointU.io.in.bits.A        := Mux(issue_0.A_sel === A_RS1, ex_data_0.a, issue_0.pc)
-  fixPointU.io.in.bits.B        := Mux(issue_0.B_sel === B_RS2, ex_data_0.b, issue_0.imm)
-  fixPointU.io.in.bits.prd      := issue_0.prd
-  fixPointU.io.in.bits.p_br     := issue_0.p_br
-  fixPointU.io.in.bits.alu_op   := issue_0.alu_op
-  fixPointU.io.in.bits.br_type  := issue_0.br_type
-  fixPointU.io.in.bits.wb_type  := issue_0.wb_type
-  fixPointU.io.in.bits.wen      := issue_0.wen
+  fixPointU.io.in.bits.A        := Mux(issue_0.info.A_sel === A_RS1, ex_data_0.a, issue_0.info.pc)
+  fixPointU.io.in.bits.B        := Mux(issue_0.info.B_sel === B_RS2, ex_data_0.b, issue_0.info.imm)
+  fixPointU.io.in.bits.prd      := issue_0.info.prd
+  fixPointU.io.in.bits.p_br     := issue_0.info.p_br
+  fixPointU.io.in.bits.alu_op   := issue_0.info.alu_op
+  fixPointU.io.in.bits.br_type  := issue_0.info.br_type
+  fixPointU.io.in.bits.wb_type  := issue_0.info.wb_type
+  fixPointU.io.in.bits.wen      := issue_0.info.wen
+  fixPointU.io.in.bits.idx      := issue_0.idx
 
   // memU
   mem.io.in.valid          := issue_1_valid
-  mem.io.in.bits.A         := Mux(station.io.out(1).bits.info.A_sel === A_RS1, prfile.io.read(1).rdata1, issue_1.pc)
-  mem.io.in.bits.B         := Mux(station.io.out(1).bits.info.B_sel === B_RS2, prfile.io.read(1).rdata2, issue_1.imm)
-  mem.io.in.bits.alu_op    := issue_1.alu_op
-  mem.io.in.bits.prd       := issue_1.prd
-  mem.io.in.bits.ld_type   := issue_1.ld_type
-  mem.io.in.bits.st_type   := issue_1.st_type
+  mem.io.in.bits.A         := Mux(station.io.out(1).bits.info.A_sel === A_RS1, prfile.io.read(1).rdata1, issue_1.info.pc)
+  mem.io.in.bits.B         := Mux(station.io.out(1).bits.info.B_sel === B_RS2, prfile.io.read(1).rdata2, issue_1.info.imm)
+  mem.io.in.bits.alu_op    := issue_1.info.alu_op
+  mem.io.in.bits.prd       := issue_1.info.prd
+  mem.io.in.bits.ld_type   := issue_1.info.ld_type
+  mem.io.in.bits.st_type   := issue_1.info.st_type
   mem.io.in.bits.s_data    := mem.io.in.bits.B
-  mem.io.in.bits.csr_cmd   := issue_1.csr_op
-  mem.io.in.bits.pc        := issue_1.pc
-  mem.io.in.bits.inst      := issue_1.inst
-  mem.io.in.bits.illegal   := issue_1.illeage
+  mem.io.in.bits.wen       := issue_1.info.wen
+  mem.io.in.bits.csr_cmd   := issue_1.info.csr_op
+  mem.io.in.bits.pc        := issue_1.info.pc
+  mem.io.in.bits.inst      := issue_1.info.inst
+  mem.io.in.bits.illegal   := issue_1.info.illeage
   mem.io.in.bits.interrupt.time := id_interrupt(2)
   mem.io.in.bits.interrupt.soft := id_interrupt(1)
   mem.io.in.bits.interrupt.external := id_interrupt(0)
+  mem.io.in.bits.idx := issue_1.idx
+
+  // mem read rob
+  rob.io.memRead <> mem.io.readROB
 
   // to station
   station.io.cdb(0) <> fixPointU.io.cdb

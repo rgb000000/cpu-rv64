@@ -4,6 +4,8 @@ import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
 
+import scala.collection.immutable.Nil
+
 
 // 定点执行单元
 class FixPointIn(implicit p: Parameters) extends Bundle{
@@ -67,7 +69,6 @@ class MemUIn(implicit p: Parameters) extends Bundle{
   val csr_cmd = UInt(3.W)
   // ctrl signals
   val pc      = UInt(p(XLen).W)
-  val addr    = UInt(p(XLen).W)
   val inst    = UInt(32.W)
   val illegal = Bool()
   val interrupt = new Bundle{
@@ -79,6 +80,11 @@ class MemUIn(implicit p: Parameters) extends Bundle{
   val wen = Bool()
 }
 
+class MemReadROBIO(implicit p: Parameters) extends Bundle{
+  val addr = Valid(UInt(p(AddresWidth).W))
+  val data = Flipped(Valid(UInt(p(XLen).W)))
+}
+
 class MemU(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
     val in = Flipped(Decoupled(new MemUIn))
@@ -87,6 +93,8 @@ class MemU(implicit p: Parameters) extends Module{
 
     val cdb = Valid(new CDB)
     val memCDB = Valid(new MEMCDB)
+
+    val readROB = new MemReadROBIO
   })
 
   val alu = Module(new ALU)
@@ -97,6 +105,7 @@ class MemU(implicit p: Parameters) extends Module{
 
   val isCSR = io.in.bits.csr_cmd.orR()
   val isMem = (io.in.bits.ld_type.orR() | io.in.bits.st_type.orR()) & !isCSR
+  val isALU = (!isCSR) & (!isMem)
 
   // Mem op
   val mem = Module(new OOOMEM)
@@ -104,8 +113,8 @@ class MemU(implicit p: Parameters) extends Module{
   mem.io.st_type := 0.U    // OOOMEM only handle ld inst
   mem.io.s_data := io.in.bits.s_data
   mem.io.alu_res := alu_res
-  // mem.io.inst_valid :=
-
+  mem.io.inst_valid := io.in.valid & io.in.bits.st_type.orR()
+  mem.io.stall := false.B
   mem.io.dcache <> io.dcache
 
 
@@ -121,9 +130,59 @@ class MemU(implicit p: Parameters) extends Module{
   csr.io.ctrl_signal.ld_type := io.in.bits.ld_type
   csr.io.pc_check := false.B
   csr.io.interrupt := io.in.bits.interrupt
+  csr.io.stall := false.B
+  csr.io.ctrl_signal.valid := io.in.fire() & isCSR
 
+  // mem FSM
+  val s_idle :: s_mem :: s_ret :: Nil = Enum(3)
+  val state = RegInit(s_idle)
+  val ld_data = RegInit(0.U(p(XLen).W))
 
+  when(state === s_mem){
+    when(io.readROB.data.fire()){
+      ld_data := io.readROB.data.bits
+    }.elsewhen(io.dcache.resp.fire() & io.dcache.resp.bits.cmd === 2.U){
+      ld_data := io.dcache.resp.bits.data
+    }
+  }
+
+  io.in.ready := state === s_idle
+
+  io.readROB.addr.bits := alu_res
+  io.readROB.addr.valid := io.in.fire() & isMem
+
+  switch(state){
+    is(s_idle){
+      when(io.in.fire() & isMem){
+        state := s_mem
+      }
+    }
+    is(s_mem){
+      when(io.readROB.data.valid){
+        // get data from rob
+        state := s_ret
+      }.elsewhen(io.dcache.resp.fire() & io.dcache.resp.bits.cmd === 2.U){
+        // get data from dcache
+        state := s_ret
+      }
+    }
+    is(s_ret){
+      // return data
+      state := s_idle
+    }
+  }
+
+  // assign cdb and memCDB
   io.cdb.bits.idx := io.in.bits.idx
+
+  io.memCDB.bits.idx := io.in.bits.idx
+  io.memCDB.bits.prn   := 0.U
+  io.memCDB.bits.data  := 0.U
+  io.memCDB.bits.wen   := 0.U
+  io.memCDB.bits.brHit := true.B
+  io.memCDB.bits.expt  := false.B
+  io.memCDB.valid := false.B
+
   when(io.in.fire() & isCSR){
     // csr op
     io.cdb.bits.prn := io.in.bits.prd
@@ -132,36 +191,41 @@ class MemU(implicit p: Parameters) extends Module{
     io.cdb.bits.brHit := true.B
     io.cdb.bits.expt := csr.io.expt
     io.cdb.valid := true.B
-  }.elsewhen(io.in.fire() & isMem){
-    // mem op
-    when(io.in.bits.ld_type.orR()){
-      // ld inst
-      io.cdb.bits.prn := io.in.bits.prd
-      io.cdb.bits.data := mem.io.l_data.bits
-      io.cdb.bits.wen := io.in.bits.wen
-      io.cdb.bits.brHit := true.B
-      io.cdb.bits.expt := false.B
-    }.otherwise{
-      // st inst
-      io.cdb.bits.prn   := 0.U
-      io.cdb.bits.data  := 0.U
-      io.cdb.bits.wen   := 0.U
-      io.cdb.bits.brHit := true.B
-      io.cdb.bits.expt  := false.B
-
-      io.memCDB.bits.prn   := alu_res
-      io.memCDB.bits.data  := io.in.bits.s_data
-      io.memCDB.bits.wen   := 0.U
-      io.memCDB.bits.brHit := true.B
-      io.memCDB.bits.expt  := false.B
-    }
-  }.otherwise{
+  }.elsewhen(io.in.fire() & isALU){
     // fix point op (NOT including branch)
     io.cdb.bits.prn := io.in.bits.prd
     io.cdb.bits.data := alu_res
     io.cdb.bits.wen := io.in.bits.wen
     io.cdb.bits.brHit := true.B
     io.cdb.bits.expt := false.B // FixPointU can't generate except
+    io.cdb.valid := true.B
+  }.otherwise{
+    // mem op
+    when(io.in.fire() & io.in.bits.st_type.orR()){
+      // store inst
+      io.cdb.bits.prn   := 0.U
+      io.cdb.bits.data  := 0.U
+      io.cdb.bits.wen   := 0.U
+      io.cdb.bits.brHit := true.B
+      io.cdb.bits.expt  := false.B
+      io.cdb.valid := true.B
+
+      io.memCDB.bits.prn   := alu_res
+      io.memCDB.bits.data  := io.in.bits.s_data
+      io.memCDB.bits.wen   := 0.U
+      io.memCDB.bits.brHit := true.B
+      io.memCDB.bits.expt  := false.B
+      io.memCDB.valid := true.B
+    }.otherwise{
+      // load inst
+      io.cdb.bits.prn := io.in.bits.prd
+      io.cdb.bits.data := Mux(state === s_ret, ld_data, 0.U)
+      io.cdb.bits.wen := io.in.bits.wen
+      io.cdb.bits.brHit := true.B
+      io.cdb.bits.expt := false.B
+      io.cdb.valid := state === s_ret
+    }
   }
+
 
 }

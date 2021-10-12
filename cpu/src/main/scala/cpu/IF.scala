@@ -161,8 +161,8 @@ class OOOIF (implicit p: Parameters) extends Module {
                 Control.PC_EPC -> (io.pc_epc)
               ))))))))
 
-  val inst_valid = Wire(Vec(2, Bool()))
-  inst_valid(0) := pc_next(2) === 0.U
+  val inst_valid = RegInit(VecInit(Seq.fill(2)(false.B)))
+  inst_valid(0) := Mux(io.icache.req.fire(), pc_next(2) === 0.U, inst_valid(0))
   inst_valid(1) := true.B
 
   // query

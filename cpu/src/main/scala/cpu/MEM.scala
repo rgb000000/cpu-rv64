@@ -101,7 +101,7 @@ class MEM (implicit p: Parameters) extends Module {
       io.l_data.valid := 0.U
     }
   }
-  // reso cmd : 1 write cache resp     2 read cache resp
+  // resp cmd : 1 write cache resp     2 read cache resp
 //  io.s_complete := Mux((io.dcache.resp.fire() & (io.dcache.resp.bits.cmd =/= 0.U)) & !io.stall & io.st_type.orR(), 1.U, 0.U)
   io.s_complete := Mux((io.dcache.resp.fire() & (io.dcache.resp.bits.cmd === 1.U)), 1.U, 0.U)
 //  dontTouch(io.s_complete)
@@ -211,7 +211,7 @@ class OOOMEM (implicit p: Parameters) extends Module {
       io.l_data.valid := 0.U
     }
   }
-  // reso cmd : 1 write cache resp     2 read cache resp
+  // resp cmd : 1 write cache resp     2 read cache resp
   //  io.s_complete := Mux((io.dcache.resp.fire() & (io.dcache.resp.bits.cmd =/= 0.U)) & !io.stall & io.st_type.orR(), 1.U, 0.U)
   io.s_complete := Mux((io.dcache.resp.fire() & (io.dcache.resp.bits.cmd === 1.U)), 1.U, 0.U)
   //  dontTouch(io.s_complete)
@@ -229,9 +229,9 @@ class OOOMEM (implicit p: Parameters) extends Module {
     //      printf("addr: %x, data: %x, ld_type: %x \n", io.dcache.req.bits.addr, 0.U, io.ld_type)
     //    }
 
-    BoringUtils.addSource(io.dcache.req.bits.mask, "dcache_mask")
-    BoringUtils.addSource(io.dcache.req.bits.data, "dcache_data")
-    BoringUtils.addSource(io.dcache.req.bits.addr, "dcache_address")
-    BoringUtils.addSource(io.dcache.req.bits.op, "dcache_op")
+//    BoringUtils.addSource(io.dcache.req.bits.mask, "dcache_mask")
+//    BoringUtils.addSource(io.dcache.req.bits.data, "dcache_data")
+//    BoringUtils.addSource(io.dcache.req.bits.addr, "dcache_address")
+//    BoringUtils.addSource(io.dcache.req.bits.op, "dcache_op")
   }
 }
