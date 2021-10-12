@@ -78,7 +78,7 @@ class MEMCDB(implicit p: Parameters) extends Bundle{
 
 class Station(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
-    val in = Flipped(Decoupled(Vec(2, new StationIn)))
+    val in = Vec(2, Flipped(Decoupled(new StationIn)))
     val cdb = Vec(2, Flipped(Valid(new CDB)))
 
     val out = Vec(2, Decoupled(new Bundle{
@@ -87,12 +87,11 @@ class Station(implicit p: Parameters) extends Module{
 
     val exu_statu = Input(Vec(2, Bool()))
 
-    val commit = Vec(2, Flipped(Valid(new Bundle{
-      val idx = UInt(4.W)
+    val robCommit = Vec(2, Flipped(Valid(new Bundle{
+      val prn = UInt(6.W)
+//      val data = UInt(p(XLen).W)
+//      val wen = Bool()
     })))
-
-    val idxWaitCommit = Valid(Vec(2, UInt(4.W)))
-
   })
 
   val S_INVALID = 0.U(2.W)
@@ -109,8 +108,12 @@ class Station(implicit p: Parameters) extends Module{
     station.map(x => {
       when(cdb.valid & ((x.A_sel === A_RS1) & (!x.pr1_s) & (x.pr1 === cdb.bits.prn))){
         x.pr1_s := true.B
+        x.pr1_inROB := true.B
+        x.pr1_robIdx := cdb.bits.idx
       }.elsewhen(cdb.valid & ((x.B_sel === B_RS2) & (!x.pr2_s) & (x.pr2 === cdb.bits.prn))){
         x.pr2_s := true.B
+        x.pr2_inROB := true.B
+        x.pr2_robIdx := cdb.bits.idx
       }
     })
   })
@@ -142,59 +145,72 @@ class Station(implicit p: Parameters) extends Module{
   }
 
   // input
-  val inPtr = Counter(16)
-  when(io.in.fire()){
-    val a = io.in.bits(0)
-    val b = io.in.bits(1)
-    when(a.valid & b.valid){
-      // input a and b
-      inPtr.value := inPtr.value + 2.U
-      station(inPtr.value) := a
-      station(inPtr.value).state := S_WAIT
+  val inPtr = Counter(32)
+  val a = io.in(0)
+  val b = io.in(1)
+  when(a.fire() & b.fire()){
+    // input a and b
+    inPtr.value := inPtr.value + 2.U
 
-      station(inPtr.value + 1.U) := b
-      station(inPtr.value + 1.U).state := S_WAIT
-    }.elsewhen(a.valid & !b.valid){
-      // input a
-      inPtr.inc()
-      station(inPtr.value) := a
-      station(inPtr.value).state := S_WAIT
-    }.elsewhen((!a.valid) & b.valid){
-      // input b
-      inPtr.inc()
-      station(inPtr.value) := b
-      station(inPtr.value).state := S_WAIT
-    }.otherwise{
-      // none
+    station(inPtr.value) := a.bits
+    station(inPtr.value).state := S_WAIT
+
+    station(inPtr.value + 1.U) := b.bits
+    station(inPtr.value + 1.U).state := S_WAIT
+  }.elsewhen(a.fire() & !b.fire()){
+    // input a
+    inPtr.inc()
+
+    station(inPtr.value) := a.bits
+    station(inPtr.value).state := S_WAIT
+  }.elsewhen((!a.fire()) & b.fire()){
+    // input b
+    inPtr.inc()
+
+    station(inPtr.value) := b.bits
+    station(inPtr.value).state := S_WAIT
+  }.otherwise{
+
+  }
+
+
+  def commit(prn: UInt, wen: Bool) = {
+    val pr1Res = station.map(_.pr1).map(_ === prn).map(_ & wen)
+    val pr1Idx = PriorityEncoder(pr1Res)
+    when(Cat(pr1Res).orR()){
+      station(pr1Idx).pr1_inROB := false.B
+      station(pr1Idx).pr1_s := true.B
+    }
+
+    val pr2Res = station.map(_.pr2).map(_ === prn).map(_ & wen)
+    val pr2Idx = PriorityEncoder(pr2Res)
+    when(Cat(pr2Res).orR()){
+      station(pr2Idx).pr2_inROB := false.B
+      station(pr2Idx).pr2_s := true.B
     }
   }
-  io.in.ready := station.map(_.state).map(x => {(x === S_INVALID)}).reduce(_ | _)
-
   // commit
-  when(io.commit(0).fire() & io.commit(1).fire()){
+  val commitPtr = Counter(32)
+  when(io.robCommit(0).fire() & io.robCommit(1).fire()){
     // commit 0, 1
-    station
-  }.elsewhen(io.commit(0).fire() & !io.commit(1).fire()){
+    commitPtr.value := commitPtr.value + 2.U
+    commit(io.robCommit(0).bits.prn, io.robCommit(0).valid)
+    commit(io.robCommit(1).bits.prn, io.robCommit(1).valid)
+
+  }.elsewhen(io.robCommit(0).fire() & !io.robCommit(1).fire()){
     // commit 0
-  }.elsewhen((!io.commit(0).fire()) & io.commit(1).fire()){
+    commitPtr.value := commitPtr.value + 1.U
+    commit(io.robCommit(0).bits.prn, io.robCommit(0).valid)
+  }.elsewhen((!io.robCommit(0).fire()) & io.robCommit(1).fire()){
     // commit 1
+    commitPtr.value := commitPtr.value + 1.U
+    commit(io.robCommit(1).bits.prn, io.robCommit(1).valid)
   }.otherwise{
     // none
   }
 
-  val commitPtr = Counter(16)
-  when(io.commit.fire()){
-    assert(station(io.commit.bits.idx).state === S_COMMIT)
-    when(io.commit.bits.state){
-      station(io.commit.bits.idx).state := S_INVALID
-    }.otherwise{
-      // 当commit是 撤回时候，例如分支预测失败了，那么就将保留站所有项的state置为无效了
-      station.foreach(x => {
-        x.state := S_INVALID
-      })
-    }
-  }
-
-  io.idxWaitCommit.bits(0) := commitPtr.value
-  io.idxWaitCommit.bits(1) := commitPtr.value + 1.U
+  // 至少有两个空位置才可以
+  val emptyNum = Mux(inPtr.value(4) === commitPtr.value(4), 16.U - inPtr.value(3, 0) + commitPtr.value(3, 0).asUInt(), commitPtr.value(3, 0) - inPtr.value(3, 0))
+  io.in(0).ready := emptyNum >= 2.U
+  io.in(1).ready := emptyNum >= 2.U
 }

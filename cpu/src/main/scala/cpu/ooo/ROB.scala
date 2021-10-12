@@ -12,8 +12,7 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val needData = Bool()
       val isPrd = Bool()
     })))
-    val cdb = Vec(2, Flipped(Decoupled(new CDB)))
-    val idxWantCommit = Input(Valid(Vec(2, UInt(4.W))))
+    val cdb = Vec(2, Flipped(Valid(new CDB)))
   }
 
   val read = Vec(2, Vec(2, new Bundle {
@@ -26,24 +25,19 @@ class ROBIO(implicit p: Parameters) extends Bundle {
     val data = Valid(UInt(p(XLen).W))
   }
 
-  val memCDB = Flipped(Decoupled(new MEMCDB))
-
-  val out = Vec(2, Valid(new Bundle {
-    val prdORaddr = UInt(p(AddresWidth).W)
-    val isPrd = Bool()
-    val data = UInt(p(XLen).W)
-  }))
+  val memCDB = Flipped(Valid(new MEMCDB))
 
   // commit to physice register and dcache
   val commit = new Bundle {
-    val reg = Vec(2, new Bundle {
+    val reg = Vec(2, Valid(new Bundle {
       val prn = UInt(6.W)
       val data = UInt(p(XLen).W)
       val wen = Bool()
-    })
+    }))
     val dcache = Flipped(new CacheCPUIO)
   }
   val commit2rename = Vec(2, Valid(UInt(6.W)))
+  val commit2station = Vec(2, Valid(UInt(6.W)))
 }
 
 class ROBInfo(implicit p: Parameters) extends Bundle {
@@ -115,12 +109,15 @@ class ROB(implicit p: Parameters) extends Module {
   }
 
   def write_prfile(portIdx: Int, rob_info: ROBInfo) = {
-    io.commit.reg(portIdx).prn := rob_info.prdORaddr
-    io.commit.reg(portIdx).data := rob_info.data
-    io.commit.reg(portIdx).wen := rob_info.wen
+    io.commit.reg(portIdx).bits.prn := rob_info.prdORaddr
+    io.commit.reg(portIdx).bits.data := rob_info.data
+    io.commit.reg(portIdx).bits.wen := rob_info.wen
 
     io.commit2rename(portIdx).valid := rob_info.wen & rob_info.isPrd
     io.commit2rename(portIdx).bits := rob_info.prdORaddr
+
+    io.commit2station(portIdx).valid := rob_info.wen & rob_info.isPrd
+    io.commit2station(portIdx).bits := rob_info.prdORaddr
   }
 
   def write_dcache(rob_info: ROBInfo) = {
@@ -187,10 +184,10 @@ class ROB(implicit p: Parameters) extends Module {
   for (i <- 0 until 2) {
     for (j <- 0 until 2) {
       when(io.read(i)(j).stationIdx.fire()) {
-        io.read(i)(j).data := rob(io.read(i)(j).stationIdx.bits).data
+        io.read(i)(j).data.bits := rob(io.read(i)(j).stationIdx.bits).data
         io.read(i)(j).data.valid := true.B
       }.otherwise{
-        io.read(i)(j).data := 0.U
+        io.read(i)(j).data.bits := 0.U
         io.read(i)(j).data.valid := false.B
       }
     }

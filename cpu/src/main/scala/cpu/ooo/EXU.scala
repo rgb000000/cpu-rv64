@@ -47,6 +47,7 @@ class FixPointU(implicit p: Parameters) extends Module{
   io.cdb.bits.wen := io.in.bits.wen
   io.cdb.bits.brHit := Mux(io.in.bits.br_type.orR(), br.io.taken === io.in.bits.p_br, true.B)
   io.cdb.bits.expt := false.B // FixPointU can't generate except
+  io.cdb.valid := io.in.valid
 }
 
 // 访储执行单元 and CSR单元
@@ -82,8 +83,8 @@ class MemU(implicit p: Parameters) extends Module{
 
     val dcache = Flipped(new CacheCPUIO)
 
-    val cdb = Decoupled(new CDB)
-    val memCDB = Decoupled(new MEMCDB)
+    val cdb = Valid(new CDB)
+    val memCDB = Valid(new MEMCDB)
   })
 
   val alu = Module(new ALU)
@@ -130,7 +131,7 @@ class MemU(implicit p: Parameters) extends Module{
     when(io.in.bits.ld_type.orR()){
       // ld inst
       io.cdb.bits.prn := io.in.bits.prd
-      io.cdb.bits.data := mem.io.l_data
+      io.cdb.bits.data := mem.io.l_data.bits
       io.cdb.bits.wen := io.in.bits.wen
       io.cdb.bits.brHit := true.B
       io.cdb.bits.expt := false.B

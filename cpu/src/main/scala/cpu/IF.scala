@@ -136,28 +136,38 @@ class OOOIF (implicit p: Parameters) extends Module {
     val fence_i_do = Input(Bool())
   })
 
-  val btb = Vec(2, Module(new BTB)) // 0 for low, 1 for high
+  val btb = Seq.fill(2)(Module(new BTB)) // 0 for low, 1 for high
 
   val cur_pc = RegInit(p(PCStart).asUInt(p(XLen).W) - 8.U)
   val inst = RegInit(VecInit(Seq.fill(2)(BitPat.bitPatToUInt(ISA.nop))))
 
-  //  val pc_next = Mux(io.stall, cur_pc, Mux(io.pc_sel === Control.PC_ALU, io.pc_alu, MuxLookup(io.pc_sel, 0.U, Array(
-  //    Control.PC_0   -> (cur_pc),
-  //    Control.PC_4   -> Mux(io.br_taken, io.pc_alu, cur_pc + 4.U),
-  //    Control.PC_ALU -> (io.pc_alu),
-  //    Control.PC_EPC -> (io.pc_epc)
-  //  ))))
+  val pnpc_f = Wire(UInt(p(AddresWidth).W))
+  val pTaken_f = Wire(Bool())
+  val cancel_inst_1 = Wire(Bool())
 
   val branch_on = WireInit(0.U)
   BoringUtils.addSink(branch_on, "branch_on")
 
-  val inst_valid = Vec(2, Bool())
+  val pc_next = Mux(io.stall,                                     cur_pc,
+    Mux(io.pc_except_entry.valid,                     io.pc_except_entry.bits,
+      Mux(io.br_info.fire() & (!io.br_info.bits.isHit), Mux(io.br_info.bits.isTaken, io.pc_alu, io.br_info.bits.cur_pc + 4.U),
+        Mux(io.br_info.fire() & io.br_info.bits.isHit,    Mux(pTaken_f, pnpc_f, get_next_pc(cur_pc)), //预测正确之后就不需要跳转到pc_alu去执行了
+          Mux(io.fence_i_done,                              RegEnable(io.fence_pc, 0.U, io.fence_i_do) + 4.U,
+            Mux(pTaken_f,                                     pnpc_f,
+              MuxLookup(io.pc_sel, 0.U, Array(
+                Control.PC_0   -> (cur_pc),
+                Control.PC_4   -> get_next_pc(cur_pc),
+                Control.PC_ALU -> (io.pc_alu),
+                Control.PC_EPC -> (io.pc_epc)
+              ))))))))
+
+  val inst_valid = Wire(Vec(2, Bool()))
   inst_valid(0) := pc_next(2) === 0.U
   inst_valid(1) := true.B
 
   // query
-  val pnpc = Vec(2, UInt(p(AddresWidth).W))
-  val pTaken = Vec(2, Bool())
+  val pnpc = Wire(Vec(2, UInt(p(AddresWidth).W)))
+  val pTaken = Wire(Vec(2, Bool()))
   for(i <- 0 until 2){
     btb(i).io.query.pc.bits  := io.out(i).bits.pc
     btb(i).io.query.pc.valid := io.out(i).valid & inst_valid(i)
@@ -166,9 +176,6 @@ class OOOIF (implicit p: Parameters) extends Module {
     pTaken(i) := Mux(btb(i).io.query.res.bits.is_miss, 0.U, btb(i).io.query.res.bits.pTaken) & branch_on
   }
 
-  val pnpc_f = Wire(UInt(p(AddresWidth).W))
-  val pTaken_f = Wire(Bool())
-  val cancel_inst_1 = Wire(Bool())
 
   when(btb(0).io.query.res.fire() & pTaken(0)){
     // inst_0 Taken! need cancel inst_1
@@ -187,21 +194,9 @@ class OOOIF (implicit p: Parameters) extends Module {
     cancel_inst_1 := false.B
   }
 
-  def get_next_pc(pc: UInt) = {
+  def get_next_pc(pc: UInt): UInt = {
     Mux(pc(2), pc + 4.U, pc + 8.U)
   }
-
-  val pc_next = Mux(io.stall, cur_pc,
-    Mux(io.pc_except_entry.valid, io.pc_except_entry.bits,
-      Mux(io.br_info.fire() & (!io.br_info.bits.isHit), Mux(io.br_info.bits.isTaken, io.pc_alu, io.br_info.bits.cur_pc + 4.U),
-        Mux(io.br_info.fire() & io.br_info.bits.isHit, Mux(pTaken_f, pnpc_f, get_next_pc(cur_pc)), //预测正确之后就不需要跳转到pc_alu去执行了
-          Mux(io.fence_i_done, RegEnable(io.fence_pc, 0.U, io.fence_i_do) + 4.U,
-            Mux(pTaken_f, pnpc_f, MuxLookup(io.pc_sel, 0.U, Array(
-              Control.PC_0   -> (cur_pc),
-              Control.PC_4   -> get_next_pc(cur_pc),
-              Control.PC_ALU -> (io.pc_alu),
-              Control.PC_EPC -> (io.pc_epc)
-            ))))))))
 
   // always read instructions from icache
   io.icache.req.valid := !io.stall
@@ -213,12 +208,9 @@ class OOOIF (implicit p: Parameters) extends Module {
   //  dontTouch(pc_next)
   //  dontTouch(io.out)
 
-  val inst_valid = Vec(2, Bool())
-  inst_valid(0) := !pc_next(2)
-  inst_valid(1) := true.B
-
   cur_pc := Mux(io.icache.req.fire(), io.icache.req.bits.addr, Mux(io.icache.req.valid & !io.icache.req.ready & !io.stall, pc_next - 4.U, cur_pc))
-  inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(31, 0), inst)
+  inst(0) := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(31,  0).asUInt(), inst(0))
+  inst(1) := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(63, 32).asUInt(), inst(1))
 
 
   val stall_negedge = (!io.stall) & RegNext(io.stall, false.B)

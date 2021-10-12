@@ -4,7 +4,7 @@ load("//config:chisel.bzl", "chisel_library", "chisel_treadle_test", "chisel_ver
 
 chisel_library(
     name = "cpu",
-    srcs = glob(["src/main/scala/cpu/*.scala"]),
+    srcs = glob(["src/main/scala/cpu/*.scala"]) + glob(["src/main/scala/cpu/ooo/*.scala"]),
     resources = ["src/main/resources"],
     visibility = ["//visibility:public"],
     deps = [
@@ -91,6 +91,20 @@ difftest(
     mode = "DRAM3Sim",
     module_code = "cpu.MySimTop",
     module_name = "MySimTop",
+    deps = [
+        "cpu",
+        "//dependency:config",
+    ],
+)
+
+difftest(
+    name = "OOODRAM3Sim",
+    srcs = glob(["src/test/resources/Core-harness.cpp"]),
+    config_name = "DRAM3SimConfig",
+    inst_file = glob(["src/main/resources/inst*.hex"]),
+    mode = "DRAM3Sim",
+    module_code = "cpu.MyOOOSimTop",
+    module_name = "MyOOOSimTop",
     deps = [
         "cpu",
         "//dependency:config",

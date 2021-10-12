@@ -208,9 +208,9 @@ class InnerCrossBarNN(val Nin: Int = 2, val Nout: Int = 2)(implicit p: Parameter
 
 class CPUCacheCrossBarN21(N: Int)(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
-    val in = Vec(N, Flipped(new CacheCPUIO))
+    val in = Vec(N, new CacheCPUIO)
 
-    val out = new CacheCPUIO()
+    val out = Flipped(new CacheCPUIO())
   })
 
   val arb = Module(new Arbiter(chiselTypeOf(io.in.head.req.bits), N))
@@ -219,8 +219,8 @@ class CPUCacheCrossBarN21(N: Int)(implicit p: Parameters) extends Module{
   val state = RegInit(s_idle)
   val cur_idx = RegInit(0.U(log2Ceil(N).W))
 
-  (io.in, arb.io.in).zipped.foreach(_ <> _)
-  io.out <> arb.io.out
+  (io.in.map(_.req), arb.io.in).zipped.foreach(_ <> _)
+  io.out.req <> arb.io.out
 
   switch(state){
     is(s_idle){

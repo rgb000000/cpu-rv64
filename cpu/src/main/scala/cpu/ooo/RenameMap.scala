@@ -32,11 +32,13 @@ class QueryAllocate(implicit p: Parameters) extends Bundle {
     val lr = Flipped(Valid(UInt(5.W)))  // logic register
     val pr = Valid(UInt(6.W))           // physics register
   }
+
+  val valid = Input(Bool())
 }
 
 class RenameMap(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
-    val port = Vec(2, Valid(new QueryAllocate))
+    val port = Vec(2, new QueryAllocate)
 
     val cdb = Vec(2, Flipped(Valid(new CDB)))         // wb
     val robCommit = Vec(2, Flipped(Valid(UInt(6.W)))) // commit
@@ -59,7 +61,7 @@ class RenameMap(implicit p: Parameters) extends Module{
 
   // 初始化的时候 逻辑寄存器0-31对应物理寄存器的0-31
   val cam = RegInit(VecInit(Seq.tabulate(32)(n => {
-    val tmp = info.cloneType
+    val tmp = Wire(info.cloneType)
     tmp.PRIdx := n.U
     tmp.LRIdx := n.U
     tmp.valid := true.B
@@ -67,7 +69,7 @@ class RenameMap(implicit p: Parameters) extends Module{
     tmp.robIdx := 0.U
     tmp
   }) ++ Seq.tabulate(32)(n => {
-    val tmp = info.cloneType
+    val tmp = Wire(info.cloneType)
     tmp.PRIdx := 0.U
     tmp.LRIdx := 0.U
     tmp.valid := false.B
@@ -110,7 +112,7 @@ class RenameMap(implicit p: Parameters) extends Module{
 
   when(io.port(0).valid & io.port(1).valid){
     // 0 and 1
-    io.port.map(_.bits).foreach(port => {
+    io.port.foreach(port => {
       quert_a_and_b(port)
     })
 
@@ -119,12 +121,12 @@ class RenameMap(implicit p: Parameters) extends Module{
     val emptyPRIdx_0 = PriorityEncoder(emptyPR)
     val emptyPRIdx_1 = 64.U - PriorityEncoder(emptyPR.reverse)
     assert(emptyPRIdx_0 =/= emptyPRIdx_1)
-    allocate_c(io.port(0).bits, emptyPRIdx_0)
-    allocate_c(io.port(1).bits, emptyPRIdx_1)
+    allocate_c(io.port(0), emptyPRIdx_0)
+    allocate_c(io.port(1), emptyPRIdx_1)
 
   }.elsewhen(io.port(0).valid & !io.port(1).valid){
     // 0
-    val port = io.port(0).bits
+    val port = io.port(0)
     quert_a_and_b(port)
 
     // allocate c
@@ -133,7 +135,7 @@ class RenameMap(implicit p: Parameters) extends Module{
     allocate_c(port, emptyPRIdx)
   }.elsewhen((!io.port(0).valid) & io.port(1).valid){
     // 1
-    val port = io.port(1).bits
+    val port = io.port(1)
     quert_a_and_b(port)
 
     // allocate c
@@ -142,7 +144,7 @@ class RenameMap(implicit p: Parameters) extends Module{
     allocate_c(port, emptyPRIdx)
   }.otherwise{
     // none
-    io.port.map(_.bits).foreach(port => {
+    io.port.foreach(port => {
       port.query_a.pr.bits.idx := 0.U
       port.query_a.pr.bits.isReady := 0.U
       port.query_a.pr.valid := 0.U
