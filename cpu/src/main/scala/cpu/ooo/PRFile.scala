@@ -42,4 +42,12 @@ class PRFile(implicit p: Parameters) extends Module{
     registers(io.write(1).waddr) := io.write(1).wdata
   }
 
+  if(p(Difftest)){
+//    val dar = Module(new DifftestArchIntRegState)
+//    dar.io.clock := clock
+//    dar.io.coreid := 0.U
+//    dar.io.gpr := registers
+
+    io.trap_code.get := registers(10) //a0 is x10 todo:需要查询rename来找到a0
+  }
 }

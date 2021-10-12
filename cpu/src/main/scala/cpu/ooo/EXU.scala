@@ -48,6 +48,8 @@ class FixPointU(implicit p: Parameters) extends Module{
   io.cdb.bits.brHit := Mux(io.in.bits.br_type.orR(), br.io.taken === io.in.bits.p_br, true.B)
   io.cdb.bits.expt := false.B // FixPointU can't generate except
   io.cdb.valid := io.in.valid
+
+  io.in.ready := true.B  // fixPointU always ready
 }
 
 // 访储执行单元 and CSR单元
@@ -102,7 +104,10 @@ class MemU(implicit p: Parameters) extends Module{
   mem.io.st_type := 0.U    // OOOMEM only handle ld inst
   mem.io.s_data := io.in.bits.s_data
   mem.io.alu_res := alu_res
-  // mem.io.inst_valid := 
+  // mem.io.inst_valid :=
+
+  mem.io.dcache <> io.dcache
+
 
   // CSR op
   val csr = Module(new CSR)
@@ -126,6 +131,7 @@ class MemU(implicit p: Parameters) extends Module{
     io.cdb.bits.wen := io.in.bits.wen
     io.cdb.bits.brHit := true.B
     io.cdb.bits.expt := csr.io.expt
+    io.cdb.valid := true.B
   }.elsewhen(io.in.fire() & isMem){
     // mem op
     when(io.in.bits.ld_type.orR()){

@@ -133,14 +133,14 @@ class Station(implicit p: Parameters) extends Module{
 
   // fixpointU
   io.out(0).valid := which_station_ready_0.orR()
+  io.out(0).bits.info := station(readyIdx_0)
   when(which_station_ready_0.orR()){
-    io.out(0).bits.info := station(readyIdx_0)
     station(readyIdx_0).state := S_ISSUE
   }
   // memU
   io.out(1).valid := which_station_ready_1.orR() & (readyIdx_1 =/= readyIdx_0)
+  io.out(1).bits.info := station(readyIdx_1)
   when(which_station_ready_1.orR() & (readyIdx_1 =/= readyIdx_0)){
-    io.out(1).bits.info := station(readyIdx_1)
     station(readyIdx_1).state := S_ISSUE
   }
 

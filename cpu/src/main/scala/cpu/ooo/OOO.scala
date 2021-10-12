@@ -59,7 +59,7 @@ class OOO(implicit p: Parameters) extends Module {
   ifet.io.fence_i_done := 0.U
   ifet.io.fence_pc := 0.U
   ifet.io.pc_except_entry.valid := false.B
-  ifet.io.pc_except_entry.valid := false.B
+  ifet.io.pc_except_entry.bits := 0.U
   ifet.io.br_info.bits := 0.U.asTypeOf(ifet.io.br_info.bits)
   ifet.io.br_info.valid := false.B
 
@@ -93,6 +93,7 @@ class OOO(implicit p: Parameters) extends Module {
   )).asUInt(), 0.U(3.W), !station_isfull)
 
   for(i <- 0 until 2){
+    // write to station
     station.io.in(i).bits.pr1       := rename.io.port(i).query_a.pr.bits.idx
     station.io.in(i).bits.pr1_s     := rename.io.port(i).query_a.pr.bits.isReady
     station.io.in(i).bits.pr1_inROB := rename.io.port(i).query_a.pr.bits.inROB
@@ -114,9 +115,16 @@ class OOO(implicit p: Parameters) extends Module {
     station.io.in(i).bits.wen       := ctrl(i).wen
     station.io.in(i).bits.illeage   := ctrl(i).illegal
     station.io.in(i).bits.inst      := if_reg(i).bits.inst
+    station.io.in(i).bits.br_type   := ctrl(i).br_type
+    station.io.in(i).bits.p_br      := if_reg(i).bits.pTaken
     station.io.in(i).bits.state     := 1.U // wait to issue
+    station.io.in(i).valid := if_reg(i).valid
 
-    station.io.in(i).valid := station.io.in(i).valid
+    // write rob
+    rob.io.in.fromID(i).bits.prdORaddr := Mux(ctrl(i).st_type.orR(), 0.U, rename.io.port(i).allocate_c.pr.bits) // todo: how to make sure mem address?
+    rob.io.in.fromID(i).bits.needData  := ctrl(i).st_type.orR() | ctrl(i).wen
+    rob.io.in.fromID(i).bits.isPrd     := !ctrl(i).st_type.orR()
+    rob.io.in.fromID(i).valid := if_reg(i).valid
   }
 
   //= issue ==================================================

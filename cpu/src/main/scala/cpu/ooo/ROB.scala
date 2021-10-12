@@ -6,8 +6,8 @@ import chipsalliance.rocketchip.config._
 
 class ROBIO(implicit p: Parameters) extends Bundle {
   val in = new Bundle {
-    val fromID = Vec(2, Flipped(Decoupled(new Bundle {
-      val stationIdx = UInt(4.W)
+    val fromID = Vec(2, Flipped(Valid(new Bundle {
+//      val stationIdx = UInt(4.W)
       val prdORaddr = UInt(p(AddresWidth).W)
       val needData = Bool()
       val isPrd = Bool()
@@ -108,10 +108,11 @@ class ROB(implicit p: Parameters) extends Module {
     rob(io.memCDB.bits.idx).data := io.memCDB.bits.data
   }
 
-  def write_prfile(portIdx: Int, rob_info: ROBInfo) = {
+  def write_prfile(portIdx: Int, rob_info: ROBInfo, valid: Bool) = {
     io.commit.reg(portIdx).bits.prn := rob_info.prdORaddr
     io.commit.reg(portIdx).bits.data := rob_info.data
     io.commit.reg(portIdx).bits.wen := rob_info.wen
+    io.commit.reg(portIdx).valid := valid
 
     io.commit2rename(portIdx).valid := rob_info.wen & rob_info.isPrd
     io.commit2rename(portIdx).bits := rob_info.prdORaddr
@@ -120,8 +121,8 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit2station(portIdx).bits := rob_info.prdORaddr
   }
 
-  def write_dcache(rob_info: ROBInfo) = {
-    io.commit.dcache.req.valid := rob_info.wen
+  def write_dcache(rob_info: ROBInfo, valid: Bool) = {
+    io.commit.dcache.req.valid := valid
     io.commit.dcache.req.bits.addr := rob_info.prdORaddr
     io.commit.dcache.req.bits.data := rob_info.data
     io.commit.dcache.req.bits.mask := rob_info.mask
@@ -139,45 +140,45 @@ class ROB(implicit p: Parameters) extends Module {
     when(rob(commitIdx.value).isPrd & rob(commitIdx.value + 1.U).isPrd) {
       // commit 2 prd inst
       commitIdx.value := commitIdx.value + 2.U
-      write_prfile(0, rob(commitIdx.value))
-      write_prfile(1, rob(commitIdx.value + 1.U))
-      write_dcache(0.U.asTypeOf(new ROBInfo))
+      write_prfile(0, rob(commitIdx.value), true.B)
+      write_prfile(1, rob(commitIdx.value + 1.U), true.B)
+      write_dcache(0.U.asTypeOf(new ROBInfo), false.B)
     }.elsewhen(rob(commitIdx.value).isPrd & !rob(commitIdx.value + 1.U).isPrd) {
       // commit 1 prd and 1 store
       commitIdx.value := commitIdx.value + 2.U
-      write_prfile(0, rob(commitIdx.value))
-      write_prfile(1, 0.U.asTypeOf(new ROBInfo))
-      write_dcache(rob(commitIdx.value + 1.U))
+      write_prfile(0, rob(commitIdx.value), true.B)
+      write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
+      write_dcache(rob(commitIdx.value + 1.U), true.B)
     }.elsewhen((!rob(commitIdx.value).isPrd) & rob(commitIdx.value + 1.U).isPrd) {
       // commit 1 store and prd
       commitIdx.value := commitIdx.value + 2.U
-      write_prfile(0, 0.U.asTypeOf(new ROBInfo))
-      write_prfile(1, rob(commitIdx.value + 1.U))
-      write_dcache(rob(commitIdx.value))
-    }.elsewhen((!rob(commitIdx.value).isPrd) & (!rob(commitIdx.value + 1.U).isPrd)) {
+      write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
+      write_prfile(1, rob(commitIdx.value + 1.U), true.B)
+      write_dcache(rob(commitIdx.value), true.B)
+    }.otherwise {
       // 2 store inst, need commit one by one
       commitIdx.value := commitIdx.value + 1.U
-      write_prfile(0, 0.U.asTypeOf(new ROBInfo))
-      write_prfile(1, 0.U.asTypeOf(new ROBInfo))
-      write_dcache(rob(commitIdx.value))
+      write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
+      write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
+      write_dcache(rob(commitIdx.value), true.B)
     }
   }.elsewhen((rob(commitIdx.value).state === GETDATA) & (rob(commitIdx.value + 1.U).state =/= GETDATA)) {
     // one inst complete and want to commit
     when(rob(commitIdx.value).isPrd) {
       // a prd inst
-      write_prfile(0, rob(commitIdx.value))
-      write_prfile(1, 0.U.asTypeOf(new ROBInfo))
-      write_dcache(0.U.asTypeOf(new ROBInfo))
+      write_prfile(0, rob(commitIdx.value), true.B)
+      write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
+      write_dcache(0.U.asTypeOf(new ROBInfo), false.B)
     }.otherwise {
       // a store inst
-      write_prfile(0, 0.U.asTypeOf(new ROBInfo))
-      write_prfile(1, 0.U.asTypeOf(new ROBInfo))
-      write_dcache(rob(commitIdx.value))
+      write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
+      write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
+      write_dcache(rob(commitIdx.value), true.B)
     }
   }.otherwise {
-    write_prfile(0, 0.U.asTypeOf(new ROBInfo))
-    write_prfile(1, 0.U.asTypeOf(new ROBInfo))
-    write_dcache(0.U.asTypeOf(new ROBInfo))
+    write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
+    write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
+    write_dcache(0.U.asTypeOf(new ROBInfo), false.B)
   }
 
   // station read rob in issue stage
