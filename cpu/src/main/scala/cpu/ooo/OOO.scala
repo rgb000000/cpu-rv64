@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
 import chisel3.util.experimental.BoringUtils
+import difftest._
 
 class OOO(implicit p: Parameters) extends Module {
   val io = IO(new Bundle {
@@ -124,7 +125,12 @@ class OOO(implicit p: Parameters) extends Module {
     rob.io.in.fromID(i).bits.prdORaddr := Mux(ctrl(i).st_type.orR(), 0.U, rename.io.port(i).allocate_c.pr.bits) // todo: how to make sure mem address?
     rob.io.in.fromID(i).bits.needData  := ctrl(i).st_type.orR() | ctrl(i).wen
     rob.io.in.fromID(i).bits.isPrd     := !ctrl(i).st_type.orR()
-    rob.io.in.fromID(i).valid := if_reg(i).valid
+    rob.io.in.fromID(i).bits.wen       := ctrl(i).wen
+    rob.io.in.fromID(i).bits.st_type   := ctrl(i).st_type
+    rob.io.in.fromID(i).bits.ld_type   := ctrl(i).ld_type
+    rob.io.in.fromID(i).bits.pc        := if_reg(i).bits.pc
+    rob.io.in.fromID(i).bits.inst      := if_reg(i).bits.inst
+    rob.io.in.fromID(i).valid          := if_reg(i).valid
   }
 
   //= issue ==================================================
@@ -235,4 +241,64 @@ class OOO(implicit p: Parameters) extends Module {
   dcacheCrossBar.io.in(0) <> mem.io.dcache
   dcacheCrossBar.io.in(1) <> rob.io.commit.dcache
   dcacheCrossBar.io.out <> io.dcache
+
+  if(p(Difftest)){
+    println(">>>>>>>> difftest mode!")
+    for(i <- 0 until 2){
+      val commitPort = rob.io.commit.reg(i)
+      val dic = Module(new DifftestInstrCommit)
+      dic.io.clock := clock
+      dic.io.coreid := 0.U
+      dic.io.index := i.U
+
+      dic.io.valid := RegNext(commitPort.valid)
+      dic.io.pc := RegNext(commitPort.bits.pc)
+      dic.io.instr := RegNext(commitPort.bits.inst)
+      dic.io.skip := RegNext(
+        ((commitPort.bits.inst === "h0000007b".U)
+          |((commitPort.bits.isST | commitPort.bits.isLD) & (p(CLINTRegs).values.map(commitPort.bits.memAddress === _.U).reduce(_|_)))
+          |(commitPort.bits.inst === BitPat("b101100000000_?????_010_?????_1110011"))
+          )
+      )
+      dic.io.isRVC := false.B
+      dic.io.scFailed := false.B
+      dic.io.wen := RegNext(commitPort.bits.wen)
+      dic.io.wdata := RegNext(commitPort.bits.data)
+      dic.io.wdest := RegNext(commitPort.bits.prn) //todo: need to convert to arch register!
+
+    }
+
+    val cycleCnt = Counter(Int.MaxValue)
+    cycleCnt.inc()
+    BoringUtils.addSource(cycleCnt.value, "cycleCnt")
+    val instCnt = Counter(Int.MaxValue)
+    when(rob.io.commit.reg(0).valid & rob.io.commit.reg(0).valid){
+      instCnt.value := instCnt.value + 2.U
+    }.elsewhen((!rob.io.commit.reg(0).valid) & (!rob.io.commit.reg(0).valid)){
+      // no commit
+    }.otherwise{
+      instCnt.inc()
+    }
+
+    val dte = Module(new DifftestTrapEvent)
+    dte.io.clock := clock
+    dte.io.coreid := 0.U
+    dte.io.valid := RegNext(
+       ((rob.io.commit.reg(0).bits.inst === "h0000006b".U) & rob.io.commit.reg(0).valid)
+      |((rob.io.commit.reg(1).bits.inst === "h0000006b".U) & rob.io.commit.reg(1).valid)
+    )
+    dte.io.code := 0.U
+    dte.io.pc := RegNext(Mux(rob.io.commit.reg(0).valid, rob.io.commit.reg(0).bits.pc, rob.io.commit.reg(1).bits.pc))
+    dte.io.cycleCnt := cycleCnt.value
+    dte.io.instrCnt := instCnt.value
+
+    // todo: difftest uart
+    val difftest_uart_valid = Wire(Bool())
+    val difftest_uart_ch    = Wire(UInt(8.W))
+    BoringUtils.addSource(difftest_uart_valid, "difftest_uart_valid")
+    BoringUtils.addSource(difftest_uart_ch, "difftest_uart_ch")
+    difftest_uart_valid := RegNext(0.U)
+    difftest_uart_ch := 0.U
+
+  }
 }

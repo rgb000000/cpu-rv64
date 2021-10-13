@@ -11,6 +11,12 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val prdORaddr = UInt(p(AddresWidth).W)
       val needData = Bool()
       val isPrd = Bool()
+
+      val wen = Bool()
+      val st_type = UInt(3.W)
+      val ld_type = UInt(3.W)
+      val pc = UInt(p(AddresWidth).W)
+      val inst = UInt(32.W)
     })))
     val cdb = Vec(2, Flipped(Valid(new CDB)))
   }
@@ -30,6 +36,13 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val prn = UInt(6.W)
       val data = UInt(p(XLen).W)
       val wen = Bool()
+
+      // for difftest
+      val pc = UInt(p(AddresWidth).W)
+      val inst = UInt(32.W)
+      val memAddress = UInt(p(AddresWidth).W)
+      val isST = Bool()
+      val isLD = Bool()
     }))
     val dcache = Flipped(new CacheCPUIO)
   }
@@ -40,12 +53,17 @@ class ROBIO(implicit p: Parameters) extends Bundle {
 class ROBInfo(implicit p: Parameters) extends Bundle {
   val stationIdx = UInt(4.W)
 
+  val pc = UInt(p(AddresWidth).W)
+  val inst = UInt(32.W)
+
   val prdORaddr = UInt(p(AddresWidth).W)
   val data = UInt(p(XLen).W)
   val needData = Bool()
   val isPrd = Bool()
   val mask = UInt(8.W)
   val wen = Bool()
+  val st_type = UInt(3.W)
+  val ld_type = UInt(3.W)
 
   val brHit = Bool()
   val expt = Bool()
@@ -63,13 +81,17 @@ class ROB(implicit p: Parameters) extends Module {
 
   val rob = RegInit(VecInit(Seq.fill(16)(0.U.asTypeOf(new ROBInfo))))
 
-  def write_rob(fromIDport: Int, idx: UInt, wen: Bool, mask: UInt) = {
-    rob(cnt.value).prdORaddr := io.in.fromID(fromIDport).bits.prdORaddr
-    rob(cnt.value).needData := io.in.fromID(fromIDport).bits.needData
-    rob(cnt.value).isPrd := io.in.fromID(fromIDport).bits.isPrd
-    rob(cnt.value).wen := wen
-    rob(cnt.value).mask := mask
-    rob(cnt.value).state := WAITDATA
+  def write_rob(fromIDport: Int, idx: UInt) = {
+    rob(idx).prdORaddr := io.in.fromID(fromIDport).bits.prdORaddr
+    rob(idx).needData := io.in.fromID(fromIDport).bits.needData
+    rob(idx).isPrd := io.in.fromID(fromIDport).bits.isPrd
+    rob(idx).wen := io.in.fromID(fromIDport).bits.wen
+    rob(idx).st_type := io.in.fromID(fromIDport).bits.st_type
+    rob(idx).ld_type := io.in.fromID(fromIDport).bits.ld_type
+    rob(idx).mask := "h00".U
+    rob(idx).state := WAITDATA
+    rob(idx).pc := io.in.fromID(fromIDport).bits.pc
+    rob(idx).inst := io.in.fromID(fromIDport).bits.inst
   }
 
   // write rob
@@ -77,16 +99,16 @@ class ROB(implicit p: Parameters) extends Module {
   when(io.in.fromID(0).fire() & io.in.fromID(1).fire()) {
     // 0, 1
     cnt.value := cnt.value + 2.U
-    write_rob(0, cnt.value, true.B, "hff".U)
-    write_rob(1, cnt.value + 1.U, true.B, "hff".U)
+    write_rob(0, cnt.value)
+    write_rob(1, cnt.value + 1.U)
   }.elsewhen(io.in.fromID(0).fire() & !io.in.fromID(1).fire()) {
     // 0
     cnt.value := cnt.value + 1.U
-    write_rob(0, cnt.value, true.B, "hff".U)
+    write_rob(0, cnt.value)
   }.elsewhen((!io.in.fromID(0).fire()) & io.in.fromID(1).fire()) {
     // 1
     cnt.value := cnt.value + 1.U
-    write_rob(1, cnt.value, true.B, "hff".U)
+    write_rob(1, cnt.value)
   }.otherwise {
     // none
   }
@@ -109,7 +131,13 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit.reg(portIdx).bits.prn := rob_info.prdORaddr
     io.commit.reg(portIdx).bits.data := rob_info.data
     io.commit.reg(portIdx).bits.wen := rob_info.wen
+    io.commit.reg(portIdx).bits.pc := rob_info.pc
+    io.commit.reg(portIdx).bits.inst := rob_info.inst
     io.commit.reg(portIdx).valid := valid
+
+    io.commit.reg(portIdx).bits.memAddress := rob_info.prdORaddr
+    io.commit.reg(portIdx).bits.isST := rob_info.st_type.orR()
+    io.commit.reg(portIdx).bits.isLD := rob_info.ld_type.orR()
 
     io.commit2rename(portIdx).valid := rob_info.wen & rob_info.isPrd
     io.commit2rename(portIdx).bits := rob_info.prdORaddr
@@ -118,7 +146,7 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit2station(portIdx).bits := rob_info.prdORaddr
   }
 
-  def write_dcache(rob_info: ROBInfo, valid: Bool) = {
+  def write_dcache(rob_info: ROBInfo, valid: Bool, commitIdx: UInt) = {
     io.commit.dcache.req.valid := valid
     io.commit.dcache.req.bits.addr := rob_info.prdORaddr
     io.commit.dcache.req.bits.data := rob_info.data
@@ -139,25 +167,25 @@ class ROB(implicit p: Parameters) extends Module {
       commitIdx.value := commitIdx.value + 2.U
       write_prfile(0, rob(commitIdx.value), true.B)
       write_prfile(1, rob(commitIdx.value + 1.U), true.B)
-      write_dcache(0.U.asTypeOf(new ROBInfo), false.B)
+      write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
     }.elsewhen(rob(commitIdx.value).isPrd & !rob(commitIdx.value + 1.U).isPrd) {
       // commit 1 prd and 1 store
       commitIdx.value := commitIdx.value + 2.U
       write_prfile(0, rob(commitIdx.value), true.B)
-      write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
-      write_dcache(rob(commitIdx.value + 1.U), true.B)
+      write_prfile(1, 0.U.asTypeOf(new ROBInfo), true.B)
+      write_dcache(rob(commitIdx.value + 1.U), true.B, 1.U)
     }.elsewhen((!rob(commitIdx.value).isPrd) & rob(commitIdx.value + 1.U).isPrd) {
       // commit 1 store and prd
       commitIdx.value := commitIdx.value + 2.U
-      write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
+      write_prfile(0, 0.U.asTypeOf(new ROBInfo), true.B)
       write_prfile(1, rob(commitIdx.value + 1.U), true.B)
-      write_dcache(rob(commitIdx.value), true.B)
+      write_dcache(rob(commitIdx.value), true.B, 0.U)
     }.otherwise {
       // 2 store inst, need commit one by one
       commitIdx.value := commitIdx.value + 1.U
-      write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
+      write_prfile(0, 0.U.asTypeOf(new ROBInfo), true.B)
       write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
-      write_dcache(rob(commitIdx.value), true.B)
+      write_dcache(rob(commitIdx.value), true.B, 0.U)
     }
   }.elsewhen((rob(commitIdx.value).state === GETDATA) & (rob(commitIdx.value + 1.U).state =/= GETDATA)) {
     // one inst complete and want to commit
@@ -165,17 +193,17 @@ class ROB(implicit p: Parameters) extends Module {
       // a prd inst
       write_prfile(0, rob(commitIdx.value), true.B)
       write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
-      write_dcache(0.U.asTypeOf(new ROBInfo), false.B)
+      write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
     }.otherwise {
       // a store inst
       write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
       write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
-      write_dcache(rob(commitIdx.value), true.B)
+      write_dcache(rob(commitIdx.value), true.B, 0.U)
     }
   }.otherwise {
     write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
     write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
-    write_dcache(0.U.asTypeOf(new ROBInfo), false.B)
+    write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
   }
 
   // station read rob in issue stage
