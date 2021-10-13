@@ -23,7 +23,16 @@ class PRFile(implicit p: Parameters) extends Module{
       val wdata = Input(UInt(p(XLen).W))
     })
 
-    val trap_code = if (p(Difftest)) Some(Output(UInt(p(XLen).W))) else None
+    val difftest = if(p(Difftest)) {Some(new Bundle{
+      val archReg = new Bundle{
+        val prs = Flipped(Valid(Vec(32, UInt(6.W))))
+      }
+
+      val trap_cpode = new Bundle{
+        val pr = Flipped(Valid(UInt(6.W)))
+        val data = Valid(UInt(p(XLen).W))
+      }
+    })} else {None}
   })
 
   val registers = RegInit(VecInit(Seq.fill(64)(0.asUInt(p(XLen).W))))
@@ -42,12 +51,20 @@ class PRFile(implicit p: Parameters) extends Module{
     registers(io.write(1).waddr) := io.write(1).wdata
   }
 
-  if(p(Difftest)){
-//    val dar = Module(new DifftestArchIntRegState)
-//    dar.io.clock := clock
-//    dar.io.coreid := 0.U
-//    dar.io.gpr := registers
 
-    io.trap_code.get := registers(10) //a0 is x10 todo:需要查询rename来找到a0
+  if(p(Difftest)){
+    val vitual_arch_reg = Wire(Vec(32, UInt(64.W)))
+    for(i <- 0 until 32){
+      vitual_arch_reg(i) := registers(io.difftest.get.archReg.prs.bits(i))
+    }
+
+
+    val dar = Module(new DifftestArchIntRegState)
+    dar.io.clock := clock
+    dar.io.coreid := 0.U
+    dar.io.gpr := vitual_arch_reg
+
+    io.difftest.get.trap_cpode.data.valid := io.difftest.get.trap_cpode.pr.valid
+    io.difftest.get.trap_cpode.data.bits := registers(io.difftest.get.trap_cpode.pr.bits)
   }
 }

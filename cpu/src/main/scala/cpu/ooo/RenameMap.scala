@@ -42,6 +42,22 @@ class RenameMap(implicit p: Parameters) extends Module{
 
     val cdb = Vec(2, Flipped(Valid(new CDB)))         // wb
     val robCommit = Vec(2, Flipped(Valid(UInt(6.W)))) // commit
+
+    val difftest = if (p(Difftest)) {Some(new Bundle {
+      val toInstCommit = Vec(2, new Bundle{
+        // query a reg
+        val pr = Flipped(Valid(UInt(6.W)))
+        val lr = Valid(UInt(5.W))
+      })
+      val toTrap = new Bundle{
+        // query a0, x10
+        val pr = Valid(UInt(6.W))
+      }
+      val toArchReg = new Bundle{
+        // output 32 arch regs' prn
+        val prs = Valid(Vec(32, UInt(6.W)))
+      }
+    })} else {None}
   })
 
   val STATECONST = new Bundle{
@@ -184,5 +200,40 @@ class RenameMap(implicit p: Parameters) extends Module{
       cam(robcommit.bits).state := STATECONST.COMMIT
     }
   })
+
+  def findCAM_LR(LRIdx: UInt): UInt = {
+    val query = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === LRIdx))))
+    val idx = PriorityEncoder(query)
+    assert(Cat(query).orR())
+    cam(idx).PRIdx
+  }
+
+  def findCAM_PR(PRIdx: UInt): UInt = {
+    val query = WireInit(VecInit(cam.map(x => x.valid & (x.PRIdx === PRIdx))))
+    val idx = PriorityEncoder(query)
+    assert(Cat(query).orR())
+    cam(idx).LRIdx
+  }
+
+  if(p(Difftest)){
+    // toInstCommit  通过PR查找LR
+    io.difftest.get.toInstCommit(0).lr.bits := findCAM_PR(io.difftest.get.toInstCommit(0).pr.bits)
+    io.difftest.get.toInstCommit(0).lr.valid := io.difftest.get.toInstCommit(0).pr.valid
+    io.difftest.get.toInstCommit(1).lr.bits := findCAM_PR(io.difftest.get.toInstCommit(1).pr.bits)
+    io.difftest.get.toInstCommit(1).lr.valid := io.difftest.get.toInstCommit(1).pr.valid
+
+    // toTrap a0, in other word x10 通过LR找PR
+    io.difftest.get.toTrap.pr.bits := findCAM_LR(10.U)
+    io.difftest.get.toTrap.pr.valid := true.B
+
+    // to arch registers   通过LR找PR
+    val archReg_prn = Wire(Vec(32, UInt(6.W)))
+    archReg_prn.zipWithIndex.foreach(x => {
+      val (prIdx, lrIdx) = x
+      prIdx := findCAM_LR(lrIdx.U)
+    })
+    (io.difftest.get.toArchReg.prs.bits, archReg_prn).zipped.foreach(_ := _)
+    io.difftest.get.toArchReg.prs.valid := true.B
+  }
 
 }

@@ -246,11 +246,11 @@ class OOO(implicit p: Parameters) extends Module {
     println(">>>>>>>> difftest mode!")
     for(i <- 0 until 2){
       val commitPort = rob.io.commit.reg(i)
+      val renameQueryPort = rename.io.difftest.get.toInstCommit(i)
       val dic = Module(new DifftestInstrCommit)
       dic.io.clock := clock
       dic.io.coreid := 0.U
       dic.io.index := i.U
-
       dic.io.valid := RegNext(commitPort.valid)
       dic.io.pc := RegNext(commitPort.bits.pc)
       dic.io.instr := RegNext(commitPort.bits.inst)
@@ -264,7 +264,10 @@ class OOO(implicit p: Parameters) extends Module {
       dic.io.scFailed := false.B
       dic.io.wen := RegNext(commitPort.bits.wen)
       dic.io.wdata := RegNext(commitPort.bits.data)
-      dic.io.wdest := RegNext(commitPort.bits.prn) //todo: need to convert to arch register!
+
+      renameQueryPort.pr.bits := commitPort.bits.prn
+      renameQueryPort.pr.valid := true.B
+      dic.io.wdest := RegNext(renameQueryPort.lr.bits)
 
     }
 
@@ -287,7 +290,7 @@ class OOO(implicit p: Parameters) extends Module {
        ((rob.io.commit.reg(0).bits.inst === "h0000006b".U) & rob.io.commit.reg(0).valid)
       |((rob.io.commit.reg(1).bits.inst === "h0000006b".U) & rob.io.commit.reg(1).valid)
     )
-    dte.io.code := 0.U
+    dte.io.code := prfile.io.difftest.get.trap_cpode.data.bits
     dte.io.pc := RegNext(Mux(rob.io.commit.reg(0).valid, rob.io.commit.reg(0).bits.pc, rob.io.commit.reg(1).bits.pc))
     dte.io.cycleCnt := cycleCnt.value
     dte.io.instrCnt := instCnt.value
@@ -300,5 +303,9 @@ class OOO(implicit p: Parameters) extends Module {
     difftest_uart_valid := RegNext(0.U)
     difftest_uart_ch := 0.U
 
+    // arch register
+    rename.io.difftest.get.toArchReg <> prfile.io.difftest.get.archReg
+    // trap code
+    prfile.io.difftest.get.trap_cpode.pr <> rename.io.difftest.get.toTrap.pr
   }
 }
