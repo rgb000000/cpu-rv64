@@ -104,7 +104,7 @@ difftest(
     inst_file = glob(["src/main/resources/inst*.hex"]),
     mode = "DRAM3Sim",
     module_code = "cpu.MyOOOSimTop",
-    module_name = "MyOOOSimTop",
+    module_name = "MySimTop",
     deps = [
         "cpu",
         "//dependency:config",
