@@ -93,6 +93,8 @@ class Station(implicit p: Parameters) extends Module{
     })))
   })
 
+  io.out.foreach(dontTouch(_))
+
   val S_INVALID = 0.U(2.W)
   val S_WAIT    = 1.U(2.W)
   val S_ISSUE   = 2.U(2.W)
@@ -120,28 +122,28 @@ class Station(implicit p: Parameters) extends Module{
   // issue
   val which_station_ready_0 = Cat(station.map(x => {
     // alu op and branch, no ld/st and csr
-    x.pr1_s & x.pr2_s & (!x.ld_type.orR()) & (!x.st_type.orR()) & (!x.csr_op.orR())
+    x.pr1_s & x.pr2_s & (!x.ld_type.orR()) & (!x.st_type.orR()) & (!x.csr_op.orR()) & (x.state === S_WAIT)
   }).reverse)
-  val readyIdx_0 = PriorityEncoder(which_station_ready_0)
+  val readyIdx_0 = WireInit(PriorityEncoder(which_station_ready_0))
 
   val which_station_ready_1 = Cat(station.map(x => {
     // alu ld/st csr, no branch
-    x.pr1_s & x.pr2_s & (!x.br_type.orR())
-  }).reverse)
-  val readyIdx_1 = PriorityEncoder(which_station_ready_1)
+    x.pr1_s & x.pr2_s & (!x.br_type.orR()) & (x.state === S_WAIT)
+  }))
+  val readyIdx_1 = WireInit(15.U - PriorityEncoder(which_station_ready_1))
 
   // fixpointU
   io.out(0).valid := which_station_ready_0.orR()
   io.out(0).bits.info := station(readyIdx_0)
   io.out(0).bits.idx := readyIdx_0
-  when(which_station_ready_0.orR()){
+  when(io.out(0).fire()){
     station(readyIdx_0).state := S_ISSUE
   }
   // memU
   io.out(1).valid := which_station_ready_1.orR() & (readyIdx_1 =/= readyIdx_0)
   io.out(1).bits.info := station(readyIdx_1)
   io.out(1).bits.idx := readyIdx_1
-  when(which_station_ready_1.orR() & (readyIdx_1 =/= readyIdx_0)){
+  when(io.out(1).fire() & (readyIdx_1 =/= readyIdx_0)){
     station(readyIdx_1).state := S_ISSUE
   }
 

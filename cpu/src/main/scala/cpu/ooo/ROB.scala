@@ -74,9 +74,10 @@ class ROBInfo(implicit p: Parameters) extends Bundle {
 class ROB(implicit p: Parameters) extends Module {
   val io = IO(new ROBIO)
 
-  val EMPTY = 0.U(2.W)
+  val EMPTY    = 0.U(2.W)
   val WAITDATA = 1.U(2.W)
-  val GETDATA = 2.U(2.W)
+  val GETDATA  = 2.U(2.W)
+  val COMMITED = 3.U(2.W)
 
 
   val rob = RegInit(VecInit(Seq.fill(16)(0.U.asTypeOf(new ROBInfo))))
@@ -168,37 +169,48 @@ class ROB(implicit p: Parameters) extends Module {
       write_prfile(0, rob(commitIdx.value), true.B)
       write_prfile(1, rob(commitIdx.value + 1.U), true.B)
       write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+      rob(commitIdx.value).state := COMMITED
+      rob(commitIdx.value + 1.U).state := COMMITED
     }.elsewhen(rob(commitIdx.value).isPrd & !rob(commitIdx.value + 1.U).isPrd) {
       // commit 1 prd and 1 store
       commitIdx.value := commitIdx.value + 2.U
       write_prfile(0, rob(commitIdx.value), true.B)
       write_prfile(1, 0.U.asTypeOf(new ROBInfo), true.B)
       write_dcache(rob(commitIdx.value + 1.U), true.B, 1.U)
+      rob(commitIdx.value).state := COMMITED
+      rob(commitIdx.value + 1.U).state := COMMITED
     }.elsewhen((!rob(commitIdx.value).isPrd) & rob(commitIdx.value + 1.U).isPrd) {
       // commit 1 store and prd
       commitIdx.value := commitIdx.value + 2.U
       write_prfile(0, 0.U.asTypeOf(new ROBInfo), true.B)
       write_prfile(1, rob(commitIdx.value + 1.U), true.B)
       write_dcache(rob(commitIdx.value), true.B, 0.U)
+      rob(commitIdx.value).state := COMMITED
+      rob(commitIdx.value + 1.U).state := COMMITED
     }.otherwise {
       // 2 store inst, need commit one by one
       commitIdx.value := commitIdx.value + 1.U
       write_prfile(0, 0.U.asTypeOf(new ROBInfo), true.B)
       write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
       write_dcache(rob(commitIdx.value), true.B, 0.U)
+      rob(commitIdx.value).state := COMMITED
     }
   }.elsewhen((rob(commitIdx.value).state === GETDATA) & (rob(commitIdx.value + 1.U).state =/= GETDATA)) {
     // one inst complete and want to commit
     when(rob(commitIdx.value).isPrd) {
       // a prd inst
+      commitIdx.value := commitIdx.value + 1.U
       write_prfile(0, rob(commitIdx.value), true.B)
       write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
       write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+      rob(commitIdx.value).state := COMMITED
     }.otherwise {
       // a store inst
+      commitIdx.value := commitIdx.value + 1.U
       write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
       write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
       write_dcache(rob(commitIdx.value), true.B, 0.U)
+      rob(commitIdx.value).state := COMMITED
     }
   }.otherwise {
     write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)

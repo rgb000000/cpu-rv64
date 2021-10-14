@@ -94,50 +94,98 @@ class RenameMap(implicit p: Parameters) extends Module{
     tmp
   })))
 
-  def quert_a_and_b(port: QueryAllocate): Unit = {
-    // query a
-    val query_a = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === port.query_a.lr.bits))))
-    assert(Cat(query_a).orR() =/= 0.U)
-    val query_a_idx = PriorityEncoder(query_a)
-    port.query_a.pr.bits.idx := query_a_idx
-    port.query_a.pr.bits.isReady := (cam(query_a_idx).state === STATECONST.WB) | (cam(query_a_idx).state === STATECONST.COMMIT)
-    port.query_a.pr.bits.inROB := cam(query_a_idx).state === STATECONST.WB
-    port.query_a.pr.bits.robIdx := cam(query_a_idx).robIdx
-    port.query_a.pr.valid := port.query_a.lr.fire()
+  def quert_a_and_b(port: QueryAllocate, portIdx: Int): Unit = {
+    if(portIdx > 0){
+      // 需将将port0的allocate结果前馈过来作为查询结果
+      val port0_allocate_a = io.port(0).allocate_c.lr.valid & (io.port(0).allocate_c.lr.bits === port.query_a.lr.bits)
+      val query_a = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === port.query_a.lr.bits))))
+      val query_a_idx = PriorityEncoder(query_a)
+      port.query_a.pr.bits.idx     := Mux(port0_allocate_a, io.port(0).allocate_c.pr.bits, query_a_idx)
+      port.query_a.pr.bits.isReady := Mux(port0_allocate_a, false.B,                       (cam(query_a_idx).state === STATECONST.WB) | (cam(query_a_idx).state === STATECONST.COMMIT))
+      port.query_a.pr.bits.inROB   := Mux(port0_allocate_a, false.B,                       cam(query_a_idx).state === STATECONST.WB)
+      port.query_a.pr.bits.robIdx  := Mux(port0_allocate_a, 0.U,                           cam(query_a_idx).robIdx)
+      port.query_a.pr.valid        := port.query_a.lr.fire()
 
-    // quary b
-    val query_b = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === port.query_b.lr.bits))))
-    assert(Cat(query_b).orR() =/= 0.U)
-    val query_b_idx = PriorityEncoder(query_b)
-    port.query_b.pr.bits.idx := query_b_idx
-    port.query_b.pr.bits.isReady := (cam(query_b_idx).state === STATECONST.WB) | (cam(query_b_idx).state === STATECONST.COMMIT)
-    port.query_b.pr.bits.inROB := cam(query_b_idx).state === STATECONST.WB
-    port.query_b.pr.bits.robIdx := cam(query_b_idx).robIdx
-    port.query_b.pr.valid := port.query_b.lr.fire()
+      val port0_allocate_b = io.port(0).allocate_c.lr.valid & (io.port(0).allocate_c.lr.bits === port.query_b.lr.bits)
+      val query_b = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === port.query_b.lr.bits))))
+      val query_b_idx = PriorityEncoder(query_b)
+      port.query_b.pr.bits.idx     := Mux(port0_allocate_b, io.port(0).allocate_c.pr.bits, query_b_idx)
+      port.query_b.pr.bits.isReady := Mux(port0_allocate_b, false.B,                       (cam(query_b_idx).state === STATECONST.WB) | (cam(query_b_idx).state === STATECONST.COMMIT))
+      port.query_b.pr.bits.inROB   := Mux(port0_allocate_b, false.B,                       cam(query_b_idx).state === STATECONST.WB)
+      port.query_b.pr.bits.robIdx  := Mux(port0_allocate_b, 0.U,                           cam(query_b_idx).robIdx)
+      port.query_b.pr.valid        := port.query_b.lr.fire()
+    }else{
+      // 正常查询
+      // query a
+      val query_a = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === port.query_a.lr.bits))))
+      val query_a_idx = PriorityEncoder(query_a)
+      port.query_a.pr.bits.idx := query_a_idx
+      port.query_a.pr.bits.isReady := (cam(query_a_idx).state === STATECONST.WB) | (cam(query_a_idx).state === STATECONST.COMMIT)
+      port.query_a.pr.bits.inROB := cam(query_a_idx).state === STATECONST.WB
+      port.query_a.pr.bits.robIdx := cam(query_a_idx).robIdx
+      port.query_a.pr.valid := port.query_a.lr.fire()
+
+      // quary b
+      val query_b = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === port.query_b.lr.bits))))
+      val query_b_idx = PriorityEncoder(query_b)
+      port.query_b.pr.bits.idx := query_b_idx
+      port.query_b.pr.bits.isReady := (cam(query_b_idx).state === STATECONST.WB) | (cam(query_b_idx).state === STATECONST.COMMIT)
+      port.query_b.pr.bits.inROB := cam(query_b_idx).state === STATECONST.WB
+      port.query_b.pr.bits.robIdx := cam(query_b_idx).robIdx
+      port.query_b.pr.valid := port.query_b.lr.fire()
+    }
   }
 
-  def allocate_c(port: QueryAllocate, emptyPRIdx: UInt) = {
-    // allocate c
-    when(port.allocate_c.lr.fire()){
-      cam(emptyPRIdx).state := STATECONST.MAPPED
-      cam(emptyPRIdx).LRIdx := port.allocate_c.lr.bits
+  def allocate_c(port: QueryAllocate, emptyPRIdx: UInt, portIdx: Int) = {
+    if(portIdx == 0){
+      // port1 如果和 port0同时对一个lr进行分配，port1分配的结果应该为valid, port0分配结果应该为valid
+      val port_0_1_allocate_same_lr = io.port(0).allocate_c.lr.fire() & port.allocate_c.lr.fire() & (io.port(0).allocate_c.lr.bits === port.allocate_c.lr.bits)
+      when(port.allocate_c.lr.fire() & (port.allocate_c.lr.bits =/= 0.U)){
+        cam(emptyPRIdx).state := STATECONST.MAPPED
+        cam(emptyPRIdx).LRIdx := port.allocate_c.lr.bits
+      }
+      port.allocate_c.pr.valid := port.allocate_c.lr.fire() & (port.allocate_c.lr.bits =/= 0.U) & !port_0_1_allocate_same_lr
+      port.allocate_c.pr.bits := Mux(port.allocate_c.lr.fire(), emptyPRIdx, 0.U)
+
+      when(port.allocate_c.lr.fire()){
+        cam.foreach(x => {
+          when((x.LRIdx === port.allocate_c.lr.bits) & (port.allocate_c.lr.bits =/= 0.U)){
+            x.valid := false.B
+          }
+        })
+      }
+    }else{
+      // 正常分配
+      // allocate c
+      when(port.allocate_c.lr.fire() & (port.allocate_c.lr.bits =/= 0.U)){
+        cam(emptyPRIdx).state := STATECONST.MAPPED
+        cam(emptyPRIdx).LRIdx := port.allocate_c.lr.bits
+      }
+      port.allocate_c.pr.valid := port.allocate_c.lr.fire() & (port.allocate_c.lr.bits =/= 0.U)
+      port.allocate_c.pr.bits := Mux(port.allocate_c.lr.fire(), emptyPRIdx, 0.U)
+
+      when(port.allocate_c.lr.fire()){
+        cam.foreach(x => {
+          when((x.LRIdx === port.allocate_c.lr.bits) & (port.allocate_c.lr.bits =/= 0.U)){
+            x.valid := false.B
+          }
+        })
+      }
     }
-    port.allocate_c.pr.valid := Mux(port.allocate_c.lr.fire(), 1.U, 0.U)
-    port.allocate_c.pr.bits := Mux(port.allocate_c.lr.fire(), emptyPRIdx, 0.U)
   }
 
   // query port a and b
-  io.port.foreach(port => {
-    quert_a_and_b(port)
+  io.port.zipWithIndex.foreach(_ match {
+    case (port, portIdx) => quert_a_and_b(port, portIdx)
   })
 
   // allocate port a and b
   val emptyPR = WireInit(VecInit(cam.map(_.state).map(_ === STATECONST.EMPRY)))
   val emptyPRIdx_0 = PriorityEncoder(emptyPR)
-  val emptyPRIdx_1 = 64.U - PriorityEncoder(emptyPR.reverse)
+  val emptyPRIdx_1 = 63.U - PriorityEncoder(emptyPR.reverse)
   assert(emptyPRIdx_0 =/= emptyPRIdx_1)
-  allocate_c(io.port(0), emptyPRIdx_0)
-  allocate_c(io.port(1), emptyPRIdx_1)
+  allocate_c(io.port(0), emptyPRIdx_0, 0)
+  allocate_c(io.port(1), emptyPRIdx_1, 1)
 
 //  when(io.port(0).valid & io.port(1).valid){
 //    // 0 and 1
@@ -204,14 +252,12 @@ class RenameMap(implicit p: Parameters) extends Module{
   def findCAM_LR(LRIdx: UInt): UInt = {
     val query = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === LRIdx))))
     val idx = PriorityEncoder(query)
-    assert(Cat(query).orR())
     cam(idx).PRIdx
   }
 
   def findCAM_PR(PRIdx: UInt): UInt = {
     val query = WireInit(VecInit(cam.map(x => x.valid & (x.PRIdx === PRIdx))))
     val idx = PriorityEncoder(query)
-    assert(Cat(query).orR())
     cam(idx).LRIdx
   }
 

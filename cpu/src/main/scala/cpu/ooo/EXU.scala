@@ -20,6 +20,9 @@ class FixPointIn(implicit p: Parameters) extends Bundle{
 
   val wb_type = UInt(2.W)
   val wen = Bool()
+
+  val pc = UInt(p(AddresWidth).W)
+  val inst = UInt(32.W)
 }
 
 class FixPointU(implicit p: Parameters) extends Module{

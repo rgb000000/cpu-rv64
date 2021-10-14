@@ -79,9 +79,9 @@ class OOO(implicit p: Parameters) extends Module {
     rename.io.port(i).valid := if_reg(i).valid
     // query a and b pr, only rs1 and rs2 is register
     rename.io.port(i).query_a.lr.bits  := id(i).io.rs1_addr
-    rename.io.port(i).query_a.lr.valid := control(i).io.signal.a_sel === A_RS1
+    rename.io.port(i).query_a.lr.valid := (control(i).io.signal.a_sel === A_RS1) & if_reg(i).valid
     rename.io.port(i).query_b.lr.bits  := id(i).io.rs2_addr
-    rename.io.port(i).query_b.lr.valid := control(i).io.signal.b_sel === B_RS2
+    rename.io.port(i).query_b.lr.valid := (control(i).io.signal.b_sel === B_RS2) & if_reg(i).valid
     // allocate c, only need write back
     rename.io.port(i).allocate_c.lr.bits  := id(i).io.rd_addr
     rename.io.port(i).allocate_c.lr.valid := control(i).io.signal.wen
@@ -96,12 +96,12 @@ class OOO(implicit p: Parameters) extends Module {
   for(i <- 0 until 2){
     // write to station
     station.io.in(i).bits.pr1       := rename.io.port(i).query_a.pr.bits.idx
-    station.io.in(i).bits.pr1_s     := rename.io.port(i).query_a.pr.bits.isReady
+    station.io.in(i).bits.pr1_s     := Mux(rename.io.port(i).query_a.pr.fire(), rename.io.port(i).query_a.pr.bits.isReady, true.B) // 否则就是imm
     station.io.in(i).bits.pr1_inROB := rename.io.port(i).query_a.pr.bits.inROB
     station.io.in(i).bits.pr1_robIdx:= rename.io.port(i).query_a.pr.bits.robIdx
     station.io.in(i).bits.pc        := if_reg(i).bits.pc
     station.io.in(i).bits.pr2       := rename.io.port(i).query_b.pr.bits.idx
-    station.io.in(i).bits.pr2_s     := rename.io.port(i).query_b.pr.bits.isReady
+    station.io.in(i).bits.pr2_s     := Mux(rename.io.port(i).query_a.pr.fire(), rename.io.port(i).query_b.pr.bits.isReady, true.B) // 否则就是imm
     station.io.in(i).bits.pr2_inROB := rename.io.port(i).query_b.pr.bits.inROB
     station.io.in(i).bits.pr2_robIdx:= rename.io.port(i).query_b.pr.bits.robIdx
     station.io.in(i).bits.imm       := id(i).io.imm
@@ -179,7 +179,10 @@ class OOO(implicit p: Parameters) extends Module {
   fixPointU.io.in.bits.br_type  := issue_0.info.br_type
   fixPointU.io.in.bits.wb_type  := issue_0.info.wb_type
   fixPointU.io.in.bits.wen      := issue_0.info.wen
+  fixPointU.io.in.bits.pc       := issue_0.info.pc
+  fixPointU.io.in.bits.inst     := issue_0.info.inst
   fixPointU.io.in.bits.idx      := issue_0.idx
+  dontTouch(fixPointU.io)
 
   // memU
   mem.io.in.valid          := issue_1_valid
