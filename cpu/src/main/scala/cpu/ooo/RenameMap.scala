@@ -31,6 +31,7 @@ class QueryAllocate(implicit p: Parameters) extends Bundle {
   val allocate_c = new Bundle {
     val lr = Flipped(Valid(UInt(5.W)))  // logic register
     val pr = Valid(UInt(6.W))           // physics register
+    val current_rename_state = Valid(Vec(64, Bool()))
   }
 
   val valid = Input(Bool())
@@ -46,17 +47,16 @@ class RenameMap(implicit p: Parameters) extends Module{
     val difftest = if (p(Difftest)) {Some(new Bundle {
       val toInstCommit = Vec(2, new Bundle{
         // query a reg
+        val rename_state = Flipped(Valid(Vec(64, Bool())))
         val pr = Flipped(Valid(UInt(6.W)))
         val lr = Valid(UInt(5.W))
       })
-      val toTrap = new Bundle{
-        // query a0, x10
-        val pr = Valid(UInt(6.W))
-      }
-      val toArchReg = new Bundle{
+
+      val toArchReg = Vec(2, new Bundle{
         // output 32 arch regs' prn
-        val prs = Valid(Vec(32, UInt(6.W)))
-      }
+        val pr = Flipped(Valid(UInt(6.W)))
+        val lr = Valid(UInt(5.W))
+      })
     })} else {None}
   })
 
@@ -68,7 +68,6 @@ class RenameMap(implicit p: Parameters) extends Module{
   }
 
   val info = new Bundle{
-    val PRIdx = UInt(6.W) // 0 - 63
     val LRIdx = UInt(5.W)
     val valid = Bool()
     val state = UInt(2.W)
@@ -78,7 +77,6 @@ class RenameMap(implicit p: Parameters) extends Module{
   // 初始化的时候 逻辑寄存器0-31对应物理寄存器的0-31
   val cam = RegInit(VecInit(Seq.tabulate(32)(n => {
     val tmp = Wire(info.cloneType)
-    tmp.PRIdx := n.U
     tmp.LRIdx := n.U
     tmp.valid := true.B
     tmp.state := STATECONST.COMMIT
@@ -86,7 +84,6 @@ class RenameMap(implicit p: Parameters) extends Module{
     tmp
   }) ++ Seq.tabulate(32)(n => {
     val tmp = Wire(info.cloneType)
-    tmp.PRIdx := 0.U
     tmp.LRIdx := 0.U
     tmp.valid := false.B
     tmp.state := STATECONST.EMPRY
@@ -136,41 +133,65 @@ class RenameMap(implicit p: Parameters) extends Module{
     }
   }
 
+  def allocate_c_c(emptyIdx_0: UInt, emptyIdx_1: UInt) = {
+    val port0 = io.port(0).allocate_c
+    val port1 = io.port(1).allocate_c
+    when(port0.lr.fire() & port1.lr.fire()){
+      // allocate for 0 and 1
+      when(port0.lr.bits === port1.lr.bits){
+        // port0 and port1 allocate the same lr
+      }.otherwise{
+
+      }
+
+    }.elsewhen(port0.lr.fire() & !port1.lr.fire()){
+      // allocate for 0
+
+    }.elsewhen((!port0.lr.fire()) & port1.lr.fire()){
+      // allocate for 1
+
+    }.otherwise{
+      // none
+    }
+  }
+
   def allocate_c(port: QueryAllocate, emptyPRIdx: UInt, portIdx: Int) = {
     if(portIdx == 0){
-      // port1 如果和 port0同时对一个lr进行分配，port1分配的结果应该为valid, port0分配结果应该为valid
-      val port_0_1_allocate_same_lr = io.port(0).allocate_c.lr.fire() & port.allocate_c.lr.fire() & (io.port(0).allocate_c.lr.bits === port.allocate_c.lr.bits)
+      // 更新valid
       when(port.allocate_c.lr.fire() & (port.allocate_c.lr.bits =/= 0.U)){
-        cam(emptyPRIdx).state := STATECONST.MAPPED
-        cam(emptyPRIdx).LRIdx := port.allocate_c.lr.bits
-      }
-      port.allocate_c.pr.valid := port.allocate_c.lr.fire() & (port.allocate_c.lr.bits =/= 0.U) & !port_0_1_allocate_same_lr
-      port.allocate_c.pr.bits := Mux(port.allocate_c.lr.fire(), emptyPRIdx, 0.U)
-
-      when(port.allocate_c.lr.fire()){
         cam.foreach(x => {
           when((x.LRIdx === port.allocate_c.lr.bits) & (port.allocate_c.lr.bits =/= 0.U)){
             x.valid := false.B
           }
         })
       }
+      // port1 如果和 port0同时对一个lr进行分配，port1分配的结果应该为valid, port0分配结果应该为invalid
+      val port_0_1_allocate_same_lr = io.port(1).allocate_c.lr.fire() & port.allocate_c.lr.fire() & (io.port(1).allocate_c.lr.bits === port.allocate_c.lr.bits)
+      when(port.allocate_c.lr.fire() & (port.allocate_c.lr.bits =/= 0.U)){
+        cam(emptyPRIdx).state := STATECONST.MAPPED
+        cam(emptyPRIdx).LRIdx := port.allocate_c.lr.bits
+        cam(emptyPRIdx).valid := true.B & !port_0_1_allocate_same_lr
+      }
+      port.allocate_c.pr.valid := port.allocate_c.lr.fire() & (port.allocate_c.lr.bits =/= 0.U) & !port_0_1_allocate_same_lr
+      port.allocate_c.pr.bits := Mux(port.allocate_c.lr.fire(), emptyPRIdx, 0.U)
     }else{
       // 正常分配
+      //更新valid
+      when(port.allocate_c.lr.fire() & (port.allocate_c.lr.bits =/= 0.U)){
+        cam.foreach(x => {
+          when((x.LRIdx === port.allocate_c.lr.bits) & (port.allocate_c.lr.bits =/= 0.U)){
+            x.valid := false.B
+          }
+        })
+      }
       // allocate c
       when(port.allocate_c.lr.fire() & (port.allocate_c.lr.bits =/= 0.U)){
         cam(emptyPRIdx).state := STATECONST.MAPPED
         cam(emptyPRIdx).LRIdx := port.allocate_c.lr.bits
+        cam(emptyPRIdx).valid := true.B
       }
       port.allocate_c.pr.valid := port.allocate_c.lr.fire() & (port.allocate_c.lr.bits =/= 0.U)
       port.allocate_c.pr.bits := Mux(port.allocate_c.lr.fire(), emptyPRIdx, 0.U)
-
-      when(port.allocate_c.lr.fire()){
-        cam.foreach(x => {
-          when((x.LRIdx === port.allocate_c.lr.bits) & (port.allocate_c.lr.bits =/= 0.U)){
-            x.valid := false.B
-          }
-        })
-      }
     }
   }
 
@@ -180,61 +201,25 @@ class RenameMap(implicit p: Parameters) extends Module{
   })
 
   // allocate port a and b
-  val emptyPR = WireInit(VecInit(cam.map(_.state).map(_ === STATECONST.EMPRY)))
+  val emptyPR = WireInit(VecInit(cam.map(x => {
+    (x.state === STATECONST.EMPRY) | ((x.state === STATECONST.COMMIT) & !x.valid)
+  })))
   val emptyPRIdx_0 = PriorityEncoder(emptyPR)
   val emptyPRIdx_1 = 63.U - PriorityEncoder(emptyPR.reverse)
   assert(emptyPRIdx_0 =/= emptyPRIdx_1)
   allocate_c(io.port(0), emptyPRIdx_0, 0)
   allocate_c(io.port(1), emptyPRIdx_1, 1)
 
-//  when(io.port(0).valid & io.port(1).valid){
-//    // 0 and 1
-//    io.port.foreach(port => {
-//      quert_a_and_b(port)
-//    })
-//
-//    // allocate c0 and c1
-//    val emptyPR = WireInit(VecInit(cam.map(_.state).map(_ === STATECONST.EMPRY)))
-//    val emptyPRIdx_0 = PriorityEncoder(emptyPR)
-//    val emptyPRIdx_1 = 64.U - PriorityEncoder(emptyPR.reverse)
-//    assert(emptyPRIdx_0 =/= emptyPRIdx_1)
-//    allocate_c(io.port(0), emptyPRIdx_0)
-//    allocate_c(io.port(1), emptyPRIdx_1)
-//
-//  }.elsewhen(io.port(0).valid & !io.port(1).valid){
-//    // 0
-//    io.port.foreach(port => {
-//      quert_a_and_b(port)
-//    })
-//
-//    val port = io.port(0)
-//    // allocate c
-//    val emptyPR = WireInit(VecInit(cam.map(_.state).map(_ === STATECONST.EMPRY)))
-//    val emptyPRIdx = PriorityEncoder(emptyPR)
-//    allocate_c(port, emptyPRIdx)
-//  }.elsewhen((!io.port(0).valid) & io.port(1).valid){
-//    // 1
-//    io.port.foreach(port => {
-//      quert_a_and_b(port)
-//    })
-//
-//    val port = io.port(1)
-//    // allocate c
-//    val emptyPR = WireInit(VecInit(cam.map(_.state).map(_ === STATECONST.EMPRY)))
-//    val emptyPRIdx = PriorityEncoder(emptyPR)
-//    allocate_c(port, emptyPRIdx)
-//  }.otherwise{
-//    // none
-//    io.port.foreach(port => {
-//      port.query_a.pr.bits.idx := 0.U
-//      port.query_a.pr.bits.isReady := 0.U
-//      port.query_a.pr.valid := 0.U
-//
-//      port.query_b.pr.bits.idx := 0.U
-//      port.query_b.pr.bits.isReady := 0.U
-//      port.query_b.pr.valid := 0.U
-//    })
-//  }
+
+  // 输出当前valid状态，用于提交时候锁定体系结构寄存器，也可能会被branch指令预测失败使用
+  // 有几个推测，当前inst没有提交，那么为其分配的寄存器状态一定会保持 MAPPED，WB两个状态之一
+  // 所以分配emptyPR时候，(STATE===EMPTY) | (STATE === COMMIT & !valid)
+
+  (io.port(0).allocate_c.current_rename_state.bits, cam.map(_.valid)).zipped.foreach(_ := _)
+  io.port(0).allocate_c.current_rename_state.valid := io.port(0).allocate_c.lr.fire()
+
+  (io.port(1).allocate_c.current_rename_state.bits, cam.map(_.valid)).zipped.foreach(_ := _)
+  io.port(1).allocate_c.current_rename_state.valid := io.port(1).allocate_c.lr.fire()
 
   io.cdb.foreach(cdb => {
     when(cdb.fire()){
@@ -244,21 +229,22 @@ class RenameMap(implicit p: Parameters) extends Module{
   })
 
   io.robCommit.foreach(robcommit => {
-    when(robcommit.fire()){
+    when(robcommit.fire() & (robcommit.bits =/= 0.U)){
       cam(robcommit.bits).state := STATECONST.COMMIT
     }
   })
 
-  def findCAM_LR(LRIdx: UInt): UInt = {
-    val query = WireInit(VecInit(cam.map(x => x.valid & (x.LRIdx === LRIdx))))
+  def findCAM_LR(LRIdx: UInt, state: Vec[Bool]): UInt = {
+    val query = Wire(Vec(64, Bool()))
+    for(i <- 0 until 64){
+      query(i) := (cam(i).LRIdx === LRIdx) & state(i)
+    }
     val idx = PriorityEncoder(query)
-    cam(idx).PRIdx
+    idx
   }
 
   def findCAM_PR(PRIdx: UInt): UInt = {
-    val query = WireInit(VecInit(cam.map(x => x.valid & (x.PRIdx === PRIdx))))
-    val idx = PriorityEncoder(query)
-    cam(idx).LRIdx
+    cam(PRIdx).LRIdx
   }
 
   if(p(Difftest)){
@@ -268,18 +254,10 @@ class RenameMap(implicit p: Parameters) extends Module{
     io.difftest.get.toInstCommit(1).lr.bits := findCAM_PR(io.difftest.get.toInstCommit(1).pr.bits)
     io.difftest.get.toInstCommit(1).lr.valid := io.difftest.get.toInstCommit(1).pr.valid
 
-    // toTrap a0, in other word x10 通过LR找PR
-    io.difftest.get.toTrap.pr.bits := findCAM_LR(10.U)
-    io.difftest.get.toTrap.pr.valid := true.B
-
     // to arch registers   通过LR找PR
-    val archReg_prn = Wire(Vec(32, UInt(6.W)))
-    archReg_prn.zipWithIndex.foreach(x => {
-      val (prIdx, lrIdx) = x
-      prIdx := findCAM_LR(lrIdx.U)
-    })
-    (io.difftest.get.toArchReg.prs.bits, archReg_prn).zipped.foreach(_ := _)
-    io.difftest.get.toArchReg.prs.valid := true.B
+    for(i <- 0 until 2){
+      io.difftest.get.toArchReg(i).lr.bits := cam(io.difftest.get.toArchReg(i).pr.bits).LRIdx
+      io.difftest.get.toArchReg(i).lr.valid := io.difftest.get.toArchReg(i).pr.valid
+    }
   }
-
 }

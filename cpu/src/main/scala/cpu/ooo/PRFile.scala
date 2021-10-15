@@ -24,12 +24,12 @@ class PRFile(implicit p: Parameters) extends Module{
     })
 
     val difftest = if(p(Difftest)) {Some(new Bundle{
-      val archReg = new Bundle{
-        val prs = Flipped(Valid(Vec(32, UInt(6.W))))
-      }
+      val findArchReg = Vec(2, new Bundle{
+        val pr = Valid(UInt(6.W))
+        val lr = Flipped(Valid(UInt(5.W)))
+      })
 
       val trap_cpode = new Bundle{
-        val pr = Flipped(Valid(UInt(6.W)))
         val data = Valid(UInt(p(XLen).W))
       }
     })} else {None}
@@ -37,34 +37,43 @@ class PRFile(implicit p: Parameters) extends Module{
 
   val registers = RegInit(VecInit(Seq.fill(64)(0.asUInt(p(XLen).W))))
 
+
   io.read(0).rdata1 := Mux(io.read(0).raddr1.orR() === 0.U, 0.U, Mux(io.write(0).wen & io.write(0).waddr === io.read(0).raddr1, io.write(0).wdata, registers(io.read(0).raddr1)))
   io.read(0).rdata2 := Mux(io.read(0).raddr2.orR() === 0.U, 0.U, Mux(io.write(0).wen & io.write(0).waddr === io.read(0).raddr2, io.write(0).wdata, registers(io.read(0).raddr2)))
 
   io.read(1).rdata1 := Mux(io.read(1).raddr1.orR() === 0.U, 0.U, Mux(io.write(1).wen & io.write(1).waddr === io.read(1).raddr1, io.write(1).wdata, registers(io.read(1).raddr1)))
   io.read(1).rdata2 := Mux(io.read(1).raddr2.orR() === 0.U, 0.U, Mux(io.write(1).wen & io.write(1).waddr === io.read(1).raddr2, io.write(1).wdata, registers(io.read(1).raddr2)))
 
-  when(io.write(0).wen === 1.U & io.write(0).waddr.orR() =/= 0.U){
+  when(io.write(0).wen & io.write(0).waddr.orR()){
     registers(io.write(0).waddr) := io.write(0).wdata
   }
 
-  when(io.write(1).wen === 1.U & io.write(1).waddr.orR() =/= 0.U){
+  when(io.write(1).wen & io.write(1).waddr.orR()){
     registers(io.write(1).waddr) := io.write(1).wdata
   }
 
 
   if(p(Difftest)){
-    val vitual_arch_reg = Wire(Vec(32, UInt(64.W)))
-    for(i <- 0 until 32){
-      vitual_arch_reg(i) := registers(io.difftest.get.archReg.prs.bits(i))
+    for(i <- 0 until 2){
+      io.difftest.get.findArchReg(i).pr.bits := io.write(i).waddr
+      io.difftest.get.findArchReg(i).pr.valid := io.write(i).wen
+    }
+    val arch_reg = RegInit(VecInit(Seq.fill(32)(0.asUInt(p(XLen).W))))
+
+    when(io.write(0).wen){
+      arch_reg(io.difftest.get.findArchReg(0).lr.bits) := io.write(0).wdata
     }
 
+    when(io.write(1).wen){
+      arch_reg(io.difftest.get.findArchReg(1).lr.bits) := io.write(1).wdata
+    }
 
     val dar = Module(new DifftestArchIntRegState)
     dar.io.clock := clock
     dar.io.coreid := 0.U
-    dar.io.gpr := vitual_arch_reg
+    dar.io.gpr := arch_reg
 
-    io.difftest.get.trap_cpode.data.valid := io.difftest.get.trap_cpode.pr.valid
-    io.difftest.get.trap_cpode.data.bits := registers(io.difftest.get.trap_cpode.pr.bits)
+    io.difftest.get.trap_cpode.data.valid := true.B
+    io.difftest.get.trap_cpode.data.bits := arch_reg(10)
   }
 }

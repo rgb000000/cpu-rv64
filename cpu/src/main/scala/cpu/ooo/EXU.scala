@@ -52,9 +52,13 @@ class FixPointU(implicit p: Parameters) extends Module{
   io.cdb.bits.wen := io.in.bits.wen
   io.cdb.bits.brHit := Mux(io.in.bits.br_type.orR(), br.io.taken === io.in.bits.p_br, true.B)
   io.cdb.bits.expt := false.B // FixPointU can't generate except
+  io.cdb.bits.pc := io.in.bits.pc
+  io.cdb.bits.inst := io.in.bits.inst
   io.cdb.valid := io.in.valid
 
   io.in.ready := true.B  // fixPointU always ready
+
+  dontTouch(io.cdb)
 }
 
 // 访储执行单元 and CSR单元
@@ -71,7 +75,7 @@ class MemUIn(implicit p: Parameters) extends Bundle{
 
   val csr_cmd = UInt(3.W)
   // ctrl signals
-  val pc      = UInt(p(XLen).W)
+  val pc      = UInt(p(AddresWidth).W)
   val inst    = UInt(32.W)
   val illegal = Bool()
   val interrupt = new Bundle{
@@ -193,6 +197,8 @@ class MemU(implicit p: Parameters) extends Module{
     io.cdb.bits.wen := io.in.bits.wen
     io.cdb.bits.brHit := true.B
     io.cdb.bits.expt := csr.io.expt
+    io.cdb.bits.pc := io.in.bits.pc
+    io.cdb.bits.inst := io.in.bits.inst
     io.cdb.valid := true.B
   }.elsewhen(io.in.fire() & isALU){
     // fix point op (NOT including branch)
@@ -201,6 +207,8 @@ class MemU(implicit p: Parameters) extends Module{
     io.cdb.bits.wen := io.in.bits.wen
     io.cdb.bits.brHit := true.B
     io.cdb.bits.expt := false.B // FixPointU can't generate except
+    io.cdb.bits.pc := io.in.bits.pc
+    io.cdb.bits.inst := io.in.bits.inst
     io.cdb.valid := true.B
   }.otherwise{
     // mem op
@@ -211,6 +219,8 @@ class MemU(implicit p: Parameters) extends Module{
       io.cdb.bits.wen   := 0.U
       io.cdb.bits.brHit := true.B
       io.cdb.bits.expt  := false.B
+      io.cdb.bits.pc := io.in.bits.pc
+      io.cdb.bits.inst := io.in.bits.inst
       io.cdb.valid := true.B
 
       io.memCDB.bits.prn   := alu_res
@@ -226,9 +236,11 @@ class MemU(implicit p: Parameters) extends Module{
       io.cdb.bits.wen := io.in.bits.wen
       io.cdb.bits.brHit := true.B
       io.cdb.bits.expt := false.B
+      io.cdb.bits.pc := io.in.bits.pc
+      io.cdb.bits.inst := io.in.bits.inst
       io.cdb.valid := state === s_ret
     }
   }
 
-
+  dontTouch(io.cdb)
 }

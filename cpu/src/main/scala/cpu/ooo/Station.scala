@@ -49,6 +49,9 @@ class StationIn(implicit p: Parameters) extends Bundle{
   val wb_type = UInt(2.W)
   val wen = Bool()
 
+  // rename current state 记录了valid状态
+  val current_rename_state = Vec(64, Bool())
+
   // state
   val state = UInt(2.W) // 00: 无效
                         // 01: 等待发射
@@ -63,6 +66,9 @@ class CDB(implicit p: Parameters) extends Bundle{
   val wen = Bool()
   val brHit = Bool()
   val expt = Bool()
+
+  val pc = UInt(p(AddresWidth).W)
+  val inst = UInt(32.W)
 }
 
 class MEMCDB(implicit p: Parameters) extends Bundle{
@@ -88,6 +94,7 @@ class Station(implicit p: Parameters) extends Module{
 
     val robCommit = Vec(2, Flipped(Valid(new Bundle{
       val prn = UInt(6.W)
+      val wen = Bool()
 //      val data = UInt(p(XLen).W)
 //      val wen = Bool()
     })))
@@ -103,6 +110,10 @@ class Station(implicit p: Parameters) extends Module{
   import Control._
 
   val station = RegInit(VecInit(Seq.fill(16)(0.U.asTypeOf(new StationIn))))
+  station.foreach(x => {
+    dontTouch(x.pc)
+    dontTouch(x.inst)
+  })
 
   // instructions status change
   io.cdb.foreach(cdb => {
@@ -197,22 +208,22 @@ class Station(implicit p: Parameters) extends Module{
   when(io.robCommit(0).fire() & io.robCommit(1).fire()){
     // commit 0, 1
     commitPtr.value := commitPtr.value + 2.U
-    commit(io.robCommit(0).bits.prn, io.robCommit(0).valid)
-    commit(io.robCommit(1).bits.prn, io.robCommit(1).valid)
+    commit(io.robCommit(0).bits.prn, io.robCommit(0).bits.wen)
+    commit(io.robCommit(1).bits.prn, io.robCommit(1).bits.wen)
 
   }.elsewhen(io.robCommit(0).fire() & !io.robCommit(1).fire()){
     // commit 0
     commitPtr.value := commitPtr.value + 1.U
-    commit(io.robCommit(0).bits.prn, io.robCommit(0).valid)
+    commit(io.robCommit(0).bits.prn, io.robCommit(0).bits.wen)
   }.elsewhen((!io.robCommit(0).fire()) & io.robCommit(1).fire()){
     // commit 1
     commitPtr.value := commitPtr.value + 1.U
-    commit(io.robCommit(1).bits.prn, io.robCommit(1).valid)
+    commit(io.robCommit(1).bits.prn, io.robCommit(1).bits.wen)
   }.otherwise{
     // none
   }
 
-  // 至少有两个空位置才可以
+  // 至少有两个空位置才可以, 如果inPrt和commitPrt高位相等，
   val emptyNum = Mux(inPtr.value(4) === commitPtr.value(4), 16.U - inPtr.value(3, 0) + commitPtr.value(3, 0).asUInt(), commitPtr.value(3, 0) - inPtr.value(3, 0))
   io.in(0).ready := emptyNum >= 2.U
   io.in(1).ready := emptyNum >= 2.U

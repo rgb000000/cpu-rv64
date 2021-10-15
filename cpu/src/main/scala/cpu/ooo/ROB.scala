@@ -17,6 +17,7 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val ld_type = UInt(3.W)
       val pc = UInt(p(AddresWidth).W)
       val inst = UInt(32.W)
+      val current_rename_state = Vec(64, Bool())
     })))
     val cdb = Vec(2, Flipped(Valid(new CDB)))
   }
@@ -37,6 +38,8 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val data = UInt(p(XLen).W)
       val wen = Bool()
 
+      val current_rename_state = Vec(64, Bool())
+
       // for difftest
       val pc = UInt(p(AddresWidth).W)
       val inst = UInt(32.W)
@@ -47,7 +50,11 @@ class ROBIO(implicit p: Parameters) extends Bundle {
     val dcache = Flipped(new CacheCPUIO)
   }
   val commit2rename = Vec(2, Valid(UInt(6.W)))
-  val commit2station = Vec(2, Valid(UInt(6.W)))
+  val commit2station = Vec(2, Valid(new Bundle{
+    // 如果wen为真就表示这个prn是prn而不是memAddress， station拿到这个信息更新他的表
+    val prn = UInt(6.W)
+    val wen = Bool()
+  }))
 }
 
 class ROBInfo(implicit p: Parameters) extends Bundle {
@@ -67,6 +74,8 @@ class ROBInfo(implicit p: Parameters) extends Bundle {
 
   val brHit = Bool()
   val expt = Bool()
+
+  val current_rename_state = Vec(64, Bool())
 
   val state = UInt(2.W)
 }
@@ -93,6 +102,7 @@ class ROB(implicit p: Parameters) extends Module {
     rob(idx).state := WAITDATA
     rob(idx).pc := io.in.fromID(fromIDport).bits.pc
     rob(idx).inst := io.in.fromID(fromIDport).bits.inst
+    rob(idx).current_rename_state := io.in.fromID(fromIDport).bits.current_rename_state
   }
 
   // write rob
@@ -135,6 +145,7 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit.reg(portIdx).bits.pc := rob_info.pc
     io.commit.reg(portIdx).bits.inst := rob_info.inst
     io.commit.reg(portIdx).valid := valid
+    io.commit.reg(portIdx).bits.current_rename_state := rob_info.current_rename_state
 
     io.commit.reg(portIdx).bits.memAddress := rob_info.prdORaddr
     io.commit.reg(portIdx).bits.isST := rob_info.st_type.orR()
@@ -143,8 +154,9 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit2rename(portIdx).valid := rob_info.wen & rob_info.isPrd
     io.commit2rename(portIdx).bits := rob_info.prdORaddr
 
-    io.commit2station(portIdx).valid := rob_info.wen & rob_info.isPrd
-    io.commit2station(portIdx).bits := rob_info.prdORaddr
+    io.commit2station(portIdx).valid := valid
+    io.commit2station(portIdx).bits.prn := rob_info.prdORaddr
+    io.commit2station(portIdx).bits.wen := rob_info.wen & rob_info.isPrd
   }
 
   def write_dcache(rob_info: ROBInfo, valid: Bool, commitIdx: UInt) = {
@@ -244,5 +256,5 @@ class ROB(implicit p: Parameters) extends Module {
     io.memRead.data.valid := false.B
   }
 
-
+  dontTouch(io.in.cdb)
 }
