@@ -38,7 +38,10 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val data = UInt(p(XLen).W)
       val wen = Bool()
 
+      // from branch
       val current_rename_state = Vec(64, Bool())
+      val isHit = Bool()
+//      val right_pc = UInt(p(AddresWidth).W)   // right_pc is the same as data
 
       // for difftest
       val pc = UInt(p(AddresWidth).W)
@@ -129,6 +132,9 @@ class ROB(implicit p: Parameters) extends Module {
     when(cdb.fire()) {
       rob(cdb.bits.idx).state := GETDATA
       rob(cdb.bits.idx).data := cdb.bits.data
+
+      rob(cdb.bits.idx).brHit := cdb.bits.brHit
+      rob(cdb.bits.idx).expt := cdb.bits.expt
     }
   })
 
@@ -138,6 +144,7 @@ class ROB(implicit p: Parameters) extends Module {
     rob(io.memCDB.bits.idx).data := io.memCDB.bits.data
   }
 
+  dontTouch(io.commit)
   def write_prfile(portIdx: Int, rob_info: ROBInfo, valid: Bool) = {
     io.commit.reg(portIdx).bits.prn := rob_info.prdORaddr
     io.commit.reg(portIdx).bits.data := rob_info.data
@@ -146,6 +153,7 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit.reg(portIdx).bits.inst := rob_info.inst
     io.commit.reg(portIdx).valid := valid
     io.commit.reg(portIdx).bits.current_rename_state := rob_info.current_rename_state
+    io.commit.reg(portIdx).bits.isHit := rob_info.brHit
 
     io.commit.reg(portIdx).bits.memAddress := rob_info.prdORaddr
     io.commit.reg(portIdx).bits.isST := rob_info.st_type.orR()
