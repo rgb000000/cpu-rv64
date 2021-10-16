@@ -17,6 +17,8 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val ld_type = UInt(3.W)
       val pc = UInt(p(AddresWidth).W)
       val inst = UInt(32.W)
+      val isBr = Bool()
+      val pTaken = Bool()
       val current_rename_state = Vec(64, Bool())
     })))
     val cdb = Vec(2, Flipped(Valid(new CDB)))
@@ -38,7 +40,7 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val data = UInt(p(XLen).W)
       val wen = Bool()
 
-      // from branch
+      // from branch, difftest use
       val current_rename_state = Vec(64, Bool())
       val isHit = Bool()
 //      val right_pc = UInt(p(AddresWidth).W)   // right_pc is the same as data
@@ -51,6 +53,16 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val isLD = Bool()
     }))
     val dcache = Flipped(new CacheCPUIO)
+
+    // 这一轮提交的分支预测信息，只update一个分支信息
+    val br_info = Valid(new Bundle{
+      // to branch
+      val current_rename_state = Vec(64, Bool())
+      val isHit = Bool()
+      val isTaken = Bool()
+      val cur_pc = UInt(p(AddresWidth).W)
+      val right_pc = UInt(p(AddresWidth).W)   // right_pc is the same as data
+    })
   }
   val commit2rename = Vec(2, Valid(UInt(6.W)))
   val commit2station = Vec(2, Valid(new Bundle{
@@ -69,7 +81,7 @@ class ROBInfo(implicit p: Parameters) extends Bundle {
   val prdORaddr = UInt(p(AddresWidth).W)
   val data = UInt(p(XLen).W)
   val needData = Bool()
-  val isPrd = Bool()
+  val isPrd = Bool()    //决定prdORaddr是prn还是memAddress
   val mask = UInt(8.W)
   val wen = Bool()
   val st_type = UInt(3.W)
@@ -78,6 +90,8 @@ class ROBInfo(implicit p: Parameters) extends Bundle {
   val brHit = Bool()
   val expt = Bool()
 
+  val isBr = Bool()
+  val pTaken = Bool()
   val current_rename_state = Vec(64, Bool())
 
   val state = UInt(2.W)
@@ -86,10 +100,10 @@ class ROBInfo(implicit p: Parameters) extends Bundle {
 class ROB(implicit p: Parameters) extends Module {
   val io = IO(new ROBIO)
 
-  val EMPTY    = 0.U(2.W)
-  val WAITDATA = 1.U(2.W)
-  val GETDATA  = 2.U(2.W)
-  val COMMITED = 3.U(2.W)
+  val S_EMPTY    = 0.U(2.W)
+  val S_WAITDATA = 1.U(2.W)
+  val S_GETDATA  = 2.U(2.W)
+  val S_COMMITED = 3.U(2.W)
 
 
   val rob = RegInit(VecInit(Seq.fill(16)(0.U.asTypeOf(new ROBInfo))))
@@ -102,9 +116,11 @@ class ROB(implicit p: Parameters) extends Module {
     rob(idx).st_type := io.in.fromID(fromIDport).bits.st_type
     rob(idx).ld_type := io.in.fromID(fromIDport).bits.ld_type
     rob(idx).mask := "h00".U
-    rob(idx).state := WAITDATA
+    rob(idx).state := S_WAITDATA
     rob(idx).pc := io.in.fromID(fromIDport).bits.pc
     rob(idx).inst := io.in.fromID(fromIDport).bits.inst
+    rob(idx).isBr := io.in.fromID(fromIDport).bits.isBr
+    rob(idx).pTaken := io.in.fromID(fromIDport).bits.pTaken
     rob(idx).current_rename_state := io.in.fromID(fromIDport).bits.current_rename_state
   }
 
@@ -130,7 +146,7 @@ class ROB(implicit p: Parameters) extends Module {
   // getData
   io.in.cdb.foreach(cdb => {
     when(cdb.fire()) {
-      rob(cdb.bits.idx).state := GETDATA
+      rob(cdb.bits.idx).state := S_GETDATA
       rob(cdb.bits.idx).data := cdb.bits.data
 
       rob(cdb.bits.idx).brHit := cdb.bits.brHit
@@ -140,7 +156,7 @@ class ROB(implicit p: Parameters) extends Module {
 
   // memCDB
   when(io.memCDB.fire()){
-    rob(io.memCDB.bits.idx).state := GETDATA
+    rob(io.memCDB.bits.idx).state := S_GETDATA
     rob(io.memCDB.bits.idx).data := io.memCDB.bits.data
   }
 
@@ -159,7 +175,7 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit.reg(portIdx).bits.isST := rob_info.st_type.orR()
     io.commit.reg(portIdx).bits.isLD := rob_info.ld_type.orR()
 
-    io.commit2rename(portIdx).valid := rob_info.wen & rob_info.isPrd
+    io.commit2rename(portIdx).valid := rob_info.wen & rob_info.isPrd & valid
     io.commit2rename(portIdx).bits := rob_info.prdORaddr
 
     io.commit2station(portIdx).valid := valid
@@ -179,63 +195,161 @@ class ROB(implicit p: Parameters) extends Module {
 
   }
 
+//  def br_info(current_state: Vec[Bool], isHit: Bool, pTaken: Bool, cur_pc: UInt, right_pc: UInt, valid: Bool): Unit ={
+//    io.commit.br_info.valid := valid
+//    io.commit.br_info.bits.current_rename_state := current_state
+//    io.commit.br_info.bits.isHit := isHit
+//    io.commit.br_info.bits.isTaken := Mux(isHit, pTaken, !pTaken)
+//    io.commit.br_info.bits.cur_pc := cur_pc
+//    io.commit.br_info.bits.right_pc := right_pc
+//  }
+
+  def out_br_info(isHit: Bool, info: ROBInfo): Unit ={
+    io.commit.br_info.valid := info.isBr
+    io.commit.br_info.bits.current_rename_state := info.current_rename_state
+    io.commit.br_info.bits.isHit                := isHit
+    io.commit.br_info.bits.isTaken              := Mux(isHit, info.pTaken, !info.pTaken)
+    io.commit.br_info.bits.cur_pc               := info.pc
+    io.commit.br_info.bits.right_pc             := info.data
+  }
+
   // commit
   val commitIdx = Counter(16)
-  when((rob(commitIdx.value).state === GETDATA) & (rob(commitIdx.value + 1.U).state === GETDATA)) {
+  when((rob(commitIdx.value).state === S_GETDATA) & (rob(commitIdx.value + 1.U).state === S_GETDATA)) {
     // two inst complete and wait to commit
+    val a = rob(commitIdx.value)
+    val b = rob(commitIdx.value + 1.U)
     when(rob(commitIdx.value).isPrd & rob(commitIdx.value + 1.U).isPrd) {
       // commit 2 prd inst
-      commitIdx.value := commitIdx.value + 2.U
-      write_prfile(0, rob(commitIdx.value), true.B)
-      write_prfile(1, rob(commitIdx.value + 1.U), true.B)
-      write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
-      rob(commitIdx.value).state := COMMITED
-      rob(commitIdx.value + 1.U).state := COMMITED
+      when(a.brHit & b.brHit){
+        // a, b 都跳转命中
+        commitIdx.value := commitIdx.value + 2.U
+        write_prfile(0, a, true.B)
+        write_prfile(1, b, true.B)
+        write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+        rob(commitIdx.value).state := S_COMMITED
+        rob(commitIdx.value + 1.U).state := S_COMMITED
+
+        out_br_info(true.B, a)
+      }.elsewhen(a.brHit & !b.brHit){
+        // a命中，b没命中,只提交a，也提交b，并且清空rob
+        commitIdx.value := 0.U
+        write_prfile(0, a, true.B)
+        write_prfile(1, b, true.B)
+        write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+        rob.foreach(x => {
+          x.state := S_EMPTY
+        })
+
+        out_br_info(false.B, b)
+      }.otherwise{
+        // a只要没命中，无论b命中与否，只提交a，并且清空rob
+        commitIdx.value := 0.U
+        write_prfile(0, a, true.B)
+        write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
+        write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+        rob.foreach(x => {
+          x.state := S_EMPTY
+        })
+
+        out_br_info(false.B, a)
+      }
     }.elsewhen(rob(commitIdx.value).isPrd & !rob(commitIdx.value + 1.U).isPrd) {
-      // commit 1 prd and 1 store
-      commitIdx.value := commitIdx.value + 2.U
-      write_prfile(0, rob(commitIdx.value), true.B)
-      write_prfile(1, 0.U.asTypeOf(new ROBInfo), true.B)
-      write_dcache(rob(commitIdx.value + 1.U), true.B, 1.U)
-      rob(commitIdx.value).state := COMMITED
-      rob(commitIdx.value + 1.U).state := COMMITED
+      // commit 1 prd and 1 store, prd才会发生跳转命中或不命中，存储指令不会，因此只要判断prd的命中与否
+      when(a.brHit){
+        commitIdx.value := commitIdx.value + 2.U
+        write_prfile(0, a, true.B)
+        write_prfile(1, b, true.B)
+        write_dcache(b, true.B, 1.U)
+        rob(commitIdx.value).state := S_COMMITED
+        rob(commitIdx.value + 1.U).state := S_COMMITED
+
+        out_br_info(true.B, a)
+      }.otherwise{
+        // a没命中，虽然没命中也还是要提交a,清空rob
+        commitIdx.value := 0.U
+        write_prfile(0, a, true.B)
+        write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
+        write_dcache(rob(commitIdx.value + 1.U), false.B, 1.U)
+        rob.foreach(x => {
+          x.state := S_EMPTY
+        })
+
+        out_br_info(false.B,a)
+      }
     }.elsewhen((!rob(commitIdx.value).isPrd) & rob(commitIdx.value + 1.U).isPrd) {
       // commit 1 store and prd
-      commitIdx.value := commitIdx.value + 2.U
-      write_prfile(0, 0.U.asTypeOf(new ROBInfo), true.B)
-      write_prfile(1, rob(commitIdx.value + 1.U), true.B)
-      write_dcache(rob(commitIdx.value), true.B, 0.U)
-      rob(commitIdx.value).state := COMMITED
-      rob(commitIdx.value + 1.U).state := COMMITED
+      when(b.brHit){
+        commitIdx.value := commitIdx.value + 2.U
+        write_prfile(0, a, true.B)
+        write_prfile(1, b, true.B)
+        write_dcache(rob(commitIdx.value), true.B, 0.U)
+        rob(commitIdx.value).state := S_COMMITED
+        rob(commitIdx.value + 1.U).state := S_COMMITED
+
+        out_br_info(true.B, b)
+      }.otherwise{
+        // 提交a，虽然b没有hit但是也是要提交的,然后清空rob
+        commitIdx.value := 0.U
+        write_prfile(0, a, true.B)
+        write_prfile(1, b, true.B)
+        write_dcache(rob(commitIdx.value), true.B, 0.U)
+        rob.foreach(x => {
+          x.state := S_EMPTY
+        })
+
+        out_br_info(false.B, b)
+      }
     }.otherwise {
       // 2 store inst, need commit one by one
       commitIdx.value := commitIdx.value + 1.U
-      write_prfile(0, 0.U.asTypeOf(new ROBInfo), true.B)
+      write_prfile(0, a, true.B)
       write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
       write_dcache(rob(commitIdx.value), true.B, 0.U)
-      rob(commitIdx.value).state := COMMITED
+      rob(commitIdx.value).state := S_COMMITED
+
+      out_br_info(true.B, a)
     }
-  }.elsewhen((rob(commitIdx.value).state === GETDATA) & (rob(commitIdx.value + 1.U).state =/= GETDATA)) {
+  }.elsewhen((rob(commitIdx.value).state === S_GETDATA) & (rob(commitIdx.value + 1.U).state =/= S_GETDATA)) {
     // one inst complete and want to commit
+    val a = rob(commitIdx.value)
     when(rob(commitIdx.value).isPrd) {
       // a prd inst
-      commitIdx.value := commitIdx.value + 1.U
-      write_prfile(0, rob(commitIdx.value), true.B)
-      write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
-      write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
-      rob(commitIdx.value).state := COMMITED
+      when(a.brHit){
+        commitIdx.value := commitIdx.value + 1.U
+        write_prfile(0, a, true.B)
+        write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
+        write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+        rob(commitIdx.value).state := S_COMMITED
+
+        out_br_info(true.B, a)
+      }.otherwise{
+        commitIdx.value := 0.U
+        write_prfile(0, a, true.B)
+        write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
+        write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+        rob.foreach(x => {
+          x.state := S_EMPTY
+        })
+
+        out_br_info(false.B, a)
+      }
     }.otherwise {
       // a store inst
       commitIdx.value := commitIdx.value + 1.U
       write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
       write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
       write_dcache(rob(commitIdx.value), true.B, 0.U)
-      rob(commitIdx.value).state := COMMITED
+      rob(commitIdx.value).state := S_COMMITED
+
+      out_br_info(true.B, a)
     }
   }.otherwise {
     write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
     write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
     write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+
+    out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
   }
 
   // station read rob in issue stage

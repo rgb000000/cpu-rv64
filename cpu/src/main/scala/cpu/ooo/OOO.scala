@@ -36,6 +36,7 @@ class OOO(implicit p: Parameters) extends Module {
 
   // some intermediate signals
   val station_isfull = !station.io.in.head.ready // in(0).ready is the same as in(1).ready
+  val rob_kill = Wire(Bool())
 
   val time_interrupt_enable = WireInit(false.B)
   val soft_interrupt_enable = WireInit(false.B)
@@ -55,16 +56,20 @@ class OOO(implicit p: Parameters) extends Module {
   ifet.io.pc_alu := 0.U
   ifet.io.pc_epc := 0.U
   ifet.io.stall := station_isfull
-  ifet.io.kill := 0.U
+  ifet.io.kill := rob_kill
   ifet.io.fence_i_do := 0.U
   ifet.io.fence_i_done := 0.U
   ifet.io.fence_pc := 0.U
   ifet.io.pc_except_entry.valid := false.B
   ifet.io.pc_except_entry.bits := 0.U
-  ifet.io.br_info.bits := 0.U.asTypeOf(ifet.io.br_info.bits)
-  ifet.io.br_info.valid := false.B
 
-  val if_reg = RegEnable(ifet.io.out, 0.U.asTypeOf(ifet.io.out), !station_isfull)
+  ifet.io.br_info.valid        := rob.io.commit.br_info.valid
+  ifet.io.br_info.bits.isHit   := rob.io.commit.br_info.bits.isHit
+  ifet.io.br_info.bits.isTaken := rob.io.commit.br_info.bits.isTaken
+  ifet.io.br_info.bits.cur_pc  := rob.io.commit.br_info.bits.cur_pc
+  ifet.io.br_info.bits.tgt     := rob.io.commit.br_info.bits.right_pc
+
+  val if_reg = RegEnable(Mux(rob_kill, 0.U.asTypeOf(ifet.io.out), ifet.io.out), 0.U.asTypeOf(ifet.io.out), rob_kill | !station_isfull)
 
   //= decoder ==================================================
   val ctrl = Wire(Vec(2, (new ControlIO).signal))
@@ -82,7 +87,7 @@ class OOO(implicit p: Parameters) extends Module {
     rename.io.port(i).query_a.lr.valid := (control(i).io.signal.a_sel === A_RS1) & if_reg(i).valid // 同下， valid===0,当作pc处理
     rename.io.port(i).query_b.lr.bits  := id(i).io.rs2_addr
     rename.io.port(i).query_b.lr.valid := (control(i).io.signal.b_sel === B_RS2) & if_reg(i).valid // 如果是imm，lr和pr的valid应该为0,station输入的时候如果发现pr.valid===0,就当作立即数处理
-    // allocate c, only need write back
+    // allocate c, only write back inst need allocate
     rename.io.port(i).allocate_c.lr.bits  := id(i).io.rd_addr
     rename.io.port(i).allocate_c.lr.valid := (control(i).io.signal.wen & (id(i).io.rd_addr =/= 0.U)) & if_reg(i).valid
   }
@@ -117,7 +122,8 @@ class OOO(implicit p: Parameters) extends Module {
     station.io.in(i).bits.illeage   := ctrl(i).illegal
     station.io.in(i).bits.inst      := if_reg(i).bits.inst
     station.io.in(i).bits.br_type   := ctrl(i).br_type
-    station.io.in(i).bits.p_br      := if_reg(i).bits.pTaken
+    station.io.in(i).bits.pTaken    := if_reg(i).bits.pTaken
+    station.io.in(i).bits.pPC       := if_reg(i).bits.pPC
     station.io.in(i).bits.current_rename_state := rename.io.port(i).allocate_c.current_rename_state.bits
     station.io.in(i).bits.state     := 1.U // wait to issue
     station.io.in(i).valid := if_reg(i).valid
@@ -132,6 +138,8 @@ class OOO(implicit p: Parameters) extends Module {
     rob.io.in.fromID(i).bits.pc        := if_reg(i).bits.pc
     rob.io.in.fromID(i).bits.inst      := if_reg(i).bits.inst
     rob.io.in.fromID(i).valid          := if_reg(i).valid
+    rob.io.in.fromID(i).bits.isBr      := ctrl(i).br_type.orR()
+    rob.io.in.fromID(i).bits.pTaken    := if_reg(i).bits.pTaken
     rob.io.in.fromID(i).bits.current_rename_state := rename.io.port(i).allocate_c.current_rename_state.bits
   }
 
@@ -154,20 +162,20 @@ class OOO(implicit p: Parameters) extends Module {
     rob.io.read(i)(1).stationIdx.valid := station.io.out(i).valid
     rob.io.read(i)(1).stationIdx.bits  := station.io.out(i).bits.info.pr2_robIdx
 
-    // mux选取reg还是pc，其中reg需要从物理寄存器和rob中选择
-    tmp_ex_data(i).a := Mux(station.io.out(i).bits.info.A_sel === A_RS1, Mux(station.io.out(i).bits.info.pr1_inROB & (station.io.out(i).bits.info.pr1 =/= 0.U), rob.io.read(i)(0).data.bits, prfile.io.read(i).rdata1), station.io.out(i).bits.info.pc)
-    // mux选取reg还是imm，其中reg需要也是要从物理寄存器和rob中选择
-    tmp_ex_data(i).b := Mux(station.io.out(i).bits.info.B_sel === B_RS2, Mux(station.io.out(i).bits.info.pr2_inROB & (station.io.out(i).bits.info.pr2 =/= 0.U), rob.io.read(i)(1).data.bits, prfile.io.read(i).rdata2), station.io.out(i).bits.info.imm)
+    // 其中reg需要从物理寄存器和rob中选择
+    tmp_ex_data(i).a := Mux(station.io.out(i).bits.info.pr1_inROB & (station.io.out(i).bits.info.pr1 =/= 0.U), rob.io.read(i)(0).data.bits, prfile.io.read(i).rdata1)
+    // 其中reg需要也是要从物理寄存器和rob中选择
+    tmp_ex_data(i).b := Mux(station.io.out(i).bits.info.pr2_inROB & (station.io.out(i).bits.info.pr2 =/= 0.U), rob.io.read(i)(1).data.bits, prfile.io.read(i).rdata2)
   }
 
   val issue_0_valid = RegInit(false.B)
-  issue_0_valid := Mux(station.io.out(0).fire(), true.B, Mux(fixPointU.io.in.fire(), false.B, issue_0_valid))     // 握手信号打拍子，允许exu ready无效的时候数据还能进入reg中
+  issue_0_valid := Mux(rob_kill, false.B, Mux(station.io.out(0).fire(), true.B, Mux(fixPointU.io.in.fire(), false.B, issue_0_valid)))  // 握手信号打拍子，允许exu ready无效的时候数据还能进入reg中
   val ex_data_0 = RegEnable(tmp_ex_data(0), 0.U.asTypeOf(tmp_ex_data.head), station.io.out(0).fire())
   val issue_0 = RegEnable(station.io.out(0).bits, 0.U.asTypeOf(station.io.out(0).bits), station.io.out(0).fire())
   station.io.out(0).ready := fixPointU.io.in.ready | !issue_0_valid
 
   val issue_1_valid = RegInit(false.B)
-  issue_1_valid := Mux(station.io.out(1).fire(), true.B, Mux(mem.io.in.fire(), false.B, issue_1_valid))
+  issue_1_valid := Mux(rob_kill, false.B, Mux(station.io.out(1).fire(), true.B, Mux(mem.io.in.fire(), false.B, issue_1_valid)))
   val ex_data_1 = RegEnable(tmp_ex_data(1), 0.U.asTypeOf(tmp_ex_data.head), station.io.out(1).fire())
   val issue_1 = RegEnable(station.io.out(1).bits, 0.U.asTypeOf(station.io.out(1).bits), mem.io.in.ready)
   station.io.out(1).ready := mem.io.in.ready | !issue_1_valid
@@ -175,10 +183,13 @@ class OOO(implicit p: Parameters) extends Module {
   //= ex ==================================================
   // fixpointU
   fixPointU.io.in.valid         := issue_0_valid
+  fixPointU.io.in.bits.pr1_data := ex_data_0.a
+  fixPointU.io.in.bits.pr2_data := ex_data_0.b
   fixPointU.io.in.bits.A        := Mux(issue_0.info.A_sel === A_RS1, ex_data_0.a, issue_0.info.pc)
   fixPointU.io.in.bits.B        := Mux(issue_0.info.B_sel === B_RS2, ex_data_0.b, issue_0.info.imm)
   fixPointU.io.in.bits.prd      := issue_0.info.prd
-  fixPointU.io.in.bits.p_br     := issue_0.info.p_br
+  fixPointU.io.in.bits.pTaken   := issue_0.info.pTaken
+  fixPointU.io.in.bits.pPC      := issue_0.info.pPC
   fixPointU.io.in.bits.alu_op   := issue_0.info.alu_op
   fixPointU.io.in.bits.br_type  := issue_0.info.br_type
   fixPointU.io.in.bits.wb_type  := issue_0.info.wb_type
@@ -219,6 +230,7 @@ class OOO(implicit p: Parameters) extends Module {
   rename.io.cdb(1) <> mem.io.cdb
 
   //= commit ==================================================
+  rob_kill := (rob.io.commit.br_info.valid & !rob.io.commit.br_info.bits.isHit)
   rob.io.in.cdb(0) <> fixPointU.io.cdb
   rob.io.in.cdb(1) <> mem.io.cdb
   rob.io.memCDB <> mem.io.memCDB
@@ -233,18 +245,25 @@ class OOO(implicit p: Parameters) extends Module {
   prfile.io.write(1).wdata := rob.io.commit.reg(1).bits.data
 
   // to rename
-  rename.io.robCommit(0).bits := rob.io.commit2rename(0).bits
-  rename.io.robCommit(0).valid := rob.io.commit2rename(0).valid
-  rename.io.robCommit(1).bits := rob.io.commit2rename(1).bits
-  rename.io.robCommit(1).valid := rob.io.commit2rename(1).valid
+  rename.io.robCommit.reg(0).bits := rob.io.commit2rename(0).bits
+  rename.io.robCommit.reg(0).valid := rob.io.commit2rename(0).valid
+  rename.io.robCommit.reg(1).bits := rob.io.commit2rename(1).bits
+  rename.io.robCommit.reg(1).valid := rob.io.commit2rename(1).valid
+  // rob br info to renameMap
+  rename.io.robCommit.br_info.valid := rob.io.commit.br_info.valid
+  rename.io.robCommit.br_info.bits.isHit := rob.io.commit.br_info.bits.isHit
+  rename.io.robCommit.br_info.bits.current_rename_state := rob.io.commit.br_info.bits.current_rename_state
 
   // to station
-  station.io.robCommit(0).valid := rob.io.commit2station(0).valid
-  station.io.robCommit(0).bits.prn := rob.io.commit2station(0).bits.prn
-  station.io.robCommit(0).bits.wen := rob.io.commit2station(0).bits.wen
-  station.io.robCommit(1).valid := rob.io.commit2station(1).valid
-  station.io.robCommit(1).bits.prn := rob.io.commit2station(1).bits.prn
-  station.io.robCommit(1).bits.wen := rob.io.commit2station(1).bits.wen
+  station.io.robCommit.reg(0).valid := rob.io.commit2station(0).valid
+  station.io.robCommit.reg(0).bits.prn := rob.io.commit2station(0).bits.prn
+  station.io.robCommit.reg(0).bits.wen := rob.io.commit2station(0).bits.wen
+  station.io.robCommit.reg(1).valid := rob.io.commit2station(1).valid
+  station.io.robCommit.reg(1).bits.prn := rob.io.commit2station(1).bits.prn
+  station.io.robCommit.reg(1).bits.wen := rob.io.commit2station(1).bits.wen
+  // rob br info to station
+  station.io.robCommit.br_info.valid := rob.io.commit.br_info.valid
+  station.io.robCommit.br_info.bits.isHit := rob.io.commit.br_info.bits.isHit
 
 
   dcacheCrossBar.io.in(0) <> mem.io.dcache

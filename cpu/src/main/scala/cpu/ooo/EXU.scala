@@ -10,13 +10,16 @@ import scala.collection.immutable.Nil
 // 定点执行单元
 class FixPointIn(implicit p: Parameters) extends Bundle{
   val idx = UInt(4.W)
+  val pr1_data = UInt(p(XLen).W)
+  val pr2_data = UInt(p(XLen).W)
   val A = UInt(p(XLen).W)
   val B = UInt(p(XLen).W)
   val alu_op = UInt(5.W)
   val prd = UInt(6.W) // physics rd id
 
   val br_type = UInt(3.W)
-  val p_br = Bool()   // 0: not jump    1: jump
+  val pTaken = Bool()   // 0: not jump    1: jump
+  val pPC = UInt(p(AddresWidth).W)
 
   val wb_type = UInt(2.W)
   val wen = Bool()
@@ -41,8 +44,8 @@ class FixPointU(implicit p: Parameters) extends Module{
 
   // branch
   val br = Module(new Branch)
-  br.io.rs1 := io.in.bits.A
-  br.io.rs2 := io.in.bits.B
+  br.io.rs1 := io.in.bits.pr1_data
+  br.io.rs2 := io.in.bits.pr2_data
   br.io.br_type := io.in.bits.br_type
   val br_taken = br.io.taken
 
@@ -50,7 +53,7 @@ class FixPointU(implicit p: Parameters) extends Module{
   io.cdb.bits.prn := io.in.bits.prd
   io.cdb.bits.data := alu_res
   io.cdb.bits.wen := io.in.bits.wen
-  io.cdb.bits.brHit := Mux(io.in.bits.br_type.orR(), br.io.taken === io.in.bits.p_br, true.B)
+  io.cdb.bits.brHit := Mux(io.in.bits.br_type.orR(), (br.io.taken === io.in.bits.pTaken) & ((br.io.taken & (io.in.bits.pPC === alu_res)) | (!br.io.taken)), true.B)
   io.cdb.bits.expt := false.B // FixPointU can't generate except
   io.cdb.bits.pc := io.in.bits.pc
   io.cdb.bits.inst := io.in.bits.inst

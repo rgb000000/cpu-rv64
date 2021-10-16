@@ -9,6 +9,7 @@ class BrInfo(implicit p: Parameters) extends Bundle {
   val isHit = Bool()
   val isTaken = Bool()
   val cur_pc = UInt(p(XLen).W)
+  val tgt = UInt(p(AddresWidth).W)
 }
 
 class IF (implicit p: Parameters) extends Module {
@@ -199,7 +200,7 @@ class OOOIF (implicit p: Parameters) extends Module {
   }
 
   // always read instructions from icache
-  io.icache.req.valid := !io.stall
+  io.icache.req.valid := (!io.stall) & (!io.kill)
   io.icache.req.bits.op := 0.U // must read
   io.icache.req.bits.addr := (pc_next >> 3.U) << 3.U // Mux(io.pc_sel === Control.PC_ALU, io.pc_alu, pc)// pc is addr
   io.icache.req.bits.mask := "b1111_1111".U // Mux(io.icache.req.bits.addr(2) === 1.U, "b1111_0000".U, "b0000_1111".U)  // need 32 bit instructions
@@ -227,27 +228,47 @@ class OOOIF (implicit p: Parameters) extends Module {
     is_valid_when_stall(1) := 0.U
   }
 
+  val req_state =  RegInit(0.U(1.W))
+  when(io.icache.req.fire() & !(io.icache.resp.fire() & (io.icache.resp.bits.cmd === 2.U))){
+    // req , no resp
+    req_state := req_state + 1.U
+  }.elsewhen((!io.icache.req.fire()) & (io.icache.resp.fire() & (io.icache.resp.bits.cmd === 2.U))){
+    // resp, no req
+    req_state := req_state - 1.U
+  }.otherwise{
+    // no req, no resp
+    // or req and resp
+    req_state := req_state
+  }
+
+  val cancel_next_data = RegInit(false.B)
+  when((req_state === 1.U) & !(io.icache.resp.fire() & (io.icache.resp.bits.cmd === 2.U)) & io.kill){
+    cancel_next_data := 1.U
+  }.elsewhen(io.icache.resp.fire() & (io.icache.resp.bits.cmd === 2.U)){
+    cancel_next_data := 0.U
+  }
+
   // update
   btb(0).io.update.valid := io.br_info.fire() & (io.br_info.bits.cur_pc(2) === 0.U)
   btb(0).io.update.bits.pc := io.br_info.bits.cur_pc
-  btb(0).io.update.bits.tgt := Mux(io.br_info.bits.isTaken, io.pc_alu, io.br_info.bits.cur_pc + 4.U)
+  btb(0).io.update.bits.tgt := Mux(io.br_info.bits.isTaken, io.br_info.bits.tgt, io.br_info.bits.cur_pc + 4.U)
   btb(0).io.update.bits.isTaken := io.br_info.bits.isTaken
 
   btb(1).io.update.valid := io.br_info.fire() & (io.br_info.bits.cur_pc(2) === 1.U)
   btb(1).io.update.bits.pc := io.br_info.bits.cur_pc
-  btb(1).io.update.bits.tgt := Mux(io.br_info.bits.isTaken, io.pc_alu, io.br_info.bits.cur_pc + 4.U)
+  btb(1).io.update.bits.tgt := Mux(io.br_info.bits.isTaken, io.br_info.bits.tgt, io.br_info.bits.cur_pc + 4.U)
   btb(1).io.update.bits.isTaken := io.br_info.bits.isTaken
 
   io.out(0).bits.pc := (cur_pc >> 3.U) << 3.U
   io.out(0).bits.inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(31, 0), inst(0))
   io.out(0).bits.pTaken := pTaken(0)
   io.out(0).bits.pPC := Mux(btb(0).io.query.res.bits.is_miss, 0.U, btb(0).io.query.res.bits.tgt)
-  io.out(0).valid := Mux(io.kill, 0.U, io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U)) | (is_valid_when_stall(0) & stall_negedge)
+  io.out(0).valid := Mux(io.kill | cancel_next_data, 0.U, io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U)) | (is_valid_when_stall(0) & stall_negedge) & inst_valid(0)
 
   io.out(1).bits.pc := io.out(0).bits.pc | "b100".U
   io.out(1).bits.inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(63, 32), inst(1))
   io.out(1).bits.pTaken := pTaken(1)
   io.out(1).bits.pPC := Mux(btb(0).io.query.res.bits.is_miss, 0.U, btb(0).io.query.res.bits.tgt)
-  io.out(1).valid := Mux(io.kill, 0.U, io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U)) | (is_valid_when_stall(1) & stall_negedge)
+  io.out(1).valid := Mux(io.kill | cancel_next_data, 0.U, io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U)) | (is_valid_when_stall(1) & stall_negedge) & inst_valid(1)
 
 }

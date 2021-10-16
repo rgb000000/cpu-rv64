@@ -42,7 +42,14 @@ class RenameMap(implicit p: Parameters) extends Module {
     val port = Vec(2, new QueryAllocate)
 
     val cdb = Vec(2, Flipped(Valid(new CDB))) // wb
-    val robCommit = Vec(2, Flipped(Valid(UInt(6.W)))) // commit
+    val robCommit = new Bundle {
+      val reg = Vec(2, Flipped(Valid(UInt(6.W)))) // commit
+      val br_info = Flipped(Valid(new Bundle {
+        val current_rename_state = Vec(64, Bool())
+        val isHit = Bool()
+      }))
+    }
+
 
     val difftest = if (p(Difftest)) {
       Some(new Bundle {
@@ -141,7 +148,7 @@ class RenameMap(implicit p: Parameters) extends Module {
   val valid_64 = Wire(Vec(64, UInt(1.W)))
   (valid_64, cam.map(_.valid)).zipped.foreach(_ := _.asUInt())
   val valid_sum = Wire(UInt(8.W))
-  valid_sum := valid_64.reduce(_ +& _)  // + vs. +&
+  valid_sum := valid_64.reduce(_ +& _) // + vs. +&
 
   def allocate_c_c(emptyIdx_0: UInt, emptyIdx_1: UInt) = {
     val port0 = io.port(0).allocate_c
@@ -194,8 +201,8 @@ class RenameMap(implicit p: Parameters) extends Module {
         port1.pr.bits := emptyIdx_1
         port1.pr.valid := true.B
       }
-//      printf("valid_64 = %x\n", valid_64.asUInt())
-//      printf("valid_sum = %d\n", valid_sum)
+      //      printf("valid_64 = %x\n", valid_64.asUInt())
+      //      printf("valid_sum = %d\n", valid_sum)
       assert(valid_sum === 32.U)
     }.elsewhen(port0_fire_notZero & !port1_fire_notZero) {
       // allocate for 0
@@ -278,11 +285,18 @@ class RenameMap(implicit p: Parameters) extends Module {
     }
   })
 
-  io.robCommit.foreach(robcommit => {
+  io.robCommit.reg.foreach(robcommit => {
     when(robcommit.fire() & (robcommit.bits =/= 0.U)) {
       cam(robcommit.bits).state := STATECONST.COMMIT
     }
   })
+
+  when(io.robCommit.br_info.valid & !io.robCommit.br_info.bits.isHit){
+    for(i <- 0 until 64){
+      cam(i).valid := io.robCommit.br_info.bits.current_rename_state(i)
+      cam(i).state := Mux(io.robCommit.br_info.bits.current_rename_state(i), STATECONST.COMMIT, STATECONST.EMPRY)
+    }
+  }
 
   def findCAM_LR(LRIdx: UInt, state: Vec[Bool]): UInt = {
     val query = Wire(Vec(64, Bool()))
