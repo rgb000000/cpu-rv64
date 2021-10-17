@@ -151,9 +151,9 @@ class OOOIF (implicit p: Parameters) extends Module {
 
   val pc_next = Mux(io.stall,                                     cur_pc,
     Mux(io.pc_except_entry.valid,                     io.pc_except_entry.bits,
-      Mux(io.br_info.fire() & (!io.br_info.bits.isHit), Mux(io.br_info.bits.isTaken, io.pc_alu, io.br_info.bits.cur_pc + 4.U),
+      Mux(io.br_info.fire() & (!io.br_info.bits.isHit), Mux(io.br_info.bits.isTaken, io.br_info.bits.tgt, get_next_pc(io.br_info.bits.cur_pc)),
         Mux(io.br_info.fire() & io.br_info.bits.isHit,    Mux(pTaken_f, pnpc_f, get_next_pc(cur_pc)), //预测正确之后就不需要跳转到pc_alu去执行了
-          Mux(io.fence_i_done,                              RegEnable(io.fence_pc, 0.U, io.fence_i_do) + 4.U,
+          Mux(io.fence_i_done,                              get_next_pc(RegEnable(io.fence_pc, 0.U, io.fence_i_do)),
             Mux(pTaken_f,                                     pnpc_f,
               MuxLookup(io.pc_sel, 0.U, Array(
                 Control.PC_0   -> (cur_pc),
@@ -199,6 +199,10 @@ class OOOIF (implicit p: Parameters) extends Module {
     Mux(pc(2), pc + 4.U, pc + 8.U)
   }
 
+  def get_pre_pc(pc: UInt): UInt = {
+    pc - 8.U
+  }
+
   // always read instructions from icache
   io.icache.req.valid := (!io.stall) & (!io.kill)
   io.icache.req.bits.op := 0.U // must read
@@ -208,25 +212,6 @@ class OOOIF (implicit p: Parameters) extends Module {
 
   //  dontTouch(pc_next)
   //  dontTouch(io.out)
-
-  cur_pc := Mux(io.icache.req.fire(), io.icache.req.bits.addr, Mux(io.icache.req.valid & !io.icache.req.ready & !io.stall, pc_next - 4.U, cur_pc))
-  inst(0) := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(31,  0).asUInt(), inst(0))
-  inst(1) := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(63, 32).asUInt(), inst(1))
-
-
-  val stall_negedge = (!io.stall) & RegNext(io.stall, false.B)
-  val is_valid_when_stall = RegInit(VecInit(Seq.fill(2)(false.B)))
-  when(io.stall & io.out(0).valid){
-    is_valid_when_stall(0) := 1.U
-  }.elsewhen(stall_negedge){
-    is_valid_when_stall(0) := 0.U
-  }
-
-  when(io.stall & io.out(1).valid){
-    is_valid_when_stall(1) := 1.U
-  }.elsewhen(stall_negedge){
-    is_valid_when_stall(1) := 0.U
-  }
 
   val req_state =  RegInit(0.U(1.W))
   when(io.icache.req.fire() & !(io.icache.resp.fire() & (io.icache.resp.bits.cmd === 2.U))){
@@ -248,6 +233,37 @@ class OOOIF (implicit p: Parameters) extends Module {
     cancel_next_data := 0.U
   }
 
+  val cut_next_data = RegInit(false.B)  // 表示下面要来的两个数据，仅高地址的有效
+  when(io.kill & (io.br_info.fire() & io.br_info.bits.tgt(2))){
+    cut_next_data := true.B
+  }.elsewhen(io.icache.resp.fire() & (io.icache.resp.bits.cmd === 2.U) & !cancel_next_data){
+    cut_next_data := false.B
+  }
+
+
+  cur_pc := Mux(io.icache.req.fire(), io.icache.req.bits.addr,
+            Mux(io.kill, get_pre_pc(io.br_info.bits.tgt),
+            Mux(io.icache.req.valid & !io.icache.req.ready & !io.stall , get_pre_pc(pc_next), cur_pc)))
+
+  inst(0) := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(31,  0).asUInt(), inst(0))
+  inst(1) := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(63, 32).asUInt(), inst(1))
+
+
+  val stall_negedge = (!io.stall) & RegNext(io.stall, false.B)
+  val is_valid_when_stall = RegInit(VecInit(Seq.fill(2)(false.B)))
+  when(io.stall & io.out(0).valid){
+    is_valid_when_stall(0) := 1.U
+  }.elsewhen(stall_negedge){
+    is_valid_when_stall(0) := 0.U
+  }
+
+  when(io.stall & io.out(1).valid){
+    is_valid_when_stall(1) := 1.U
+  }.elsewhen(stall_negedge){
+    is_valid_when_stall(1) := 0.U
+  }
+
+
   // update
   btb(0).io.update.valid := io.br_info.fire() & (io.br_info.bits.cur_pc(2) === 0.U)
   btb(0).io.update.bits.pc := io.br_info.bits.cur_pc
@@ -263,7 +279,7 @@ class OOOIF (implicit p: Parameters) extends Module {
   io.out(0).bits.inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(31, 0), inst(0))
   io.out(0).bits.pTaken := pTaken(0)
   io.out(0).bits.pPC := Mux(btb(0).io.query.res.bits.is_miss, 0.U, btb(0).io.query.res.bits.tgt)
-  io.out(0).valid := Mux(io.kill | cancel_next_data, 0.U, io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U)) | (is_valid_when_stall(0) & stall_negedge) & inst_valid(0)
+  io.out(0).valid := (Mux(io.kill | cancel_next_data, 0.U, io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U)) | (is_valid_when_stall(0) & stall_negedge) & inst_valid(0)) & !cut_next_data
 
   io.out(1).bits.pc := io.out(0).bits.pc | "b100".U
   io.out(1).bits.inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(63, 32), inst(1))

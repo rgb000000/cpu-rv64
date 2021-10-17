@@ -125,20 +125,22 @@ class ROB(implicit p: Parameters) extends Module {
   }
 
   // write rob
-  val cnt = Counter(16)
-  when(io.in.fromID(0).fire() & io.in.fromID(1).fire()) {
+  val wrCnt = Counter(16)
+  when(io.commit.br_info.valid & !io.commit.br_info.bits.isHit){
+    wrCnt.value := 0.U
+  }.elsewhen(io.in.fromID(0).fire() & io.in.fromID(1).fire()) {
     // 0, 1
-    cnt.value := cnt.value + 2.U
-    write_rob(0, cnt.value)
-    write_rob(1, cnt.value + 1.U)
+    wrCnt.value := wrCnt.value + 2.U
+    write_rob(0, wrCnt.value)
+    write_rob(1, wrCnt.value + 1.U)
   }.elsewhen(io.in.fromID(0).fire() & !io.in.fromID(1).fire()) {
     // 0
-    cnt.value := cnt.value + 1.U
-    write_rob(0, cnt.value)
+    wrCnt.value := wrCnt.value + 1.U
+    write_rob(0, wrCnt.value)
   }.elsewhen((!io.in.fromID(0).fire()) & io.in.fromID(1).fire()) {
     // 1
-    cnt.value := cnt.value + 1.U
-    write_rob(1, cnt.value)
+    wrCnt.value := wrCnt.value + 1.U
+    write_rob(1, wrCnt.value)
   }.otherwise {
     // none
   }
@@ -230,7 +232,11 @@ class ROB(implicit p: Parameters) extends Module {
         rob(commitIdx.value).state := S_COMMITED
         rob(commitIdx.value + 1.U).state := S_COMMITED
 
-        out_br_info(true.B, a)
+        when(a.isBr){
+          out_br_info(true.B, a)
+        }.otherwise{
+          out_br_info(true.B, b)
+        }
       }.elsewhen(a.brHit & !b.brHit){
         // a命中，b没命中,只提交a，也提交b，并且清空rob
         commitIdx.value := 0.U
