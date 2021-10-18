@@ -131,12 +131,12 @@ object Control {
     sw     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SW,  LD_XXX, WB_MEM, N, CSR.N, N),
 
     // B type
-    beq    -> List(PC_4,   A_PC,   B_IMM, IMM_B,   ALU_ADD,    BR_EQ,  N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
-    bne    -> List(PC_4,   A_PC,   B_IMM, IMM_B,   ALU_ADD,    BR_NE,  N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
-    blt    -> List(PC_4,   A_PC,   B_IMM, IMM_B,   ALU_ADD,    BR_LT,  N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
-    bge    -> List(PC_4,   A_PC,   B_IMM, IMM_B,   ALU_ADD,    BR_GE,  N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
-    bltu   -> List(PC_4,   A_PC,   B_IMM, IMM_B,   ALU_ADD,    BR_LTU, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
-    bgeu   -> List(PC_4,   A_PC,   B_IMM, IMM_B,   ALU_ADD,    BR_GEU, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
+    beq    -> List(PC_4,   A_RS1,  B_RS2, IMM_B,   ALU_ADD,    BR_EQ,  N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
+    bne    -> List(PC_4,   A_RS1,  B_RS2, IMM_B,   ALU_ADD,    BR_NE,  N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
+    blt    -> List(PC_4,   A_RS1,  B_RS2, IMM_B,   ALU_ADD,    BR_LT,  N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
+    bge    -> List(PC_4,   A_RS1,  B_RS2, IMM_B,   ALU_ADD,    BR_GE,  N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
+    bltu   -> List(PC_4,   A_RS1,  B_RS2, IMM_B,   ALU_ADD,    BR_LTU, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
+    bgeu   -> List(PC_4,   A_RS1,  B_RS2, IMM_B,   ALU_ADD,    BR_GEU, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
 
     // J type
     jal    -> List(PC_ALU, A_PC,   B_IMM, IMM_J,   ALU_ADD,    BR_J,   N, ST_XXX, LD_XXX, WB_PC4, Y, CSR.N, N),

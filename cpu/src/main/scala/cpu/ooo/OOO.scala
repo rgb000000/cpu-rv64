@@ -110,7 +110,7 @@ class OOO(implicit p: Parameters) extends Module {
     station.io.in(i).bits.pr2_inROB := rename.io.port(i).query_b.pr.bits.inROB
     station.io.in(i).bits.pr2_robIdx:= rename.io.port(i).query_b.pr.bits.robIdx
     station.io.in(i).bits.imm       := id(i).io.imm
-    station.io.in(i).bits.prd       := rename.io.port(i).allocate_c.pr.bits
+    station.io.in(i).bits.prd       := Mux(rename.io.port(i).allocate_c.pr.valid, rename.io.port(i).allocate_c.pr.bits, 0.U)
     station.io.in(i).bits.A_sel     := ctrl(i).a_sel
     station.io.in(i).bits.B_sel     := ctrl(i).b_sel
     station.io.in(i).bits.alu_op    := ctrl(i).alu_op
@@ -183,10 +183,11 @@ class OOO(implicit p: Parameters) extends Module {
   //= ex ==================================================
   // fixpointU
   fixPointU.io.in.valid         := issue_0_valid
-  fixPointU.io.in.bits.pr1_data := ex_data_0.a
-  fixPointU.io.in.bits.pr2_data := ex_data_0.b
+//  fixPointU.io.in.bits.pr1_data := ex_data_0.a
+//  fixPointU.io.in.bits.pr2_data := ex_data_0.b
   fixPointU.io.in.bits.A        := Mux(issue_0.info.A_sel === A_RS1, ex_data_0.a, issue_0.info.pc)
   fixPointU.io.in.bits.B        := Mux(issue_0.info.B_sel === B_RS2, ex_data_0.b, issue_0.info.imm)
+  fixPointU.io.in.bits.imm      := issue_0.info.imm
   fixPointU.io.in.bits.prd      := issue_0.info.prd
   fixPointU.io.in.bits.pTaken   := issue_0.info.pTaken
   fixPointU.io.in.bits.pPC      := issue_0.info.pPC

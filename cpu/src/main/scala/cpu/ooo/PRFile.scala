@@ -60,11 +60,11 @@ class PRFile(implicit p: Parameters) extends Module{
     }
     val arch_reg = RegInit(VecInit(Seq.fill(32)(0.asUInt(p(XLen).W))))
 
-    when(io.write(0).wen){
+    when(io.write(0).wen & io.write(0).waddr.orR()){
       arch_reg(io.difftest.get.findArchReg(0).lr.bits) := io.write(0).wdata
     }
 
-    when(io.write(1).wen){
+    when(io.write(1).wen  & io.write(1).waddr.orR()){
       arch_reg(io.difftest.get.findArchReg(1).lr.bits) := io.write(1).wdata
     }
 

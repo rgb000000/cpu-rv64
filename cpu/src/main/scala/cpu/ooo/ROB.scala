@@ -58,6 +58,7 @@ class ROBIO(implicit p: Parameters) extends Bundle {
     val br_info = Valid(new Bundle{
       // to branch
       val current_rename_state = Vec(64, Bool())
+      val valid_value = UInt(64.W)
       val isHit = Bool()
       val isTaken = Bool()
       val cur_pc = UInt(p(AddresWidth).W)
@@ -385,4 +386,7 @@ class ROB(implicit p: Parameters) extends Module {
   }
 
   dontTouch(io.in.cdb)
+
+  io.commit.br_info.bits.valid_value := io.commit.br_info.bits.current_rename_state.asUInt()
+  dontTouch(io.commit.br_info.bits.valid_value)
 }

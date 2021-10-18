@@ -149,6 +149,9 @@ class RenameMap(implicit p: Parameters) extends Module {
   (valid_64, cam.map(_.valid)).zipped.foreach(_ := _.asUInt())
   val valid_sum = Wire(UInt(8.W))
   valid_sum := valid_64.reduce(_ +& _) // + vs. +&
+  val valid_value = Wire(UInt(64.W))
+  dontTouch(valid_value)
+  valid_value := Cat(cam.map(_.valid).reverse).asUInt()
 
   def allocate_c_c(emptyIdx_0: UInt, emptyIdx_1: UInt) = {
     val port0 = io.port(0).allocate_c
@@ -259,7 +262,9 @@ class RenameMap(implicit p: Parameters) extends Module {
 
   // allocate port a and b
   val emptyPR = WireInit(VecInit(cam.map(x => {
-    (x.state === STATECONST.EMPRY) | ((x.state === STATECONST.COMMIT) & !x.valid)
+    // 这里有问题解决不了， 新的映射关系只查找状态为empty的，并且在提交的时候释放之前的commit状态的
+    // (x.state === STATECONST.EMPRY) | ((x.state === STATECONST.COMMIT) & !x.valid)
+    x.state === STATECONST.EMPRY
   })))
   val emptyPRIdx_0 = PriorityEncoder(emptyPR)
   val emptyPRIdx_1 = 63.U - PriorityEncoder(emptyPR.reverse)
@@ -279,7 +284,7 @@ class RenameMap(implicit p: Parameters) extends Module {
   io.port(1).allocate_c.current_rename_state.valid := io.port(1).allocate_c.lr.fire()
 
   io.cdb.foreach(cdb => {
-    when(cdb.fire()) {
+    when(cdb.fire() & (cdb.bits.prn =/= 0.U)) {
       cam(cdb.bits.prn).state := STATECONST.WB
       cam(cdb.bits.prn).robIdx := cdb.bits.idx
     }
@@ -287,9 +292,18 @@ class RenameMap(implicit p: Parameters) extends Module {
 
   io.robCommit.reg.foreach(robcommit => {
     when(robcommit.fire() & (robcommit.bits =/= 0.U)) {
+      // 释放之前对lr建立的映射
+      cam.foreach(x => {
+        when((x.LRIdx === cam(robcommit.bits).LRIdx) & (x.state === STATECONST.COMMIT)){
+          x.state := STATECONST.EMPRY
+        }
+      })
+      // 建立新的映射, state为commit的是体系结构寄存器(逻辑寄存器)
       cam(robcommit.bits).state := STATECONST.COMMIT
     }
   })
+  // commit状态的映射，每时每刻只能存在32个,分别对应32个体系结构寄存器
+  assert(cam.map(_.state === STATECONST.COMMIT).map(_.asUInt()).reduce(_ +& _) === 32.U)
 
   when(io.robCommit.br_info.valid & !io.robCommit.br_info.bits.isHit){
     for(i <- 0 until 64){

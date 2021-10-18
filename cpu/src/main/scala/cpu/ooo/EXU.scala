@@ -10,12 +10,13 @@ import scala.collection.immutable.Nil
 // 定点执行单元
 class FixPointIn(implicit p: Parameters) extends Bundle{
   val idx = UInt(4.W)
-  val pr1_data = UInt(p(XLen).W)
-  val pr2_data = UInt(p(XLen).W)
+//  val pr1_data = UInt(p(XLen).W)
+//  val pr2_data = UInt(p(XLen).W)
   val A = UInt(p(XLen).W)
   val B = UInt(p(XLen).W)
   val alu_op = UInt(5.W)
   val prd = UInt(6.W) // physics rd id
+  val imm = UInt(p(XLen).W)
 
   val br_type = UInt(3.W)
   val pTaken = Bool()   // 0: not jump    1: jump
@@ -37,22 +38,22 @@ class FixPointU(implicit p: Parameters) extends Module{
 
   // alu
   val alu = Module(new ALU)
-  alu.io.rs1 := io.in.bits.A
-  alu.io.rs2 := io.in.bits.B
+  alu.io.rs1 := Mux(io.in.bits.br_type.orR(), io.in.bits.pc, io.in.bits.A)
+  alu.io.rs2 := Mux(io.in.bits.br_type.orR(), io.in.bits.imm, io.in.bits.B)
   alu.io.alu_op := io.in.bits.alu_op
   val alu_res = alu.io.out
 
   // branch
   val br = Module(new Branch)
-  br.io.rs1 := io.in.bits.pr1_data
-  br.io.rs2 := io.in.bits.pr2_data
+  br.io.rs1 := io.in.bits.A
+  br.io.rs2 := io.in.bits.B
   br.io.br_type := io.in.bits.br_type
   val br_taken = br.io.taken
 
   io.cdb.bits.idx := io.in.bits.idx
   io.cdb.bits.prn := io.in.bits.prd
   io.cdb.bits.data := alu_res
-  io.cdb.bits.wen := io.in.bits.wen
+  io.cdb.bits.wen := io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
   io.cdb.bits.brHit := Mux(io.in.bits.br_type.orR(), (br.io.taken === io.in.bits.pTaken) & ((br.io.taken & (io.in.bits.pPC === alu_res)) | (!br.io.taken)), true.B)
   io.cdb.bits.expt := false.B // FixPointU can't generate except
   io.cdb.bits.pc := io.in.bits.pc
@@ -197,7 +198,7 @@ class MemU(implicit p: Parameters) extends Module{
     // csr op
     io.cdb.bits.prn := io.in.bits.prd
     io.cdb.bits.data := csr.io.out
-    io.cdb.bits.wen := io.in.bits.wen
+    io.cdb.bits.wen := io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
     io.cdb.bits.brHit := true.B
     io.cdb.bits.expt := csr.io.expt
     io.cdb.bits.pc := io.in.bits.pc
@@ -207,7 +208,7 @@ class MemU(implicit p: Parameters) extends Module{
     // fix point op (NOT including branch)
     io.cdb.bits.prn := io.in.bits.prd
     io.cdb.bits.data := alu_res
-    io.cdb.bits.wen := io.in.bits.wen
+    io.cdb.bits.wen := io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
     io.cdb.bits.brHit := true.B
     io.cdb.bits.expt := false.B // FixPointU can't generate except
     io.cdb.bits.pc := io.in.bits.pc
@@ -236,7 +237,7 @@ class MemU(implicit p: Parameters) extends Module{
       // load inst
       io.cdb.bits.prn := io.in.bits.prd
       io.cdb.bits.data := Mux(state === s_ret, ld_data, 0.U)
-      io.cdb.bits.wen := io.in.bits.wen
+      io.cdb.bits.wen := io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
       io.cdb.bits.brHit := true.B
       io.cdb.bits.expt := false.B
       io.cdb.bits.pc := io.in.bits.pc

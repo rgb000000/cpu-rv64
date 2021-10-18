@@ -124,11 +124,11 @@ class Station(implicit p: Parameters) extends Module {
   // instructions status change
   io.cdb.foreach(cdb => {
     station.map(x => {
-      when(cdb.valid & ((x.A_sel === A_RS1) & (!x.pr1_s) & (x.pr1 === cdb.bits.prn))) {
+      when(cdb.valid & ((x.A_sel === A_RS1) & (!x.pr1_s) & (x.pr1 === cdb.bits.prn) & (x.state === S_WAIT)) & (cdb.bits.prn =/= 0.U)) {
         x.pr1_s := true.B
         x.pr1_inROB := true.B
         x.pr1_robIdx := cdb.bits.idx
-      }.elsewhen(cdb.valid & ((x.B_sel === B_RS2) & (!x.pr2_s) & (x.pr2 === cdb.bits.prn))) {
+      }.elsewhen(cdb.valid & ((x.B_sel === B_RS2) & (!x.pr2_s) & (x.pr2 === cdb.bits.prn) & (x.state === S_WAIT)) & (cdb.bits.prn =/= 0.U)) {
         x.pr2_s := true.B
         x.pr2_inROB := true.B
         x.pr2_robIdx := cdb.bits.idx
@@ -195,14 +195,18 @@ class Station(implicit p: Parameters) extends Module {
 
 
   def commit(prn: UInt, wen: Bool) = {
-    val pr1Res = station.map(_.pr1).map(_ === prn).map(_ & wen)
+    val pr1Res = station.map(x => {
+      (x.pr1 === prn) & wen & (x.state === S_WAIT)
+    })
     val pr1Idx = PriorityEncoder(pr1Res)
     when(Cat(pr1Res).orR()) {
       station(pr1Idx).pr1_inROB := false.B
       station(pr1Idx).pr1_s := true.B
     }
 
-    val pr2Res = station.map(_.pr2).map(_ === prn).map(_ & wen)
+    val pr2Res = station.map(x => {
+      (x.pr2 === prn) & wen & (x.state === S_WAIT)
+    })
     val pr2Idx = PriorityEncoder(pr2Res)
     when(Cat(pr2Res).orR()) {
       station(pr2Idx).pr2_inROB := false.B
