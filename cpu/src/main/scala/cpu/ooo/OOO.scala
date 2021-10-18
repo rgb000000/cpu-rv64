@@ -129,18 +129,18 @@ class OOO(implicit p: Parameters) extends Module {
     station.io.in(i).valid := if_reg(i).valid
 
     // write rob
-    rob.io.in.fromID(i).bits.prdORaddr := Mux(ctrl(i).st_type.orR(), 0.U, rename.io.port(i).allocate_c.pr.bits) // todo: how to make sure mem address?
-    rob.io.in.fromID(i).bits.needData  := ctrl(i).st_type.orR() | ctrl(i).wen
-    rob.io.in.fromID(i).bits.isPrd     := !ctrl(i).st_type.orR()
-    rob.io.in.fromID(i).bits.wen       := ctrl(i).wen
-    rob.io.in.fromID(i).bits.st_type   := ctrl(i).st_type
-    rob.io.in.fromID(i).bits.ld_type   := ctrl(i).ld_type
-    rob.io.in.fromID(i).bits.pc        := if_reg(i).bits.pc
-    rob.io.in.fromID(i).bits.inst      := if_reg(i).bits.inst
-    rob.io.in.fromID(i).valid          := if_reg(i).valid
-    rob.io.in.fromID(i).bits.isBr      := ctrl(i).br_type.orR()
-    rob.io.in.fromID(i).bits.pTaken    := if_reg(i).bits.pTaken
-    rob.io.in.fromID(i).bits.current_rename_state := rename.io.port(i).allocate_c.current_rename_state.bits
+    rob.io.in.fromID(i).bits.prdORaddr            := station.io.in(i).bits.prd     // Mux(ctrl(i).st_type.orR(), 0.U, rename.io.port(i).allocate_c.pr.bits) // todo: how to make sure mem address?
+    rob.io.in.fromID(i).bits.needData             := ctrl(i).st_type.orR() | ctrl(i).wen
+    rob.io.in.fromID(i).bits.isPrd                := !ctrl(i).st_type.orR()
+    rob.io.in.fromID(i).bits.wen                  := station.io.in(i).bits.wen
+    rob.io.in.fromID(i).bits.st_type              := station.io.in(i).bits.st_type
+    rob.io.in.fromID(i).bits.ld_type              := station.io.in(i).bits.ld_type
+    rob.io.in.fromID(i).bits.pc                   := station.io.in(i).bits.pc
+    rob.io.in.fromID(i).bits.inst                 := station.io.in(i).bits.inst
+    rob.io.in.fromID(i).valid                     := station.io.in(i).valid
+    rob.io.in.fromID(i).bits.isBr                 := station.io.in(i).bits.br_type.orR()
+    rob.io.in.fromID(i).bits.pTaken               := station.io.in(i).bits.pTaken
+    rob.io.in.fromID(i).bits.current_rename_state := station.io.in(i).bits.current_rename_state
   }
 
   //= issue ==================================================
