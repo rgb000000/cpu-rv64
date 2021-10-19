@@ -47,6 +47,7 @@ class RenameMap(implicit p: Parameters) extends Module {
       val br_info = Flipped(Valid(new Bundle {
         val current_rename_state = Vec(64, Bool())
         val isHit = Bool()
+        val isJ = Bool()
       }))
     }
 
@@ -269,7 +270,6 @@ class RenameMap(implicit p: Parameters) extends Module {
   val emptyPRIdx_0 = PriorityEncoder(emptyPR)
   val emptyPRIdx_1 = 63.U - PriorityEncoder(emptyPR.reverse)
   assert(emptyPRIdx_0 =/= emptyPRIdx_1)
-  allocate_c_c(emptyPRIdx_0, emptyPRIdx_1)
 
 
 
@@ -283,33 +283,100 @@ class RenameMap(implicit p: Parameters) extends Module {
   (io.port(1).allocate_c.current_rename_state.bits, cam.map(_.valid)).zipped.foreach(_ := _)
   io.port(1).allocate_c.current_rename_state.valid := io.port(1).allocate_c.lr.fire()
 
-  io.cdb.foreach(cdb => {
-    when(cdb.fire() & (cdb.bits.prn =/= 0.U)) {
-      cam(cdb.bits.prn).state := STATECONST.WB
-      cam(cdb.bits.prn).robIdx := cdb.bits.idx
-    }
-  })
-
-  io.robCommit.reg.foreach(robcommit => {
-    when(robcommit.fire() & (robcommit.bits =/= 0.U)) {
-      // 释放之前对lr建立的映射
-      cam.foreach(x => {
-        when((x.LRIdx === cam(robcommit.bits).LRIdx) & (x.state === STATECONST.COMMIT)){
-          x.state := STATECONST.EMPRY
-        }
-      })
-      // 建立新的映射, state为commit的是体系结构寄存器(逻辑寄存器)
-      cam(robcommit.bits).state := STATECONST.COMMIT
-    }
-  })
   // commit状态的映射，每时每刻只能存在32个,分别对应32个体系结构寄存器
   assert(cam.map(_.state === STATECONST.COMMIT).map(_.asUInt()).reduce(_ +& _) === 32.U)
 
   when(io.robCommit.br_info.valid & !io.robCommit.br_info.bits.isHit){
-    for(i <- 0 until 64){
-      cam(i).valid := io.robCommit.br_info.bits.current_rename_state(i)
-      cam(i).state := Mux(io.robCommit.br_info.bits.current_rename_state(i), STATECONST.COMMIT, STATECONST.EMPRY)
+    // 跳转错误取消的优先级最高
+    // isJ表示是无条件跳转，其不用恢复valid，因为无条件跳转需要写回一个pc+4，其次该信号可以用于提交中断。
+    when(!io.robCommit.br_info.bits.isJ){
+      // branch指令跳转错误
+      for(i <- 0 until 64){
+        cam(i).valid := io.robCommit.br_info.bits.current_rename_state(i)
+        cam(i).state := Mux(io.robCommit.br_info.bits.current_rename_state(i), STATECONST.COMMIT, STATECONST.EMPRY)
+      }
+    }.otherwise{
+      // 无条件跳转错误，不用恢复valid，commit为valid，其余状态恢复empty,本次commit提交
+      // 来自rob的提交要么reg0，reg1都有效，要么reg0有效，reg1无效，只有这两种情况
+      when(io.robCommit.reg(0).fire() & io.robCommit.reg(1).fire()){
+        // 0, 1
+        val commit_0 = cam(io.robCommit.reg(0).bits)
+        val commit_1 = cam(io.robCommit.reg(1).bits)
+        for(i <- 0 until 64){
+          when((cam(i).LRIdx =/= commit_0.LRIdx) & (cam(i).LRIdx =/= commit_1.LRIdx)){
+            // 与提交无关的cam恢复
+            cam(i).valid := Mux(cam(i).state === STATECONST.COMMIT, true.B, false.B)
+            cam(i).state := Mux(cam(i).state === STATECONST.COMMIT, STATECONST.COMMIT, STATECONST.EMPRY)
+          }.elsewhen((cam(i).LRIdx === commit_0.LRIdx) & (i.U =/= io.robCommit.reg(0).bits)){
+            // 与0相关的需要无效,状态设置为empty
+            cam(i).valid := false.B
+            cam(i).state := STATECONST.EMPRY
+          }.elsewhen((cam(i).LRIdx === commit_1.LRIdx) & (i.U =/= io.robCommit.reg(1).bits)){
+            // 与1相关的需要无效,状态设置为empty
+            cam(i).valid := false.B
+            cam(i).state := STATECONST.EMPRY
+          }.otherwise{
+            // 否则就是此次需要提交的
+            cam(i).valid := true.B
+            when(i.U =/= 0.U){
+              // cam0 is 0号结构寄存器  其状态不会改变
+              assert(cam(i).state === STATECONST.WB)
+            }
+            cam(i).state := STATECONST.COMMIT
+          }
+        }
+      }.otherwise{
+        // 0
+        val commit_0 = cam(io.robCommit.reg(0).bits)
+        for(i <- 0 until 64){
+          when((cam(i).LRIdx =/= commit_0.LRIdx)){
+            // 与提交无关的cam恢复
+            cam(i).valid := Mux(cam(i).state === STATECONST.COMMIT, true.B, false.B)
+            cam(i).state := Mux(cam(i).state === STATECONST.COMMIT, STATECONST.COMMIT, STATECONST.EMPRY)
+          }.elsewhen((cam(i).LRIdx === commit_0.LRIdx) & (i.U =/= io.robCommit.reg(0).bits)){
+            // 与0相关的需要无效,状态设置为empty
+            cam(i).valid := false.B
+            cam(i).state := STATECONST.EMPRY
+          }.otherwise{
+            // 否则就是此次需要提交的
+            cam(i).valid := true.B
+            when(i.U =/= 0.U){
+              // cam0 is 0号结构寄存器  其状态不会改变
+              assert(cam(i).state === STATECONST.WB)
+            }
+            cam(i).state := STATECONST.COMMIT
+          }
+        }
+      }
     }
+    io.port(0).allocate_c.pr.valid := false.B
+    io.port(0).allocate_c.pr.bits := emptyPRIdx_0
+    io.port(1).allocate_c.pr.valid := false.B
+    io.port(1).allocate_c.pr.bits := emptyPRIdx_1
+  }.otherwise{
+    // cdb、robCommit和allocate三者不会冲突
+    io.cdb.foreach(cdb => {
+      when(cdb.fire() & (cdb.bits.prn =/= 0.U)) {
+        assert(cam(cdb.bits.prn).state === STATECONST.MAPPED)
+        cam(cdb.bits.prn).state := STATECONST.WB
+        cam(cdb.bits.prn).robIdx := cdb.bits.idx
+      }
+    })
+
+    io.robCommit.reg.foreach(robcommit => {
+      when(robcommit.fire() & (robcommit.bits =/= 0.U)) {
+        // 释放之前对lr建立的映射
+        cam.foreach(x => {
+          when((x.LRIdx === cam(robcommit.bits).LRIdx) & (x.state === STATECONST.COMMIT)){
+            x.state := STATECONST.EMPRY
+          }
+        })
+        // 建立新的commit映射, state为commit的是体系结构寄存器(逻辑寄存器)
+        cam(robcommit.bits).state := STATECONST.COMMIT
+      }
+    })
+
+    allocate_c_c(emptyPRIdx_0, emptyPRIdx_1)
   }
 
   def findCAM_LR(LRIdx: UInt, state: Vec[Bool]): UInt = {

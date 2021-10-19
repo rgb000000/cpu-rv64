@@ -64,6 +64,7 @@ class CDB(implicit p: Parameters) extends Bundle {
   val idx = UInt(4.W)
   val prn = UInt(6.W)
   val data = UInt(64.W)
+  val j_pc = UInt(p(AddresWidth).W)
   val wen = Bool()
   val brHit = Bool()
   val expt = Bool()
@@ -121,21 +122,6 @@ class Station(implicit p: Parameters) extends Module {
     dontTouch(x.inst)
   })
 
-  // instructions status change
-  io.cdb.foreach(cdb => {
-    station.map(x => {
-      when(cdb.valid & ((x.A_sel === A_RS1) & (!x.pr1_s) & (x.pr1 === cdb.bits.prn) & (x.state === S_WAIT)) & (cdb.bits.prn =/= 0.U)) {
-        x.pr1_s := true.B
-        x.pr1_inROB := true.B
-        x.pr1_robIdx := cdb.bits.idx
-      }.elsewhen(cdb.valid & ((x.B_sel === B_RS2) & (!x.pr2_s) & (x.pr2 === cdb.bits.prn) & (x.state === S_WAIT)) & (cdb.bits.prn =/= 0.U)) {
-        x.pr2_s := true.B
-        x.pr2_inROB := true.B
-        x.pr2_robIdx := cdb.bits.idx
-      }
-    })
-  })
-
   // issue
   val which_station_ready_0 = Cat(station.map(x => {
     // alu op and branch, no ld/st and csr
@@ -153,45 +139,13 @@ class Station(implicit p: Parameters) extends Module {
   io.out(0).valid := which_station_ready_0.orR()
   io.out(0).bits.info := station(readyIdx_0)
   io.out(0).bits.idx := readyIdx_0
-  when(io.out(0).fire()) {
-    station(readyIdx_0).state := S_ISSUE
-  }
   // memU
   io.out(1).valid := which_station_ready_1.orR() & (readyIdx_1 =/= readyIdx_0)
   io.out(1).bits.info := station(readyIdx_1)
   io.out(1).bits.idx := readyIdx_1
-  when(io.out(1).fire() & (readyIdx_1 =/= readyIdx_0)) {
-    station(readyIdx_1).state := S_ISSUE
-  }
 
   // input
   val inPtr = Counter(32)
-  val a = io.in(0)
-  val b = io.in(1)
-  when(a.fire() & b.fire()) {
-    // input a and b
-    inPtr.value := inPtr.value + 2.U
-
-    station(inPtr.value) := a.bits
-    station(inPtr.value).state := S_WAIT
-
-    station(inPtr.value + 1.U) := b.bits
-    station(inPtr.value + 1.U).state := S_WAIT
-  }.elsewhen(a.fire() & !b.fire()) {
-    // input a
-    inPtr.inc()
-
-    station(inPtr.value) := a.bits
-    station(inPtr.value).state := S_WAIT
-  }.elsewhen((!a.fire()) & b.fire()) {
-    // input b
-    inPtr.inc()
-
-    station(inPtr.value) := b.bits
-    station(inPtr.value).state := S_WAIT
-  }.otherwise {
-
-  }
 
 
   def commit(prn: UInt, wen: Bool) = {
@@ -216,23 +170,6 @@ class Station(implicit p: Parameters) extends Module {
 
   // commit
   val commitPtr = Counter(32)
-  when(io.robCommit.reg(0).fire() & io.robCommit.reg(1).fire()) {
-    // commit 0, 1
-    commitPtr.value := commitPtr.value + 2.U
-    commit(io.robCommit.reg(0).bits.prn, io.robCommit.reg(0).bits.wen)
-    commit(io.robCommit.reg(1).bits.prn, io.robCommit.reg(1).bits.wen)
-
-  }.elsewhen(io.robCommit.reg(0).fire() & !io.robCommit.reg(1).fire()) {
-    // commit 0
-    commitPtr.value := commitPtr.value + 1.U
-    commit(io.robCommit.reg(0).bits.prn, io.robCommit.reg(0).bits.wen)
-  }.elsewhen((!io.robCommit.reg(0).fire()) & io.robCommit.reg(1).fire()) {
-    // commit 1
-    commitPtr.value := commitPtr.value + 1.U
-    commit(io.robCommit.reg(1).bits.prn, io.robCommit.reg(1).bits.wen)
-  }.otherwise {
-    // none
-  }
 
   // br isMiss, need clear station, 优先级最高，写在最后
   when(io.robCommit.br_info.valid & !io.robCommit.br_info.bits.isHit) {
@@ -248,6 +185,76 @@ class Station(implicit p: Parameters) extends Module {
     // clear cnt
     inPtr.value := 0.U
     commitPtr.value := 0.U
+  }.otherwise{
+    // cdb
+    io.cdb.foreach(cdb => {
+      station.map(x => {
+        when(cdb.valid & ((x.A_sel === A_RS1) & (!x.pr1_s) & (x.pr1 === cdb.bits.prn) & (x.state === S_WAIT)) & (cdb.bits.prn =/= 0.U)) {
+          x.pr1_s := true.B
+          x.pr1_inROB := true.B
+          x.pr1_robIdx := cdb.bits.idx
+        }.elsewhen(cdb.valid & ((x.B_sel === B_RS2) & (!x.pr2_s) & (x.pr2 === cdb.bits.prn) & (x.state === S_WAIT)) & (cdb.bits.prn =/= 0.U)) {
+          x.pr2_s := true.B
+          x.pr2_inROB := true.B
+          x.pr2_robIdx := cdb.bits.idx
+        }
+      })
+    })
+
+    // commit
+    when(io.robCommit.reg(0).fire() & io.robCommit.reg(1).fire()) {
+      // commit 0, 1
+      commitPtr.value := commitPtr.value + 2.U
+      commit(io.robCommit.reg(0).bits.prn, io.robCommit.reg(0).bits.wen)
+      commit(io.robCommit.reg(1).bits.prn, io.robCommit.reg(1).bits.wen)
+
+    }.elsewhen(io.robCommit.reg(0).fire() & !io.robCommit.reg(1).fire()) {
+      // commit 0
+      commitPtr.value := commitPtr.value + 1.U
+      commit(io.robCommit.reg(0).bits.prn, io.robCommit.reg(0).bits.wen)
+    }.elsewhen((!io.robCommit.reg(0).fire()) & io.robCommit.reg(1).fire()) {
+      // commit 1
+      commitPtr.value := commitPtr.value + 1.U
+      commit(io.robCommit.reg(1).bits.prn, io.robCommit.reg(1).bits.wen)
+    }.otherwise {
+      // none
+    }
+
+    // input
+    val a = io.in(0)
+    val b = io.in(1)
+    when(a.fire() & b.fire()) {
+      // input a and b
+      inPtr.value := inPtr.value + 2.U
+
+      station(inPtr.value) := a.bits
+      station(inPtr.value).state := S_WAIT
+
+      station(inPtr.value + 1.U) := b.bits
+      station(inPtr.value + 1.U).state := S_WAIT
+    }.elsewhen(a.fire() & !b.fire()) {
+      // input a
+      inPtr.inc()
+
+      station(inPtr.value) := a.bits
+      station(inPtr.value).state := S_WAIT
+    }.elsewhen((!a.fire()) & b.fire()) {
+      // input b
+      inPtr.inc()
+
+      station(inPtr.value) := b.bits
+      station(inPtr.value).state := S_WAIT
+    }.otherwise {
+
+    }
+
+    // issue
+    when(io.out(0).fire()) {
+      station(readyIdx_0).state := S_ISSUE
+    }
+    when(io.out(1).fire() & (readyIdx_1 =/= readyIdx_0)) {
+      station(readyIdx_1).state := S_ISSUE
+    }
   }
 
   // 至少有两个空位置才可以, 如果inPrt和commitPrt高位相等，

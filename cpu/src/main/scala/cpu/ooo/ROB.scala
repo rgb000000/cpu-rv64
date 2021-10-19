@@ -13,11 +13,13 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val isPrd = Bool()
 
       val wen = Bool()
+      val wb_type = UInt(2.W)
       val st_type = UInt(3.W)
       val ld_type = UInt(3.W)
       val pc = UInt(p(AddresWidth).W)
       val inst = UInt(32.W)
       val isBr = Bool()
+      val isJ = Bool()
       val pTaken = Bool()
       val current_rename_state = Vec(64, Bool())
     })))
@@ -60,6 +62,7 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val current_rename_state = Vec(64, Bool())
       val valid_value = UInt(64.W)
       val isHit = Bool()
+      val isJ = Bool()
       val isTaken = Bool()
       val cur_pc = UInt(p(AddresWidth).W)
       val right_pc = UInt(p(AddresWidth).W)   // right_pc is the same as data
@@ -81,10 +84,12 @@ class ROBInfo(implicit p: Parameters) extends Bundle {
 
   val prdORaddr = UInt(p(AddresWidth).W)
   val data = UInt(p(XLen).W)
+  val j_pc = UInt(p(AddresWidth).W)
   val needData = Bool()
   val isPrd = Bool()    //决定prdORaddr是prn还是memAddress
   val mask = UInt(8.W)
   val wen = Bool()
+  val wb_type = UInt(2.W)
   val st_type = UInt(3.W)
   val ld_type = UInt(3.W)
 
@@ -92,6 +97,7 @@ class ROBInfo(implicit p: Parameters) extends Bundle {
   val expt = Bool()
 
   val isBr = Bool()
+  val isJ = Bool()
   val pTaken = Bool()
   val current_rename_state = Vec(64, Bool())
 
@@ -114,6 +120,7 @@ class ROB(implicit p: Parameters) extends Module {
     rob(idx).needData := io.in.fromID(fromIDport).bits.needData
     rob(idx).isPrd := io.in.fromID(fromIDport).bits.isPrd
     rob(idx).wen := io.in.fromID(fromIDport).bits.wen
+    rob(idx).wb_type := io.in.fromID(fromIDport).bits.wb_type
     rob(idx).st_type := io.in.fromID(fromIDport).bits.st_type
     rob(idx).ld_type := io.in.fromID(fromIDport).bits.ld_type
     rob(idx).mask := "h00".U
@@ -121,6 +128,7 @@ class ROB(implicit p: Parameters) extends Module {
     rob(idx).pc := io.in.fromID(fromIDport).bits.pc
     rob(idx).inst := io.in.fromID(fromIDport).bits.inst
     rob(idx).isBr := io.in.fromID(fromIDport).bits.isBr
+    rob(idx).isJ  := io.in.fromID(fromIDport).bits.isJ
     rob(idx).pTaken := io.in.fromID(fromIDport).bits.pTaken
     rob(idx).current_rename_state := io.in.fromID(fromIDport).bits.current_rename_state
   }
@@ -151,6 +159,7 @@ class ROB(implicit p: Parameters) extends Module {
     when(cdb.fire()) {
       rob(cdb.bits.idx).state := S_GETDATA
       rob(cdb.bits.idx).data := cdb.bits.data
+      rob(cdb.bits.idx).j_pc := cdb.bits.j_pc
 
       rob(cdb.bits.idx).brHit := cdb.bits.brHit
       rob(cdb.bits.idx).expt := cdb.bits.expt
@@ -211,9 +220,10 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit.br_info.valid := info.isBr
     io.commit.br_info.bits.current_rename_state := info.current_rename_state
     io.commit.br_info.bits.isHit                := isHit
+    io.commit.br_info.bits.isJ                  := info.isJ
     io.commit.br_info.bits.isTaken              := Mux(isHit, info.pTaken, !info.pTaken)
     io.commit.br_info.bits.cur_pc               := info.pc
-    io.commit.br_info.bits.right_pc             := info.data
+    io.commit.br_info.bits.right_pc             := info.j_pc
   }
 
   // commit

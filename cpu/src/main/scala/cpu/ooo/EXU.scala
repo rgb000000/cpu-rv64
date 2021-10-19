@@ -38,7 +38,7 @@ class FixPointU(implicit p: Parameters) extends Module{
 
   // alu
   val alu = Module(new ALU)
-  alu.io.rs1 := Mux(io.in.bits.br_type.orR(), io.in.bits.pc, io.in.bits.A)
+  alu.io.rs1 := Mux(io.in.bits.br_type.orR(), Mux(io.in.bits.br_type === "b111".U, io.in.bits.A, io.in.bits.pc), io.in.bits.A)
   alu.io.rs2 := Mux(io.in.bits.br_type.orR(), io.in.bits.imm, io.in.bits.B)
   alu.io.alu_op := io.in.bits.alu_op
   val alu_res = alu.io.out
@@ -52,7 +52,8 @@ class FixPointU(implicit p: Parameters) extends Module{
 
   io.cdb.bits.idx := io.in.bits.idx
   io.cdb.bits.prn := io.in.bits.prd
-  io.cdb.bits.data := alu_res
+  io.cdb.bits.data := Mux(io.in.bits.br_type === "b111".U, io.in.bits.pc + 4.U, alu_res)
+  io.cdb.bits.j_pc := alu_res
   io.cdb.bits.wen := io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
   io.cdb.bits.brHit := Mux(io.in.bits.br_type.orR(), (br.io.taken === io.in.bits.pTaken) & ((br.io.taken & (io.in.bits.pPC === alu_res)) | (!br.io.taken)), true.B)
   io.cdb.bits.expt := false.B // FixPointU can't generate except
@@ -246,5 +247,6 @@ class MemU(implicit p: Parameters) extends Module{
     }
   }
 
+  io.cdb.bits.j_pc := 0.U
   dontTouch(io.cdb)
 }

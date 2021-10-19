@@ -133,12 +133,14 @@ class OOO(implicit p: Parameters) extends Module {
     rob.io.in.fromID(i).bits.needData             := ctrl(i).st_type.orR() | ctrl(i).wen
     rob.io.in.fromID(i).bits.isPrd                := !ctrl(i).st_type.orR()
     rob.io.in.fromID(i).bits.wen                  := station.io.in(i).bits.wen
+    rob.io.in.fromID(i).bits.wb_type              := station.io.in(i).bits.wb_type
     rob.io.in.fromID(i).bits.st_type              := station.io.in(i).bits.st_type
     rob.io.in.fromID(i).bits.ld_type              := station.io.in(i).bits.ld_type
     rob.io.in.fromID(i).bits.pc                   := station.io.in(i).bits.pc
     rob.io.in.fromID(i).bits.inst                 := station.io.in(i).bits.inst
     rob.io.in.fromID(i).valid                     := station.io.in(i).valid
     rob.io.in.fromID(i).bits.isBr                 := station.io.in(i).bits.br_type.orR()
+    rob.io.in.fromID(i).bits.isJ                  := station.io.in(i).bits.br_type === "b111".U
     rob.io.in.fromID(i).bits.pTaken               := station.io.in(i).bits.pTaken
     rob.io.in.fromID(i).bits.current_rename_state := station.io.in(i).bits.current_rename_state
   }
@@ -254,6 +256,7 @@ class OOO(implicit p: Parameters) extends Module {
   rename.io.robCommit.br_info.valid := rob.io.commit.br_info.valid
   rename.io.robCommit.br_info.bits.isHit := rob.io.commit.br_info.bits.isHit
   rename.io.robCommit.br_info.bits.current_rename_state := rob.io.commit.br_info.bits.current_rename_state
+  rename.io.robCommit.br_info.bits.isJ := rob.io.commit.br_info.bits.isJ
 
   // to station
   station.io.robCommit.reg(0).valid := rob.io.commit2station(0).valid
