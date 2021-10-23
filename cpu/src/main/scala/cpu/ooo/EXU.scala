@@ -48,7 +48,6 @@ class FixPointU(implicit p: Parameters) extends Module{
   br.io.rs1 := io.in.bits.A
   br.io.rs2 := io.in.bits.B
   br.io.br_type := io.in.bits.br_type
-  val br_taken = br.io.taken
 
   io.cdb.bits.idx := io.in.bits.idx
   io.cdb.bits.prn := io.in.bits.prd
@@ -56,10 +55,13 @@ class FixPointU(implicit p: Parameters) extends Module{
   io.cdb.bits.j_pc := alu_res
   io.cdb.bits.wen := io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
   io.cdb.bits.brHit := Mux(io.in.bits.br_type.orR(), (br.io.taken === io.in.bits.pTaken) & ((br.io.taken & (io.in.bits.pPC === alu_res)) | (!br.io.taken)), true.B)
+  io.cdb.bits.isTaken := br.io.taken
   io.cdb.bits.expt := false.B // FixPointU can't generate except
   io.cdb.bits.pc := io.in.bits.pc
   io.cdb.bits.inst := io.in.bits.inst
   io.cdb.valid := io.in.valid
+
+  io.cdb.bits.addr := 0.U
 
   io.in.ready := true.B  // fixPointU always ready
 
@@ -93,7 +95,10 @@ class MemUIn(implicit p: Parameters) extends Bundle{
 }
 
 class MemReadROBIO(implicit p: Parameters) extends Bundle{
-  val addr = Valid(UInt(p(AddresWidth).W))
+  val req = Valid(new Bundle {
+    val addr = UInt(p(AddresWidth).W)
+    val idx = UInt(4.W)
+  })
   val data = Flipped(Valid(UInt(p(XLen).W)))
 }
 
@@ -104,7 +109,7 @@ class MemU(implicit p: Parameters) extends Module{
     val dcache = Flipped(new CacheCPUIO)
 
     val cdb = Valid(new CDB)
-    val memCDB = Valid(new MEMCDB)
+//    val memCDB = Valid(new MEMCDB)
 
     val readROB = new MemReadROBIO
   })
@@ -118,17 +123,6 @@ class MemU(implicit p: Parameters) extends Module{
   val isCSR = io.in.bits.csr_cmd.orR()
   val isMem = (io.in.bits.ld_type.orR() | io.in.bits.st_type.orR()) & !isCSR
   val isALU = (!isCSR) & (!isMem)
-
-  // Mem op
-  val mem = Module(new OOOMEM)
-  mem.io.ld_type := io.in.bits.ld_type
-  mem.io.st_type := 0.U    // OOOMEM only handle ld inst
-  mem.io.s_data := io.in.bits.s_data
-  mem.io.alu_res := alu_res
-  mem.io.inst_valid := io.in.valid & io.in.bits.st_type.orR()
-  mem.io.stall := false.B
-  mem.io.dcache <> io.dcache
-
 
   // CSR op
   val csr = Module(new CSR)
@@ -149,31 +143,45 @@ class MemU(implicit p: Parameters) extends Module{
   val s_idle :: s_mem :: s_ret :: Nil = Enum(3)
   val state = RegInit(s_idle)
   val ld_data = RegInit(0.U(p(XLen).W))
+  // Mem op
+  val mem = Module(new OOOMEM)
+  mem.io.ld_type := io.in.bits.ld_type
+  mem.io.st_type := 0.U    // OOOMEM only handle ld inst
+  mem.io.s_data := io.in.bits.s_data
+  mem.io.alu_res := alu_res
+  mem.io.inst_valid := (state === s_idle) & isMem & !io.readROB.data.valid // idle状态，来了mem指令，并且rob中无
+  mem.io.stall := false.B
+  mem.io.dcache <> io.dcache
+
+  io.readROB.req.valid := io.in.fire() & isMem
+  io.readROB.req.bits.addr := alu_res
+  io.readROB.req.bits.idx := io.in.bits.idx
 
   when(state === s_mem){
     when(io.readROB.data.fire()){
       ld_data := io.readROB.data.bits
-    }.elsewhen(io.dcache.resp.fire() & io.dcache.resp.bits.cmd === 2.U){
+    }.elsewhen(mem.io.l_data.valid){
       ld_data := io.dcache.resp.bits.data
     }
   }
 
   io.in.ready := state === s_idle
 
-  io.readROB.addr.bits := alu_res
-  io.readROB.addr.valid := io.in.fire() & isMem
-
   switch(state){
     is(s_idle){
-      when(io.in.fire() & isMem){
+      when(io.in.fire() & isMem & io.readROB.data.fire()){
+        // data in rob need ret
+        state := s_ret
+      }.elsewhen(io.in.fire() & isMem & !io.readROB.data.fire()){
+        // data not in rob, need query dcache
+        // send dcache read req at the same time
         state := s_mem
+      }.otherwise{
+        state := state
       }
     }
     is(s_mem){
-      when(io.readROB.data.valid){
-        // get data from rob
-        state := s_ret
-      }.elsewhen(io.dcache.resp.fire() & io.dcache.resp.bits.cmd === 2.U){
+      when(io.dcache.resp.fire() & io.dcache.resp.bits.cmd === 2.U){
         // get data from dcache
         state := s_ret
       }
@@ -187,13 +195,13 @@ class MemU(implicit p: Parameters) extends Module{
   // assign cdb and memCDB
   io.cdb.bits.idx := io.in.bits.idx
 
-  io.memCDB.bits.idx := io.in.bits.idx
-  io.memCDB.bits.prn   := 0.U
-  io.memCDB.bits.data  := 0.U
-  io.memCDB.bits.wen   := 0.U
-  io.memCDB.bits.brHit := true.B
-  io.memCDB.bits.expt  := false.B
-  io.memCDB.valid := false.B
+//  io.memCDB.bits.idx := io.in.bits.idx
+//  io.memCDB.bits.prn   := 0.U
+//  io.memCDB.bits.data  := 0.U
+//  io.memCDB.bits.wen   := 0.U
+//  io.memCDB.bits.brHit := true.B
+//  io.memCDB.bits.expt  := false.B
+//  io.memCDB.valid := false.B
 
   when(io.in.fire() & isCSR){
     // csr op
@@ -220,6 +228,7 @@ class MemU(implicit p: Parameters) extends Module{
     when(io.in.fire() & io.in.bits.st_type.orR()){
       // store inst
       io.cdb.bits.prn   := 0.U
+      io.cdb.bits.addr  := alu_res  // 传递st的地址
       io.cdb.bits.data  := 0.U
       io.cdb.bits.wen   := 0.U
       io.cdb.bits.brHit := true.B
@@ -228,12 +237,12 @@ class MemU(implicit p: Parameters) extends Module{
       io.cdb.bits.inst := io.in.bits.inst
       io.cdb.valid := true.B
 
-      io.memCDB.bits.prn   := alu_res
-      io.memCDB.bits.data  := io.in.bits.s_data
-      io.memCDB.bits.wen   := 0.U
-      io.memCDB.bits.brHit := true.B
-      io.memCDB.bits.expt  := false.B
-      io.memCDB.valid := true.B
+//      io.memCDB.bits.prn   := alu_res
+//      io.memCDB.bits.data  := io.in.bits.s_data
+//      io.memCDB.bits.wen   := 0.U
+//      io.memCDB.bits.brHit := true.B
+//      io.memCDB.bits.expt  := false.B
+//      io.memCDB.valid := true.B
     }.otherwise{
       // load inst
       io.cdb.bits.prn := io.in.bits.prd
@@ -247,6 +256,8 @@ class MemU(implicit p: Parameters) extends Module{
     }
   }
 
+  io.cdb.bits.isTaken := false.B
+  io.cdb.bits.addr  := 0.U
   io.cdb.bits.j_pc := 0.U
   dontTouch(io.cdb)
 }

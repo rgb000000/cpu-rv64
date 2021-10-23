@@ -271,16 +271,28 @@ class RenameMap(implicit p: Parameters) extends Module {
   val emptyPRIdx_1 = 63.U - PriorityEncoder(emptyPR.reverse)
   assert(emptyPRIdx_0 =/= emptyPRIdx_1)
 
-
-
   // 输出当前valid状态，用于提交时候锁定体系结构寄存器，也可能会被branch指令预测失败使用
   // 有几个推测，当前inst没有提交，那么为其分配的寄存器状态一定会保持 MAPPED，WB两个状态之一
   // 所以分配emptyPR时候，(STATE===EMPTY) | (STATE === COMMIT & !valid)
 
+  val current_state_value_0 = WireInit(io.port(0).allocate_c.current_rename_state.bits.asUInt())
+  val current_state_value_1 = WireInit(io.port(1).allocate_c.current_rename_state.bits.asUInt())
+  dontTouch(current_state_value_0)
+  dontTouch(current_state_value_1)
+
   (io.port(0).allocate_c.current_rename_state.bits, cam.map(_.valid)).zipped.foreach(_ := _)
   io.port(0).allocate_c.current_rename_state.valid := io.port(0).allocate_c.lr.fire()
 
-  (io.port(1).allocate_c.current_rename_state.bits, cam.map(_.valid)).zipped.foreach(_ := _)
+  // current_state 第二条指令需要考虑第一条指令的结果！ 如果第二条指令是分支，可能会miss
+  when(io.port(0).allocate_c.lr.fire() & (io.port(0).allocate_c.lr.bits =/= 0.U)){
+    val port0_reset_query = cam.map(x => {x.valid & (x.LRIdx === io.port(0).allocate_c.lr.bits)})
+    val port0_reset_idx = PriorityEncoder(Cat(port0_reset_query.reverse))
+    val innner_current_state = Cat(cam.map(_.valid).reverse)
+    val tmp = (innner_current_state | (1.U(1.W) << emptyPRIdx_0).asUInt()) & (~(1.U(1.W) << port0_reset_idx)).asUInt()
+    (io.port(1).allocate_c.current_rename_state.bits, tmp.asBools()).zipped.foreach(_ := _)
+  }.otherwise{
+    (io.port(1).allocate_c.current_rename_state.bits, cam.map(_.valid)).zipped.foreach(_ := _)
+  }
   io.port(1).allocate_c.current_rename_state.valid := io.port(1).allocate_c.lr.fire()
 
   // commit状态的映射，每时每刻只能存在32个,分别对应32个体系结构寄存器
@@ -363,18 +375,56 @@ class RenameMap(implicit p: Parameters) extends Module {
       }
     })
 
-    io.robCommit.reg.foreach(robcommit => {
-      when(robcommit.fire() & (robcommit.bits =/= 0.U)) {
+    // 需要考虑提交的两个指令都是同一个逻辑寄存器
+    val a = io.robCommit.reg(0)
+    val isAfire = a.fire() & (a.bits =/= 0.U)
+    val b = io.robCommit.reg(1)
+    val isBfire = b.fire() & (b.bits =/= 0.U)
+
+    when(isAfire & isBfire){
+      when(cam(a.bits).LRIdx =/= cam(b.bits).LRIdx){
+        // a和b提交的不是同一个逻辑寄存器
         // 释放之前对lr建立的映射
         cam.foreach(x => {
-          when((x.LRIdx === cam(robcommit.bits).LRIdx) & (x.state === STATECONST.COMMIT)){
+          when(((x.LRIdx === cam(a.bits).LRIdx) & (x.state === STATECONST.COMMIT)) | ((x.LRIdx === cam(b.bits).LRIdx) & (x.state === STATECONST.COMMIT))){
             x.state := STATECONST.EMPRY
           }
         })
         // 建立新的commit映射, state为commit的是体系结构寄存器(逻辑寄存器)
-        cam(robcommit.bits).state := STATECONST.COMMIT
+        cam(a.bits).state := STATECONST.COMMIT
+        cam(b.bits).state := STATECONST.COMMIT
+      }.otherwise{
+        // a和b提交的是一个逻辑寄存器
+        // 释放之前对lr建立的映射
+        cam.foreach(x => {
+          when(((x.LRIdx === cam(a.bits).LRIdx) & (x.state === STATECONST.COMMIT)) | ((x.LRIdx === cam(b.bits).LRIdx) & (x.state === STATECONST.COMMIT))){
+            x.state := STATECONST.EMPRY
+          }
+        })
+        // 建立新的commit映射, state为commit的是体系结构寄存器(逻辑寄存器)
+        cam(a.bits).state := STATECONST.EMPRY
+        cam(b.bits).state := STATECONST.COMMIT
       }
-    })
+    }.elsewhen(isAfire & !isBfire){
+      // 释放之前对lr建立的映射
+      cam.foreach(x => {
+        when((x.LRIdx === cam(a.bits).LRIdx) & (x.state === STATECONST.COMMIT)){
+          x.state := STATECONST.EMPRY
+        }
+      })
+      // 建立新的commit映射, state为commit的是体系结构寄存器(逻辑寄存器)
+      cam(a.bits).state := STATECONST.COMMIT
+    }.elsewhen((!isAfire) & isBfire){
+      // 当a是写x0的时候会出现这个情况
+      // 释放之前对lr建立的映射
+      cam.foreach(x => {
+        when((x.LRIdx === cam(b.bits).LRIdx) & (x.state === STATECONST.COMMIT)){
+          x.state := STATECONST.EMPRY
+        }
+      })
+      // 建立新的commit映射, state为commit的是体系结构寄存器(逻辑寄存器)
+      cam(b.bits).state := STATECONST.COMMIT
+    }
 
     allocate_c_c(emptyPRIdx_0, emptyPRIdx_1)
   }

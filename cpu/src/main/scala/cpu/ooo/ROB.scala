@@ -33,7 +33,7 @@ class ROBIO(implicit p: Parameters) extends Bundle {
 
   val memRead = Flipped(new MemReadROBIO)
 
-  val memCDB = Flipped(Valid(new MEMCDB))
+//  val memCDB = Flipped(Valid(new MEMCDB))
 
   // commit to physice register and dcache
   val commit = new Bundle {
@@ -94,6 +94,7 @@ class ROBInfo(implicit p: Parameters) extends Bundle {
   val ld_type = UInt(3.W)
 
   val brHit = Bool()
+  val isTake = Bool()
   val expt = Bool()
 
   val isBr = Bool()
@@ -156,21 +157,33 @@ class ROB(implicit p: Parameters) extends Module {
 
   // getData
   io.in.cdb.foreach(cdb => {
-    when(cdb.fire()) {
+    when(cdb.fire() & rob(cdb.bits.idx).isPrd) {
+      // prd是寄存器，不是st指令
       rob(cdb.bits.idx).state := S_GETDATA
       rob(cdb.bits.idx).data := cdb.bits.data
       rob(cdb.bits.idx).j_pc := cdb.bits.j_pc
 
+      rob(cdb.bits.idx).isTake := cdb.bits.isTaken
+      rob(cdb.bits.idx).brHit := cdb.bits.brHit
+      rob(cdb.bits.idx).expt := cdb.bits.expt
+    }.elsewhen(cdb.fire() & !rob(cdb.bits.idx).isPrd){
+      // st指令
+      rob(cdb.bits.idx).prdORaddr := cdb.bits.addr
+      rob(cdb.bits.idx).state := S_GETDATA
+      rob(cdb.bits.idx).data := cdb.bits.data
+      rob(cdb.bits.idx).j_pc := cdb.bits.j_pc
+
+      rob(cdb.bits.idx).isTake := cdb.bits.isTaken
       rob(cdb.bits.idx).brHit := cdb.bits.brHit
       rob(cdb.bits.idx).expt := cdb.bits.expt
     }
   })
 
-  // memCDB
-  when(io.memCDB.fire()){
-    rob(io.memCDB.bits.idx).state := S_GETDATA
-    rob(io.memCDB.bits.idx).data := io.memCDB.bits.data
-  }
+//  // memCDB
+//  when(io.memCDB.fire()){
+//    rob(io.memCDB.bits.idx).state := S_GETDATA
+//    rob(io.memCDB.bits.idx).data := io.memCDB.bits.data
+//  }
 
   dontTouch(io.commit)
   def write_prfile(portIdx: Int, rob_info: ROBInfo, valid: Bool) = {
@@ -221,7 +234,8 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit.br_info.bits.current_rename_state := info.current_rename_state
     io.commit.br_info.bits.isHit                := isHit
     io.commit.br_info.bits.isJ                  := info.isJ
-    io.commit.br_info.bits.isTaken              := Mux(isHit, info.pTaken, !info.pTaken)
+    // isTaken表示实际上跳不跳，有时跳不跳预测是对u的，但是地址不对，这个情况需要考虑到，而不是简单的通过isHit和pTaken判断
+    io.commit.br_info.bits.isTaken              := info.isTake
     io.commit.br_info.bits.cur_pc               := info.pc
     io.commit.br_info.bits.right_pc             := info.j_pc
   }
@@ -383,13 +397,18 @@ class ROB(implicit p: Parameters) extends Module {
   }
 
   // memU can read rob when execute ld inst
+  // 但是要考虑如果rob中存在多个同一个addr的data，那么那一个是最新的呢
+  // 考虑使用移位构造新的queryRes然后再使用优先级编码器来找到最新的  (res >> idx) | (res << idx)
   val memQueryResult = rob.map(x => {
-    (x.prdORaddr === io.memRead.addr.bits) & !x.isPrd
+    (x.prdORaddr === io.memRead.req.bits.addr) & !x.isPrd
   })
-  val memQueryIdx = PriorityEncoder(memQueryResult)
-  when(io.memRead.addr.fire()){
-    io.memRead.data.bits := memQueryIdx
-    io.memRead.data.valid := Cat(memQueryResult).orR()
+  val memQueryResult_1 = Cat(memQueryResult.reverse).asUInt()
+  val memQueryResult_2 = Wire(UInt(16.W))
+  memQueryResult_2 := (memQueryResult_1 >> (io.memRead.req.bits.idx + 1.U)).asUInt() | (memQueryResult_1 << (16.U - 1.U - io.memRead.req.bits.idx)).asUInt()
+  val memQueryIdx = PriorityEncoder(memQueryResult_2)
+  when(io.memRead.req.fire()){
+    io.memRead.data.bits := rob(memQueryIdx).data
+    io.memRead.data.valid := Cat(memQueryResult_2).orR()
   }.otherwise{
     io.memRead.data.bits := 0.U
     io.memRead.data.valid := false.B

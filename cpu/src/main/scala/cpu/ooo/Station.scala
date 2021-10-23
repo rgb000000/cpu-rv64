@@ -67,7 +67,11 @@ class CDB(implicit p: Parameters) extends Bundle {
   val j_pc = UInt(p(AddresWidth).W)
   val wen = Bool()
   val brHit = Bool()
+  val isTaken = Bool()
   val expt = Bool()
+
+  // for store inst
+  val addr = UInt(p(AddresWidth).W)
 
   val pc = UInt(p(AddresWidth).W)
   val inst = UInt(32.W)

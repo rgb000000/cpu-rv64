@@ -236,7 +236,7 @@ class OOO(implicit p: Parameters) extends Module {
   rob_kill := (rob.io.commit.br_info.valid & !rob.io.commit.br_info.bits.isHit)
   rob.io.in.cdb(0) <> fixPointU.io.cdb
   rob.io.in.cdb(1) <> mem.io.cdb
-  rob.io.memCDB <> mem.io.memCDB
+//  rob.io.memCDB <> mem.io.memCDB
 
   // to physics registers
   prfile.io.write(0).wen   := rob.io.commit.reg(0).bits.wen
