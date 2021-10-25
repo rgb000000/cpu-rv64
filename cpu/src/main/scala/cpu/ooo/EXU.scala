@@ -112,6 +112,8 @@ class MemU(implicit p: Parameters) extends Module{
 //    val memCDB = Valid(new MEMCDB)
 
     val readROB = new MemReadROBIO
+
+    val kill = Input(Bool())
   })
 
   val alu = Module(new ALU)
@@ -168,6 +170,13 @@ class MemU(implicit p: Parameters) extends Module{
   io.in.ready := state === s_idle
 
   val req_reg = RegInit(0.U.asTypeOf(io.in.bits))
+  val kill_reg = RegInit(false.B)
+
+  when((((state === s_idle) & (io.in.fire() & isMem)) | (state === s_mem)) & io.kill){
+    kill_reg := true.B
+  }.elsewhen(state === s_ret){
+    kill_reg := false.B
+  }
 
   switch(state){
     is(s_idle){
@@ -256,7 +265,7 @@ class MemU(implicit p: Parameters) extends Module{
       io.cdb.bits.expt  := false.B
       io.cdb.bits.pc    := req_reg.pc
       io.cdb.bits.inst  := req_reg.inst
-      io.cdb.valid      := state === s_ret
+      io.cdb.valid      := (state === s_ret) & (!kill_reg) & !io.kill
     }
   }
 

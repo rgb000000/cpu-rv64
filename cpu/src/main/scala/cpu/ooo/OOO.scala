@@ -220,6 +220,7 @@ class OOO(implicit p: Parameters) extends Module {
   mem.io.in.bits.interrupt.soft := id_interrupt(1)
   mem.io.in.bits.interrupt.external := id_interrupt(0)
   mem.io.in.bits.idx := issue_1.idx
+  mem.io.kill := rob_kill
 
   // mem read rob
   rob.io.memRead <> mem.io.readROB
