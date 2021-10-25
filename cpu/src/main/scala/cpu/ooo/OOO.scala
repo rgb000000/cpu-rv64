@@ -138,7 +138,7 @@ class OOO(implicit p: Parameters) extends Module {
     rob.io.in.fromID(i).bits.ld_type              := station.io.in(i).bits.ld_type
     rob.io.in.fromID(i).bits.pc                   := station.io.in(i).bits.pc
     rob.io.in.fromID(i).bits.inst                 := station.io.in(i).bits.inst
-    rob.io.in.fromID(i).valid                     := station.io.in(i).valid
+    rob.io.in.fromID(i).valid                     := station.io.in(i).fire()          // 只有被station接受的inst才能进入rob中
     rob.io.in.fromID(i).bits.isBr                 := station.io.in(i).bits.br_type.orR()
     rob.io.in.fromID(i).bits.isJ                  := station.io.in(i).bits.br_type === "b111".U
     rob.io.in.fromID(i).bits.pTaken               := station.io.in(i).bits.pTaken
@@ -179,7 +179,7 @@ class OOO(implicit p: Parameters) extends Module {
   val issue_1_valid = RegInit(false.B)
   issue_1_valid := Mux(rob_kill, false.B, Mux(station.io.out(1).fire(), true.B, Mux(mem.io.in.fire(), false.B, issue_1_valid)))
   val ex_data_1 = RegEnable(tmp_ex_data(1), 0.U.asTypeOf(tmp_ex_data.head), station.io.out(1).fire())
-  val issue_1 = RegEnable(station.io.out(1).bits, 0.U.asTypeOf(station.io.out(1).bits), mem.io.in.ready)
+  val issue_1 = RegEnable(station.io.out(1).bits, 0.U.asTypeOf(station.io.out(1).bits), station.io.out(1).fire())
   station.io.out(1).ready := mem.io.in.ready | !issue_1_valid
 
   //= ex ==================================================
