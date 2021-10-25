@@ -126,6 +126,8 @@ class Station(implicit p: Parameters) extends Module {
     dontTouch(x.inst)
   })
 
+  val commitPtr = Counter(32)
+
   // issue
   val which_station_ready_0 = Cat(station.map(x => {
     // alu op and branch, no ld/st and csr
@@ -136,8 +138,10 @@ class Station(implicit p: Parameters) extends Module {
   val which_station_ready_1 = Cat(station.map(x => {
     // alu ld/st csr, no branch
     x.pr1_s & x.pr2_s & (!x.br_type.orR()) & (x.state === S_WAIT)
-  }))
-  val readyIdx_1 = WireInit(15.U - PriorityEncoder(which_station_ready_1))
+  }).reverse)
+  val commit_value = commitPtr.value(3, 0).asUInt()
+  val which_station_ready_1_commit = ((which_station_ready_1 >> commit_value).asUInt() | (which_station_ready_1 << (16.U - commit_value)).asUInt())(15, 0).asUInt()
+  val readyIdx_1 = WireInit((commit_value + PriorityEncoder(which_station_ready_1_commit))(3, 0).asUInt()) // 往下查找
 
   // fixpointU
   io.out(0).valid := which_station_ready_0.orR()
@@ -152,28 +156,40 @@ class Station(implicit p: Parameters) extends Module {
   val inPtr = Counter(32)
 
 
-  def commit(prn: UInt, wen: Bool) = {
-    val pr1Res = station.map(x => {
-      (x.pr1 === prn) & wen & (x.state === S_WAIT)
-    })
-    val pr1Idx = PriorityEncoder(pr1Res)
-    when(Cat(pr1Res).orR()) {
-      station(pr1Idx).pr1_inROB := false.B
-      station(pr1Idx).pr1_s := true.B
-    }
+  def commit(prn: UInt, wen: Bool): Unit = {
+    station.foreach(x => {
+      when((x.pr1 === prn) & wen & (x.state === S_WAIT)){
+        x.pr1_inROB := false.B
+        x.pr1_s := true.B
+      }
 
-    val pr2Res = station.map(x => {
-      (x.pr2 === prn) & wen & (x.state === S_WAIT)
+      when((x.pr2 === prn) & wen & (x.state === S_WAIT)){
+        x.pr2_inROB := false.B
+        x.pr2_s := true.B
+      }
     })
-    val pr2Idx = PriorityEncoder(pr2Res)
-    when(Cat(pr2Res).orR()) {
-      station(pr2Idx).pr2_inROB := false.B
-      station(pr2Idx).pr2_s := true.B
-    }
+
+    // 下面这个写法，当station里面有多个匹配的时候只能改到一个，有bug！
+//    val pr1Res = station.map(x => {
+//      (x.pr1 === prn) & wen & (x.state === S_WAIT)
+//    })
+//    val pr1Idx = PriorityEncoder(pr1Res)
+//    when(Cat(pr1Res).orR()) {
+//      station(pr1Idx).pr1_inROB := false.B
+//      station(pr1Idx).pr1_s := true.B
+//    }
+//
+//    val pr2Res = station.map(x => {
+//      (x.pr2 === prn) & wen & (x.state === S_WAIT)
+//    })
+//    val pr2Idx = PriorityEncoder(pr2Res)
+//    when(Cat(pr2Res).orR()) {
+//      station(pr2Idx).pr2_inROB := false.B
+//      station(pr2Idx).pr2_s := true.B
+//    }
   }
 
   // commit
-  val commitPtr = Counter(32)
 
   // br isMiss, need clear station, 优先级最高，写在最后
   when(io.robCommit.br_info.valid & !io.robCommit.br_info.bits.isHit) {
@@ -197,7 +213,9 @@ class Station(implicit p: Parameters) extends Module {
           x.pr1_s := true.B
           x.pr1_inROB := true.B
           x.pr1_robIdx := cdb.bits.idx
-        }.elsewhen(cdb.valid & ((x.B_sel === B_RS2) & (!x.pr2_s) & (x.pr2 === cdb.bits.prn) & (x.state === S_WAIT)) & (cdb.bits.prn =/= 0.U)) {
+        }
+
+        when(cdb.valid & ((x.B_sel === B_RS2) & (!x.pr2_s) & (x.pr2 === cdb.bits.prn) & (x.state === S_WAIT)) & (cdb.bits.prn =/= 0.U)) {
           x.pr2_s := true.B
           x.pr2_inROB := true.B
           x.pr2_robIdx := cdb.bits.idx
@@ -225,29 +243,56 @@ class Station(implicit p: Parameters) extends Module {
     }
 
     // input
+    def cdb_commit_forwrd(r: StationIn, s: StationIn): Unit = {
+      // r in input
+      // s in reg in station
+      s := r
+      io.cdb.foreach( cdb => {
+        when(cdb.fire() & cdb.bits.wen & (cdb.bits.prn =/= 0.U)){
+          when(r.pr1 === cdb.bits.prn){
+            s.pr1_s := true.B
+            s.pr1_inROB := true.B
+            s.pr1_robIdx := cdb.bits.idx
+          }
+          when(r.pr2 === cdb.bits.prn){
+            s.pr2_s := true.B
+            s.pr2_inROB := true.B
+            s.pr2_robIdx := cdb.bits.idx
+          }
+        }
+      })
+
+      io.robCommit.reg.foreach(rob => {
+        when(rob.fire() & rob.bits.wen & (rob.bits.prn =/= 0.U)){
+          when(r.pr1 === rob.bits.prn){
+            s.pr1_s := true.B
+            s.pr1_inROB := false.B
+          }
+          when(r.pr2 === rob.bits.prn){
+            s.pr2_s := true.B
+            s.pr2_inROB := false.B
+          }
+        }
+      })
+
+      s.state := S_WAIT
+    }
+
     val a = io.in(0)
     val b = io.in(1)
     when(a.fire() & b.fire()) {
       // input a and b
       inPtr.value := inPtr.value + 2.U
-
-      station(inPtr.value) := a.bits
-      station(inPtr.value).state := S_WAIT
-
-      station(inPtr.value + 1.U) := b.bits
-      station(inPtr.value + 1.U).state := S_WAIT
+      cdb_commit_forwrd(a.bits, station(inPtr.value))
+      cdb_commit_forwrd(b.bits, station(inPtr.value + 1.U))
     }.elsewhen(a.fire() & !b.fire()) {
       // input a
       inPtr.inc()
-
-      station(inPtr.value) := a.bits
-      station(inPtr.value).state := S_WAIT
+      cdb_commit_forwrd(a.bits, station(inPtr.value))
     }.elsewhen((!a.fire()) & b.fire()) {
       // input b
       inPtr.inc()
-
-      station(inPtr.value) := b.bits
-      station(inPtr.value).state := S_WAIT
+      cdb_commit_forwrd(b.bits, station(inPtr.value))
     }.otherwise {
 
     }
