@@ -184,7 +184,10 @@ class OOOIF (implicit p: Parameters) extends Module {
       }
     }
     is(s_stall){
-      when(!io.stall){
+      // 如果在stall状态下出现了kill直接跳转到kill去，station和rob在kill信号下都会清空
+      when(io.kill){
+        state := s_kill
+      }.elsewhen(!io.stall){
         state := s_normal
       }
     }

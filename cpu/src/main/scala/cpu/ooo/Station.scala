@@ -263,6 +263,6 @@ class Station(implicit p: Parameters) extends Module {
 
   // 至少有两个空位置才可以, 如果inPrt和commitPrt高位相等，
   val emptyNum = Mux(inPtr.value(4) === commitPtr.value(4), 16.U - inPtr.value(3, 0) + commitPtr.value(3, 0).asUInt(), commitPtr.value(3, 0) - inPtr.value(3, 0))
-  io.in(0).ready := emptyNum >= 2.U
-  io.in(1).ready := emptyNum >= 2.U
+  io.in(0).ready := emptyNum > 2.U
+  io.in(1).ready := emptyNum > 2.U
 }
