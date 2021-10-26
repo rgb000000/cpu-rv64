@@ -126,9 +126,10 @@ object Control {
     auipc  -> List(PC_4,   A_PC,   B_IMM, IMM_U,   ALU_ADD,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N),
 
     // S type
-    sb     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SB,  LD_XXX, WB_MEM, N, CSR.N, N),
-    sh     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SH,  LD_XXX, WB_MEM, N, CSR.N, N),
-    sw     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SW,  LD_XXX, WB_MEM, N, CSR.N, N),
+    sb     -> List(PC_4,   A_RS1,  B_RS2, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SB,  LD_XXX, WB_MEM, N, CSR.N, N),
+    sh     -> List(PC_4,   A_RS1,  B_RS2, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SH,  LD_XXX, WB_MEM, N, CSR.N, N),
+    sw     -> List(PC_4,   A_RS1,  B_RS2, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SW,  LD_XXX, WB_MEM, N, CSR.N, N),
+    sd     -> List(PC_4,   A_RS1,  B_RS2, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SD,  LD_XXX, WB_ALU, N, CSR.N, N),
 
     // B type
     beq    -> List(PC_4,   A_RS1,  B_RS2, IMM_B,   ALU_ADD,    BR_EQ,  N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N),
@@ -156,9 +157,6 @@ object Control {
     addiw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADDIW,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N),
     lwu    -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    BR_XXX, N, ST_XXX, LD_LWU, WB_MEM, Y, CSR.N, N),
     ld     -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    BR_XXX, N, ST_XXX, LD_LD,  WB_MEM, Y, CSR.N, N),
-
-    // S type
-    sd     -> List(PC_4,   A_RS1,  B_IMM, IMM_S,   ALU_ADD,    BR_XXX, N, ST_SD,  LD_XXX, WB_ALU, N, CSR.N, N),
   )
 }
 

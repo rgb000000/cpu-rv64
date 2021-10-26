@@ -169,6 +169,7 @@ class ROB(implicit p: Parameters) extends Module {
     }.elsewhen(cdb.fire() & !rob(cdb.bits.idx).isPrd){
       // st指令
       rob(cdb.bits.idx).prdORaddr := cdb.bits.addr
+      rob(cdb.bits.idx).mask := cdb.bits.mask
       rob(cdb.bits.idx).state := S_GETDATA
       rob(cdb.bits.idx).data := cdb.bits.data
       rob(cdb.bits.idx).j_pc := cdb.bits.j_pc
@@ -368,7 +369,7 @@ class ROB(implicit p: Parameters) extends Module {
     }.otherwise {
       // a store inst
       commitIdx.value := commitIdx.value + 1.U
-      write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
+      write_prfile(0, a, true.B)
       write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
       write_dcache(rob(commitIdx.value), true.B, 0.U)
       rob(commitIdx.value).state := S_COMMITED
@@ -400,12 +401,13 @@ class ROB(implicit p: Parameters) extends Module {
   // 但是要考虑如果rob中存在多个同一个addr的data，那么那一个是最新的呢
   // 考虑使用移位构造新的queryRes然后再使用优先级编码器来找到最新的  (res >> idx) | (res << idx)
   val memQueryResult = rob.map(x => {
-    (x.prdORaddr === io.memRead.req.bits.addr) & !x.isPrd
+    (x.prdORaddr(31, 3) === io.memRead.req.bits.addr(31, 3)) & (!x.isPrd) & ((x.mask | (~io.memRead.req.bits.mask).asUInt()).andR())
   })
-  val memQueryResult_1 = Cat(memQueryResult.reverse).asUInt()
+  val memQueryResult_1 = Cat(memQueryResult).asUInt()
   val memQueryResult_2 = Wire(UInt(16.W))
-  memQueryResult_2 := (memQueryResult_1 >> (io.memRead.req.bits.idx + 1.U)).asUInt() | (memQueryResult_1 << (16.U - 1.U - io.memRead.req.bits.idx)).asUInt()
-  val memQueryIdx = PriorityEncoder(memQueryResult_2)
+  memQueryResult_2 := ((memQueryResult_1 >> (16.U - 1.U - io.memRead.req.bits.idx)).asUInt() | (memQueryResult_1 << (1.U + io.memRead.req.bits.idx)).asUInt())(15, 0).asUInt()
+  val tmpIdx = PriorityEncoder(memQueryResult_2)
+  val memQueryIdx = (io.memRead.req.bits.idx - tmpIdx)(3, 0).asUInt() // 往上查找
   when(io.memRead.req.fire()){
     io.memRead.data.bits := rob(memQueryIdx).data
     io.memRead.data.valid := Cat(memQueryResult_2).orR()

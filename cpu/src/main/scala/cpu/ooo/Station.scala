@@ -72,6 +72,7 @@ class CDB(implicit p: Parameters) extends Bundle {
 
   // for store inst
   val addr = UInt(p(AddresWidth).W)
+  val mask = UInt(8.W)
 
   val pc = UInt(p(AddresWidth).W)
   val inst = UInt(32.W)
@@ -143,12 +144,21 @@ class Station(implicit p: Parameters) extends Module {
   val which_station_ready_1_commit = ((which_station_ready_1 >> commit_value).asUInt() | (which_station_ready_1 << (16.U - commit_value)).asUInt())(15, 0).asUInt()
   val readyIdx_1 = WireInit((commit_value + PriorityEncoder(which_station_ready_1_commit))(3, 0).asUInt()) // 往下查找
 
+  // 这部分是为了让mem指令严格的顺序
+  val which_station_isMem = Cat(station.map(x => {
+    // 看看哪些是访存储指令
+    (x.ld_type.orR() | x.st_type.orR())
+  }).reverse)
+  val which_station_isMem_from_commit = ((which_station_isMem >> commit_value).asUInt() | (which_station_isMem << (16.U - commit_value)).asUInt())(15, 0).asUInt()
+  val nextMemIdx = WireInit((commit_value + PriorityEncoder(which_station_isMem_from_commit))(3, 0).asUInt()) // 往下查找
+
   // fixpointU
   io.out(0).valid := which_station_ready_0.orR()
   io.out(0).bits.info := station(readyIdx_0)
   io.out(0).bits.idx := readyIdx_0
   // memU
-  io.out(1).valid := which_station_ready_1.orR() & (readyIdx_1 =/= readyIdx_0)
+  val readyIdx_1_isMem = station(readyIdx_1).st_type.orR() | station(readyIdx_1).ld_type.orR()
+  io.out(1).valid := which_station_ready_1.orR() & (readyIdx_1 =/= readyIdx_0) & ((!readyIdx_1_isMem) | (readyIdx_1_isMem & (nextMemIdx === readyIdx_1)))
   io.out(1).bits.info := station(readyIdx_1)
   io.out(1).bits.idx := readyIdx_1
 

@@ -89,7 +89,7 @@ class OOO(implicit p: Parameters) extends Module {
     rename.io.port(i).query_b.lr.valid := (control(i).io.signal.b_sel === B_RS2) & if_reg(i).valid // 如果是imm，lr和pr的valid应该为0,station输入的时候如果发现pr.valid===0,就当作立即数处理
     // allocate c, only write back inst need allocate
     rename.io.port(i).allocate_c.lr.bits  := id(i).io.rd_addr
-    rename.io.port(i).allocate_c.lr.valid := (control(i).io.signal.wen & (id(i).io.rd_addr =/= 0.U)) & if_reg(i).valid
+    rename.io.port(i).allocate_c.lr.valid := (control(i).io.signal.wen & (id(i).io.rd_addr =/= 0.U)) & if_reg(i).valid & !station_isfull
   }
 
   val id_interrupt = RegEnable(Cat(Seq(
@@ -207,6 +207,7 @@ class OOO(implicit p: Parameters) extends Module {
   mem.io.in.bits.A         := Mux(issue_1.info.A_sel === A_RS1, ex_data_1.a, issue_1.info.pc)
   mem.io.in.bits.B         := Mux(issue_1.info.B_sel === B_RS2, ex_data_1.b, issue_1.info.imm)
   mem.io.in.bits.alu_op    := issue_1.info.alu_op
+  mem.io.in.bits.imm       := issue_1.info.imm
   mem.io.in.bits.prd       := issue_1.info.prd
   mem.io.in.bits.ld_type   := issue_1.info.ld_type
   mem.io.in.bits.st_type   := issue_1.info.st_type
