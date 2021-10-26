@@ -272,8 +272,8 @@ class OOO(implicit p: Parameters) extends Module {
   station.io.robCommit.br_info.bits.isHit := rob.io.commit.br_info.bits.isHit
 
 
-  dcacheCrossBar.io.in(0) <> mem.io.dcache
-  dcacheCrossBar.io.in(1) <> rob.io.commit.dcache
+  dcacheCrossBar.io.in(0) <> rob.io.commit.dcache
+  dcacheCrossBar.io.in(1) <> mem.io.dcache
   dcacheCrossBar.io.out <> io.dcache
 
   if(p(Difftest)){

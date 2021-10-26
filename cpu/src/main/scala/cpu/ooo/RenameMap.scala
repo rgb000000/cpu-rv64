@@ -310,6 +310,7 @@ class RenameMap(implicit p: Parameters) extends Module {
     }.otherwise{
       // 无条件跳转错误，不用恢复valid，commit为valid，其余状态恢复empty,本次commit提交
       // 来自rob的提交要么reg0，reg1都有效，要么reg0有效，reg1无效，只有这两种情况
+      // 这里的fire表示valid并且wen为1
       when(io.robCommit.reg(0).fire() & io.robCommit.reg(1).fire()){
         // 0, 1
         val commit_0 = cam(io.robCommit.reg(0).bits)
@@ -339,24 +340,49 @@ class RenameMap(implicit p: Parameters) extends Module {
         }
       }.otherwise{
         // 0
-        val commit_0 = cam(io.robCommit.reg(0).bits)
-        for(i <- 0 until 64){
-          when((cam(i).LRIdx =/= commit_0.LRIdx)){
-            // 与提交无关的cam恢复
-            cam(i).valid := Mux(cam(i).state === STATECONST.COMMIT, true.B, false.B)
-            cam(i).state := Mux(cam(i).state === STATECONST.COMMIT, STATECONST.COMMIT, STATECONST.EMPRY)
-          }.elsewhen((cam(i).LRIdx === commit_0.LRIdx) & (i.U =/= io.robCommit.reg(0).bits)){
-            // 与0相关的需要无效,状态设置为empty
-            cam(i).valid := false.B
-            cam(i).state := STATECONST.EMPRY
-          }.otherwise{
-            // 否则就是此次需要提交的
-            cam(i).valid := true.B
-            when(i.U =/= 0.U){
-              // cam0 is 0号结构寄存器  其状态不会改变
-              assert(cam(i).state === STATECONST.WB)
+        when(io.robCommit.reg(0).fire()){
+          val commit_0 = cam(io.robCommit.reg(0).bits)
+          for(i <- 0 until 64){
+            when((cam(i).LRIdx =/= commit_0.LRIdx)){
+              // 与提交无关的cam恢复
+              cam(i).valid := Mux(cam(i).state === STATECONST.COMMIT, true.B, false.B)
+              cam(i).state := Mux(cam(i).state === STATECONST.COMMIT, STATECONST.COMMIT, STATECONST.EMPRY)
+            }.elsewhen((cam(i).LRIdx === commit_0.LRIdx) & (i.U =/= io.robCommit.reg(0).bits)){
+              // 与0相关的需要无效,状态设置为empty
+              cam(i).valid := false.B
+              cam(i).state := STATECONST.EMPRY
+            }.otherwise{
+              // 否则就是此次需要提交的
+              cam(i).valid := true.B
+              when(i.U =/= 0.U){
+                // cam0 is 0号结构寄存器  其状态不会改变
+//                printf(">>> commit_0 cam(i) lr: %d pr: %d state: %d\n", cam(i).LRIdx, i.U, cam(i).state)
+                assert(cam(i).state === STATECONST.WB)
+              }
+              cam(i).state := STATECONST.COMMIT
             }
-            cam(i).state := STATECONST.COMMIT
+          }
+        }.elsewhen(io.robCommit.reg(1).fire()){
+          val commit_1 = cam(io.robCommit.reg(1).bits)
+          for(i <- 0 until 64){
+            when((cam(i).LRIdx =/= commit_1.LRIdx)){
+              // 与提交无关的cam恢复
+              cam(i).valid := Mux(cam(i).state === STATECONST.COMMIT, true.B, false.B)
+              cam(i).state := Mux(cam(i).state === STATECONST.COMMIT, STATECONST.COMMIT, STATECONST.EMPRY)
+            }.elsewhen((cam(i).LRIdx === commit_1.LRIdx) & (i.U =/= io.robCommit.reg(1).bits)){
+              // 与0相关的需要无效,状态设置为empty
+              cam(i).valid := false.B
+              cam(i).state := STATECONST.EMPRY
+            }.otherwise{
+              // 否则就是此次需要提交的
+              cam(i).valid := true.B
+              when(i.U =/= 0.U){
+                // cam0 is 0号结构寄存器  其状态不会改变
+//                printf(">>> commit_0 cam(i) lr: %d pr: %d state: %d\n", cam(i).LRIdx, i.U, cam(i).state)
+                assert(cam(i).state === STATECONST.WB)
+              }
+              cam(i).state := STATECONST.COMMIT
+            }
           }
         }
       }

@@ -154,11 +154,8 @@ class MemU(implicit p: Parameters) extends Module {
   // Mem op
   val mem = Module(new OOOMEM)
   mem.io.ld_type := io.in.bits.ld_type
-  mem.io.st_type := 0.U // OOOMEM only handle ld inst
-  mem.io.s_data := io.in.bits.s_data
   mem.io.alu_res := alu_res
   mem.io.inst_valid := io.in.fire() & (state === s_idle) & isLD & !io.readROB.data.valid // idle状态，来了mem指令，并且rob中无
-  mem.io.stall := false.B
   mem.io.dcache <> io.dcache
 
   // 读取rob的时候要找最近的addr和mask都能匹配上的那一项
@@ -192,8 +189,7 @@ class MemU(implicit p: Parameters) extends Module {
     )).asUInt()
   }.elsewhen((state === s_mem) & mem.io.l_data.valid) {
     // cache返回的结果已经是>>的结果了
-    ld_data := mem.io.l_data.bits
-    MuxLookup(req_reg.ld_type, 0.S(p(XLen).W), Seq(
+    ld_data := MuxLookup(req_reg.ld_type, 0.S(p(XLen).W), Seq(
       Control.LD_LD  -> mem.io.l_data.bits(63, 0).asSInt(),
       Control.LD_LW  -> mem.io.l_data.bits(31, 0).asSInt(),
       Control.LD_LH  -> mem.io.l_data.bits(15, 0).asSInt(),
@@ -228,8 +224,8 @@ class MemU(implicit p: Parameters) extends Module {
       }
     }
     is(s_mem) {
-      when(io.dcache.resp.fire() & io.dcache.resp.bits.cmd === 2.U) {
-        // get data from dcache
+      when(mem.io.l_data.valid) {
+        // get data from dcache by mem
         state := s_ret
       }
     }
