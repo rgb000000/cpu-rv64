@@ -635,8 +635,10 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
         state := s_fence
       }.otherwise{
         // miss   need to prepare miss_info and replace_info
-        when(((req_isCached & ((rand_way_data.v =/= 1.U) | (rand_way_data.d =/= 1.U))) | (!req_isCached & (req_reg.op === 0.U))) |
-          (io.mem.req.fire() & ((req_isCached & ((rand_way_data.v === 1.U) & (rand_way_data.d === 1.U))) | (!req_isCached & (req_reg.op === 1.U))))
+//        (req_isCached & (((rand_way_data.v === 1.U) & (rand_way_data.d === 1.U) & !rand_way_data_reg_valid) | ((rand_way_data_reg.v === 1.U) & (rand_way_data_reg.d === 1.U) & rand_way_data_reg_valid)))
+//        when(((req_isCached & ((rand_way_data.v =/= 1.U) | (rand_way_data.d =/= 1.U))) | (!req_isCached & (req_reg.op === 0.U))) |
+        when(((req_isCached & ((((rand_way_data.v =/= 1.U) | (rand_way_data.d =/= 1.U)) & !rand_way_data_reg_valid) | (((rand_way_data_reg.v =/= 1.U) | (rand_way_data_reg.d =/= 1.U)) & rand_way_data_reg_valid))) | (!req_isCached & (req_reg.op === 0.U))) |
+          (io.mem.req.fire() & ((req_isCached & (((rand_way_data.v === 1.U) & (rand_way_data.d === 1.U) & !rand_way_data_reg_valid) | ((rand_way_data_reg.v === 1.U) & (rand_way_data_reg.d === 1.U) & rand_way_data_reg_valid))) | (!req_isCached & (req_reg.op === 1.U))))
         ){
           // send cmd to write replace
           state := s_miss
