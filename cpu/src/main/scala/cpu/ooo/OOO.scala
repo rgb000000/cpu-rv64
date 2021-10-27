@@ -336,8 +336,8 @@ class OOO(implicit p: Parameters) extends Module {
     val difftest_uart_ch    = Wire(UInt(8.W))
     BoringUtils.addSource(difftest_uart_valid, "difftest_uart_valid")
     BoringUtils.addSource(difftest_uart_ch, "difftest_uart_ch")
-    difftest_uart_valid := RegNext(0.U)
-    difftest_uart_ch := 0.U
+    difftest_uart_valid := RegNext((rob.io.commit.reg(0).valid & (rob.io.commit.reg(0).bits.inst === "h0000007b".U)) | (rob.io.commit.reg(1).valid & (rob.io.commit.reg(1).bits.inst === "h0000007b".U)))
+    difftest_uart_ch := prfile.io.difftest.get.trap_cpode.data.bits
 
     // arch register
     (rename.io.difftest.get.toArchReg, prfile.io.difftest.get.findArchReg).zipped.foreach(_ <> _)

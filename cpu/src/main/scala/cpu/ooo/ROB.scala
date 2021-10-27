@@ -289,14 +289,26 @@ class ROB(implicit p: Parameters) extends Module {
     }.elsewhen(rob(commitIdx.value).isPrd & !rob(commitIdx.value + 1.U).isPrd) {
       // commit 1 prd and 1 store, prd才会发生跳转命中或不命中，存储指令不会，因此只要判断prd的命中与否
       when(a.brHit){
-        commitIdx.value := commitIdx.value + 2.U
-        write_prfile(0, a, true.B)
-        write_prfile(1, b, true.B)
         write_dcache(b, true.B, 1.U)
-        rob(commitIdx.value).state := S_COMMITED
-        rob(commitIdx.value + 1.U).state := S_COMMITED
+        when(io.commit.dcache.req.ready){
+          // dcache ready, 可以提交st指令
+          commitIdx.value := commitIdx.value + 2.U
+          write_prfile(0, a, true.B)
+          write_prfile(1, b, true.B)
+          rob(commitIdx.value).state := S_COMMITED
+          rob(commitIdx.value + 1.U).state := S_COMMITED
 
-        out_br_info(true.B, a)
+          out_br_info(true.B, a)
+        }.otherwise{
+          // dcache 没有 ready, 不可以提交st指令
+          commitIdx.value := commitIdx.value + 1.U
+          write_prfile(0, a, true.B)
+          write_prfile(1, b, false.B)
+          rob(commitIdx.value).state := S_COMMITED
+//          rob(commitIdx.value + 1.U).state := S_COMMITED
+
+          out_br_info(true.B, a)
+        }
       }.otherwise{
         // a没命中，虽然没命中也还是要提交a,清空rob
         commitIdx.value := 0.U
@@ -312,35 +324,59 @@ class ROB(implicit p: Parameters) extends Module {
     }.elsewhen((!rob(commitIdx.value).isPrd) & rob(commitIdx.value + 1.U).isPrd) {
       // commit 1 store and prd
       when(b.brHit){
-        commitIdx.value := commitIdx.value + 2.U
-        write_prfile(0, a, true.B)
-        write_prfile(1, b, true.B)
         write_dcache(rob(commitIdx.value), true.B, 0.U)
-        rob(commitIdx.value).state := S_COMMITED
-        rob(commitIdx.value + 1.U).state := S_COMMITED
+        when(io.commit.dcache.req.ready){
+          commitIdx.value := commitIdx.value + 2.U
+          write_prfile(0, a, true.B)
+          write_prfile(1, b, true.B)
+          rob(commitIdx.value).state := S_COMMITED
+          rob(commitIdx.value + 1.U).state := S_COMMITED
 
-        out_br_info(true.B, b)
+          out_br_info(true.B, b)
+        }.otherwise{
+          // 不提交
+          write_prfile(0, a, false.B)
+          write_prfile(1, b, false.B)
+
+          out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
+        }
       }.otherwise{
         // 提交a，虽然b没有hit但是也是要提交的,然后清空rob
-        commitIdx.value := 0.U
-        write_prfile(0, a, true.B)
-        write_prfile(1, b, true.B)
         write_dcache(rob(commitIdx.value), true.B, 0.U)
-        rob.foreach(x => {
-          x.state := S_EMPTY
-        })
+        when(io.commit.dcache.req.ready){
+          commitIdx.value := 0.U
+          write_prfile(0, a, true.B)
+          write_prfile(1, b, true.B)
+          rob.foreach(x => {
+            x.state := S_EMPTY
+          })
 
-        out_br_info(false.B, b)
+          out_br_info(false.B, b)
+        }.otherwise{
+          // 不提交
+          write_prfile(0, a, false.B)
+          write_prfile(1, b, false.B)
+
+          out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
+        }
       }
     }.otherwise {
       // 2 store inst, need commit one by one
-      commitIdx.value := commitIdx.value + 1.U
-      write_prfile(0, a, true.B)
-      write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
       write_dcache(rob(commitIdx.value), true.B, 0.U)
-      rob(commitIdx.value).state := S_COMMITED
+      when(io.commit.dcache.req.ready){
+        commitIdx.value := commitIdx.value + 1.U
+        write_prfile(0, a, true.B)
+        write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
+        rob(commitIdx.value).state := S_COMMITED
 
-      out_br_info(true.B, a)
+        out_br_info(true.B, a)
+      }.otherwise{
+        // 不提交
+        write_prfile(0, a, false.B)
+        write_prfile(1, b, false.B)
+
+        out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
+      }
     }
   }.elsewhen((rob(commitIdx.value).state === S_GETDATA) & (rob(commitIdx.value + 1.U).state =/= S_GETDATA)) {
     // one inst complete and want to commit
@@ -368,13 +404,21 @@ class ROB(implicit p: Parameters) extends Module {
       }
     }.otherwise {
       // a store inst
-      commitIdx.value := commitIdx.value + 1.U
-      write_prfile(0, a, true.B)
-      write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
       write_dcache(rob(commitIdx.value), true.B, 0.U)
-      rob(commitIdx.value).state := S_COMMITED
+      when(io.commit.dcache.req.ready){
+        commitIdx.value := commitIdx.value + 1.U
+        write_prfile(0, a, true.B)
+        write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
+        rob(commitIdx.value).state := S_COMMITED
 
-      out_br_info(true.B, a)
+        out_br_info(true.B, a)
+      }.otherwise{
+        // 不提交
+        write_prfile(0, a, false.B)
+        write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
+
+        out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
+      }
     }
   }.otherwise {
     write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
@@ -400,21 +444,32 @@ class ROB(implicit p: Parameters) extends Module {
   // memU can read rob when execute ld inst
   // 但是要考虑如果rob中存在多个同一个addr的data，那么那一个是最新的呢
   // 考虑使用移位构造新的queryRes然后再使用优先级编码器来找到最新的  (res >> idx) | (res << idx)
-  val memQueryResult = rob.map(x => {
-    (x.prdORaddr(31, 3) === io.memRead.req.bits.addr(31, 3)) & (!x.isPrd) & ((x.mask | (~io.memRead.req.bits.mask).asUInt()).andR())
-  })
-  val memQueryResult_1 = Cat(memQueryResult).asUInt()
-  val memQueryResult_2 = Wire(UInt(16.W))
-  memQueryResult_2 := ((memQueryResult_1 >> (16.U - 1.U - io.memRead.req.bits.idx)).asUInt() | (memQueryResult_1 << (1.U + io.memRead.req.bits.idx)).asUInt())(15, 0).asUInt()
-  val tmpIdx = PriorityEncoder(memQueryResult_2)
-  val memQueryIdx = (io.memRead.req.bits.idx - tmpIdx)(3, 0).asUInt() // 往上查找
-  when(io.memRead.req.fire()){
-    io.memRead.data.bits := rob(memQueryIdx).data
-    io.memRead.data.valid := Cat(memQueryResult_2).orR()
-  }.otherwise{
-    io.memRead.data.bits := 0.U
-    io.memRead.data.valid := false.B
+
+  val ret_mask = VecInit(Seq.fill(8)(false.B))    // 找到的mask
+  val ret_data = VecInit(Seq.fill(8)(0.U(8.W)))   // 找到的data
+  for(i <- 0 until 8){
+    // 每一个字节都分别查询
+    val memQueryResult = rob.map(x => {
+      (x.prdORaddr(31, 3) === io.memRead.req.bits.addr(31, 3)) & (!x.isPrd) & (x.mask(i) & io.memRead.req.bits.mask(i)) & (x.state =/= S_EMPTY) // mask的第ibit都是1
+    })
+    val memQueryResult_1 = Cat(memQueryResult).asUInt()
+    val memQueryResult_2 = Wire(UInt(16.W))
+    memQueryResult_2 := ((memQueryResult_1 >> (16.U - 1.U - io.memRead.req.bits.idx)).asUInt() | (memQueryResult_1 << (1.U + io.memRead.req.bits.idx)).asUInt())(15, 0).asUInt()
+    val tmpIdx = PriorityEncoder(memQueryResult_2)
+    val memQueryIdx = (io.memRead.req.bits.idx - tmpIdx)(3, 0).asUInt() // 往上查找
+    when(io.memRead.req.fire()){
+      ret_mask(i) := Cat(memQueryResult_2).orR()
+      ret_data(i) := Mux(Cat(memQueryResult_2).orR(), rob(memQueryIdx).data((i+1)*8 - 1, i*8), 0.U)
+    }.otherwise{
+      ret_mask(i) := false.B
+      ret_data(i) := 0.U
+    }
   }
+
+  io.memRead.resp.valid := io.memRead.req.valid
+  io.memRead.resp.bits.mask := ret_mask.asUInt()
+  io.memRead.resp.bits.data := ret_data.asUInt()
+  io.memRead.resp.bits.meet := ret_mask.asUInt() === io.memRead.req.bits.mask
 
   dontTouch(io.in.cdb)
 

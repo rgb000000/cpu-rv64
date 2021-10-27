@@ -241,6 +241,21 @@ class OOOIF (implicit p: Parameters) extends Module {
     cancel_inst_1 := false.B
   }
 
+  inst(0) := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(31,  0), inst(0))
+  inst(1) := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(63, 32), inst(1))
+  val stall_negedge = (!io.stall) & RegNext(io.stall, false.B)
+  val is_valid_when_stall = RegInit(VecInit(Seq.fill(2)(false.B)))
+  when(io.stall & io.out(0).valid & !io.kill){
+    is_valid_when_stall(0) := true.B
+  }.elsewhen(stall_negedge | io.kill){
+    is_valid_when_stall(0) := false.B
+  }
+  when(io.stall & io.out(1).valid & !io.kill){
+    is_valid_when_stall(1) := true.B
+  }.elsewhen(stall_negedge | io.kill){
+    is_valid_when_stall(1) := false.B
+  }
+
 
   // always read instructions from icache
   io.icache.req.valid := (!io.stall) & (!io.kill) & (state =/= s_kill)
@@ -265,19 +280,28 @@ class OOOIF (implicit p: Parameters) extends Module {
   io.out(0).bits.pTaken := pTaken(0)
   io.out(0).bits.pPC := Mux(btb(0).io.query.res.bits.is_miss, 0.U, btb(0).io.query.res.bits.tgt)
 //  io.out(0).valid := (Mux(io.kill | cancel_next_data, 0.U, io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U)) | (is_valid_when_stall(0) & stall_negedge) & inst_valid(0)) & !cancel_inst_0
-  io.out(0).valid := isCacheRet & inst_valid(0) & (state =/= s_kill)
+  io.out(0).valid := (isCacheRet & inst_valid(0) & (state =/= s_kill)) | (is_valid_when_stall(0) & stall_negedge)
 
   io.out(1).bits.pc := io.out(0).bits.pc | "b100".U
   io.out(1).bits.inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(63, 32), inst(1))
   io.out(1).bits.pTaken := pTaken(1)
   io.out(1).bits.pPC := Mux(btb(0).io.query.res.bits.is_miss, 0.U, btb(0).io.query.res.bits.tgt)
 //  io.out(1).valid := (Mux(io.kill | cancel_next_data, 0.U, io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U)) | (is_valid_when_stall(1) & stall_negedge) & inst_valid(1)) & !cancel_inst_1
-  io.out(1).valid := isCacheRet & inst_valid(1) & !cancel_inst_1 & (state =/= s_kill)
+  io.out(1).valid := (isCacheRet & inst_valid(1) & !cancel_inst_1 & (state =/= s_kill)) | (is_valid_when_stall(1) & stall_negedge)
 
+  val pTaken_when_stall = RegInit(false.B)
+  val pnpc_f_reg = RegInit(0.U(p(AddresWidth).W))
+  when(io.stall & pTaken_f){
+    pTaken_when_stall := true.B
+    pnpc_f_reg := pnpc_f
+  }.elsewhen(!io.stall){
+    pTaken_when_stall := false.B
+  }
 
   npc := Mux(state === s_kill,    pc,
          Mux(state === s_release, pc,
-         Mux(state === s_stall,   pc,
          Mux(pTaken_f,            pnpc_f,
-                                  get_next_pc(pc)))))
+         Mux(pTaken_when_stall,   pnpc_f_reg,
+         Mux(state === s_stall,   get_next_pc(pc),
+                                  get_next_pc(pc))))))
 }

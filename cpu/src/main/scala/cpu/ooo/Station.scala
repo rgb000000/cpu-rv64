@@ -158,7 +158,8 @@ class Station(implicit p: Parameters) extends Module {
   io.out(0).bits.idx := readyIdx_0
   // memU
   val readyIdx_1_isMem = station(readyIdx_1).st_type.orR() | station(readyIdx_1).ld_type.orR()
-  io.out(1).valid := which_station_ready_1.orR() & (readyIdx_1 =/= readyIdx_0) & ((!readyIdx_1_isMem) | (readyIdx_1_isMem & (nextMemIdx === readyIdx_1)))
+  io.out(1).valid := which_station_ready_1.orR() & (((readyIdx_1 =/= readyIdx_0) & which_station_ready_0.orR()) | (!which_station_ready_0.orR())) & ((!readyIdx_1_isMem) | (readyIdx_1_isMem & (nextMemIdx === readyIdx_1)))
+//  io.out(1).valid := which_station_ready_1.orR() & (readyIdx_1 =/= readyIdx_0) & ((!readyIdx_1_isMem) | (readyIdx_1_isMem & (nextMemIdx === readyIdx_1)))
   io.out(1).bits.info := station(readyIdx_1)
   io.out(1).bits.idx := readyIdx_1
 
@@ -311,7 +312,7 @@ class Station(implicit p: Parameters) extends Module {
     when(io.out(0).fire()) {
       station(readyIdx_0).state := S_ISSUE
     }
-    when(io.out(1).fire() & (readyIdx_1 =/= readyIdx_0)) {
+    when(io.out(1).fire()) {
       station(readyIdx_1).state := S_ISSUE
     }
   }
