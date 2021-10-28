@@ -230,7 +230,10 @@ class CPUCacheCrossBarN21(N: Int)(implicit p: Parameters) extends Module{
       }
     }
     is(s_lock){
-      when(io.out.resp.fire()){
+      when(io.out.resp.fire() & io.out.req.fire()){
+        state := s_lock
+        cur_idx := arb.io.chosen
+      }.elsewhen(io.out.resp.fire() & !io.out.req.fire()){
         state := s_idle
       }
     }

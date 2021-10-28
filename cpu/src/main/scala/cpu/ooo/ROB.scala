@@ -55,6 +55,8 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val isHit = Bool()
 //      val right_pc = UInt(p(AddresWidth).W)   // right_pc is the same as data
 
+      val fence_i_do = Bool()
+
       // for difftest
       val pc = UInt(p(AddresWidth).W)
       val inst = UInt(32.W)
@@ -248,6 +250,8 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit.reg(portIdx).bits.isST := rob_info.st_type.orR()
     io.commit.reg(portIdx).bits.isLD := rob_info.ld_type.orR()
 
+    io.commit.reg(portIdx).bits.fence_i_do := (rob_info.inst === ISA.fence_i) & valid
+
     io.commit2rename(portIdx).valid := rob_info.wen & rob_info.isPrd & valid
     io.commit2rename(portIdx).bits.prn := rob_info.prdORaddr
     io.commit2rename(portIdx).bits.skipWB := rob_info.csr_cmd.orR()
@@ -309,7 +313,7 @@ class ROB(implicit p: Parameters) extends Module {
   write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
   val head = rob(commitIdx.value)
   csr_enable(head, head.state === S_GETDATA)
-  io.kill := head.kill & (head.state === S_GETDATA)
+  io.kill := (head.kill & (head.state === S_GETDATA)) & io.commit.reg(0).valid
   when(head.state === S_GETDATA){
     when(head.isPrd & !head.csr_cmd.orR()){
       // 普通指令
@@ -317,11 +321,28 @@ class ROB(implicit p: Parameters) extends Module {
         // 无中断，正常执行
         when(head.brHit){
           // 跳转预测成功
-          commitIdx.inc()
-          write_prfile(0, head, true.B)
-          write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
-          head.state := S_COMMITED
-          out_br_info(true.B, head)
+          when(!head.kill){
+            commitIdx.inc()
+            write_prfile(0, head, true.B)
+            write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+            head.state := S_COMMITED
+            out_br_info(true.B, head)
+          }.otherwise{
+            // 触发了kill 只有fence_i会走到这里，需要在dcacahe idle时候执行
+            write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+            when(io.commit.dcache.req.ready){
+              commitIdx.value := 0.U
+              write_prfile(0, head, true.B)
+              rob.foreach(x => {
+                x.state := S_EMPTY
+              })
+              out_br_info(true.B, head)
+            }.otherwise{
+              // dcache没idle 先不提交fence_i
+              write_prfile(0, head, false.B)
+              out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
+            }
+          }
         }.otherwise{
           // 跳转预测失败
           commitIdx.value := 0.U

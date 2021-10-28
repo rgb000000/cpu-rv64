@@ -12,6 +12,9 @@ class OOO(implicit p: Parameters) extends Module {
     val dcache = Flipped(new CacheCPUIO)
 
     val time_interrupt = Input(Bool())
+
+    val fence_i_do   = Output(Bool())
+    val fence_i_done = Input(Bool())
   })
 
   import Control._
@@ -50,6 +53,9 @@ class OOO(implicit p: Parameters) extends Module {
   BoringUtils.addSink(soft_int, "soft_int")
   BoringUtils.addSink(external_int, "external_int")
 
+  // 单指令提交，只需要关注reg(0)就可以了
+  io.fence_i_do := (rob.io.commit.reg(0).bits.fence_i_do) & rob.io.commit.reg(0).valid
+
   //= ifet ==================================================
   ifet.io.icache <> io.icache
   ifet.io.pc_sel := Mux(rob.io.kill, PC_EPC, 0.U)
@@ -57,9 +63,9 @@ class OOO(implicit p: Parameters) extends Module {
   ifet.io.pc_epc := rob.io.epc
   ifet.io.stall := station_isfull
   ifet.io.kill := rob_kill
-  ifet.io.fence_i_do := 0.U
-  ifet.io.fence_i_done := 0.U
-  ifet.io.fence_pc := 0.U
+  ifet.io.fence_i_do := io.fence_i_do
+  ifet.io.fence_i_done := io.fence_i_done
+  ifet.io.fence_pc := rob.io.commit.reg(0).bits.pc
   ifet.io.pc_except_entry.valid := rob.io.except
   ifet.io.pc_except_entry.bits := rob.io.exvec
 
