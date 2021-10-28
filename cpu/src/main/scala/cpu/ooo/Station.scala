@@ -223,13 +223,13 @@ class Station(implicit p: Parameters) extends Module {
     // cdb
     io.cdb.foreach(cdb => {
       station.map(x => {
-        when(cdb.valid & ((x.A_sel === A_RS1) & (!x.pr1_s) & (x.pr1 === cdb.bits.prn) & (x.state === S_WAIT)) & (cdb.bits.prn =/= 0.U)) {
+        when(cdb.valid & cdb.bits.wen & ((x.A_sel === A_RS1) & (!x.pr1_s) & (x.pr1 === cdb.bits.prn) & (x.state === S_WAIT)) & (cdb.bits.prn =/= 0.U)) {
           x.pr1_s := true.B
           x.pr1_inROB := true.B
           x.pr1_robIdx := cdb.bits.idx
         }
 
-        when(cdb.valid & ((x.B_sel === B_RS2) & (!x.pr2_s) & (x.pr2 === cdb.bits.prn) & (x.state === S_WAIT)) & (cdb.bits.prn =/= 0.U)) {
+        when(cdb.valid & cdb.bits.wen & ((x.B_sel === B_RS2) & (!x.pr2_s) & (x.pr2 === cdb.bits.prn) & (x.state === S_WAIT)) & (cdb.bits.prn =/= 0.U)) {
           x.pr2_s := true.B
           x.pr2_inROB := true.B
           x.pr2_robIdx := cdb.bits.idx

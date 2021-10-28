@@ -3,6 +3,7 @@ package cpu
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
+import chisel3.util.experimental.BoringUtils
 
 class ROBIO(implicit p: Parameters) extends Bundle {
   val in = new Bundle {
@@ -75,7 +76,10 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val right_pc = UInt(p(AddresWidth).W)   // right_pc is the same as data
     })
   }
-  val commit2rename = Vec(2, Valid(UInt(6.W)))
+  val commit2rename = Vec(2, Valid(new Bundle{
+    val prn = UInt(6.W)
+    val skipWB = Bool()
+  }))
   val commit2station = Vec(2, Valid(new Bundle{
     // 如果wen为真就表示这个prn是prn而不是memAddress， station拿到这个信息更新他的表
     val prn = UInt(6.W)
@@ -245,7 +249,8 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit.reg(portIdx).bits.isLD := rob_info.ld_type.orR()
 
     io.commit2rename(portIdx).valid := rob_info.wen & rob_info.isPrd & valid
-    io.commit2rename(portIdx).bits := rob_info.prdORaddr
+    io.commit2rename(portIdx).bits.prn := rob_info.prdORaddr
+    io.commit2rename(portIdx).bits.skipWB := rob_info.csr_cmd.orR()
 
     io.commit2station(portIdx).valid := valid
     io.commit2station(portIdx).bits.prn := rob_info.prdORaddr
@@ -258,6 +263,16 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit.dcache.req.bits.data := rob_info.data
     io.commit.dcache.req.bits.mask := rob_info.mask
     io.commit.dcache.req.bits.op := 1.U // must write
+  }
+
+  if(p(Difftest)){
+    val cycleCnt = WireInit(0.asUInt(64.W))
+    BoringUtils.addSink(cycleCnt, "cycleCnt")
+    when(io.commit.dcache.req.fire() & (io.commit.dcache.req.bits.op === 1.U)){
+      when(io.commit.dcache.req.bits.addr === BitPat("b0000_0000_0000_0000_0000_0000_0000_0000_1000_0000_0010_0101_0101_0111_0110_????")){
+        printf("addr: %x, data: %x, sd_mask: %x, time: %d \n", io.commit.dcache.req.bits.addr, io.commit.dcache.req.bits.data, io.commit.dcache.req.bits.mask, cycleCnt)
+      }
+    }
   }
 
   def commit2rename(portIdx: Int, prn: UInt, wen: Bool): Unit = {

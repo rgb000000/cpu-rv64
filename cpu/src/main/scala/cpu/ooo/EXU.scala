@@ -163,7 +163,7 @@ class MemU(implicit p: Parameters) extends Module {
   val mem = Module(new OOOMEM)
   mem.io.ld_type := Mux(state === s_idle, io.in.bits.ld_type, req_reg.ld_type)
   mem.io.alu_res := Mux(state === s_idle, alu_res, addr_reg)
-  mem.io.inst_valid := io.in.fire() & (state === s_idle) & isLD & (io.readROB.resp.fire() & !io.readROB.resp.bits.meet) & (!invalid_mem_addr) // idle状态，来了mem指令，并且rob中无
+  mem.io.inst_valid := (!io.kill) & io.in.fire() & (state === s_idle) & isLD & (io.readROB.resp.fire() & !io.readROB.resp.bits.meet) & (!invalid_mem_addr) // idle状态，来了mem指令，并且rob中无
   mem.io.dcache <> io.dcache
 
   // 读取rob的时候要找最近的addr和mask都能匹配上的那一项
@@ -224,7 +224,7 @@ class MemU(implicit p: Parameters) extends Module {
   io.in.ready := state === s_idle
 
 
-  when((((state === s_idle) & (io.in.fire() & isLD)) | (state === s_mem)) & io.kill) {
+  when((((state === s_idle) & (io.in.fire() & isLD) & !io.kill) | (state === s_mem)) & io.kill) {
     kill_reg := true.B
   }.elsewhen(state === s_ret) {
     kill_reg := false.B
@@ -234,7 +234,7 @@ class MemU(implicit p: Parameters) extends Module {
     is(s_idle) {
       req_reg := io.in.bits
       addr_reg := alu_res
-      when(io.in.fire() & isLD) {
+      when(io.in.fire() & isLD & !io.kill) {
         when(io.readROB.resp.fire() & io.readROB.resp.bits.meet) {
           // 全部在rob中，可以直接ret
           state := s_ret

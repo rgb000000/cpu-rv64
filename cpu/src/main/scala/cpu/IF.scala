@@ -294,10 +294,10 @@ class OOOIF (implicit p: Parameters) extends Module {
 
   val pTaken_when_stall = RegInit(false.B)
   val pnpc_f_reg = RegInit(0.U(p(AddresWidth).W))
-  when(io.stall & pTaken_f){
+  when((io.stall | !io.icache.req.ready) & pTaken_f){
     pTaken_when_stall := true.B
     pnpc_f_reg := pnpc_f
-  }.elsewhen(!io.stall){
+  }.elsewhen(((!io.stall) & io.icache.req.ready)){
     pTaken_when_stall := false.B
   }
 

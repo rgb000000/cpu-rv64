@@ -334,7 +334,13 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   // rand way data (tag, v, d, data)
   val rand_way_data = Mux1H(for(i <- rand_way.asBools().zipWithIndex) yield (i._1, ways_ret_datas(i._2)))
   val rand_way_data_reg = RegEnable(rand_way_data, 0.U.asTypeOf(ways_ret_datas.head), (req_isCached & (state === s_lookup) & is_miss & RegNext(io.cpu.req.fire(), false.B)) === 1.U)
-  val rand_way_data_reg_valid = RegNext((state === s_lookup) & is_miss & req_isCached & (io.mem.req.valid & !io.mem.req.ready), false.B) // mem req not send
+//  val rand_way_data_reg_valid = RegNext((state === s_lookup) & is_miss & req_isCached & (io.mem.req.valid & !io.mem.req.ready), false.B) // mem req not send
+  val rand_way_data_reg_valid = RegInit(false.B)
+  when((state === s_lookup) & is_miss & req_isCached & (io.mem.req.valid & !io.mem.req.ready)){
+    rand_way_data_reg_valid := true.B
+  }.elsewhen(state =/= s_lookup){
+    rand_way_data_reg_valid := false.B
+  }
 
   // miss info reg
   val miss_info = RegInit(0.U.asTypeOf(new Bundle{
@@ -407,7 +413,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
   //                              resp in lookup stage
 //  io.cpu.resp.valid := (state === idle) | ((state === lookup) & (!is_miss) & (req_reg.op === 0.U)) |
-  io.cpu.resp.valid := (state === s_idle) | ((state === s_lookup) & (!is_miss)) |
+  io.cpu.resp.valid := (state === s_idle) | ((state === s_lookup) & (!is_miss) & (!is_miss_reg)) |
     //    ((state === refill) & ((!req_reg.op) & refill_cnt.value === req_reg.addr.asTypeOf(infos).offset(log2Ceil(64 / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(64 / 8)).asUInt()) & io.mem.resp.valid) |
     (req_isCached & (((state === s_refill) & ((!req_reg.op) & (refill_cnt.value === 1.U) & io.mem.resp.valid)) |
                      ((state === s_refill) & ((req_reg.op) & (refill_cnt.value === 1.U) & io.mem.resp.valid)))) |
@@ -451,7 +457,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   val r_cnt = Counter((p(CacheLineSize) / 64).toInt)
 
   io.mem.req.bits.mask := 0.U
-  when((state === s_lookup) & is_miss & ((req_isCached & (((rand_way_data.v === 1.U) & (rand_way_data.d === 1.U) & !rand_way_data_reg_valid) | ((rand_way_data_reg.v === 1.U) & (rand_way_data_reg.d === 1.U) & rand_way_data_reg_valid))) |
+  when((state === s_lookup) & (is_miss | is_miss_reg) & ((req_isCached & (((rand_way_data.v === 1.U) & (rand_way_data.d === 1.U) & !rand_way_data_reg_valid) | ((rand_way_data_reg.v === 1.U) & (rand_way_data_reg.d === 1.U) & rand_way_data_reg_valid))) |
                                        (!req_isCached & (req_reg.op === 1.U)))
   ){
     // send write burst cmd or write once cmd
@@ -542,14 +548,14 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   }).reduce(_ | _) & !((io.cpu.req.bits.addr >= uc_start) & (io.cpu.req.bits.addr < (uc_start + uc_range))), req_isCached)
 
   when((state === s_lookup) & is_miss){
-    // miss and goto miss state
-    // miss info
-    miss_info.addr := req_reg.addr
-    miss_info.op := req_reg.op
-    miss_info.data := req_reg.data
-
     // replace info, use rand way data
     when(RegNext(io.cpu.req.fire(), false.B)){
+      // miss and goto miss state
+      // miss info
+      miss_info.addr := req_reg.addr
+      miss_info.op := req_reg.op
+      miss_info.data := req_reg.data
+
       replace_buffer.addr := Cat(rand_way_data.tag, req_reg.addr.asTypeOf(infos).index, 0.U(offset_width.W))
       replace_buffer.data := rand_way_data.datas
       replace_buffer.way_num := rand_way
@@ -563,8 +569,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   }
 
   io.mem.resp.ready := (state === s_refill)
-  write_buffer.valid := Mux(((state === s_refill) & io.mem.resp.fire()) | ((state === s_lookup)& !is_miss & req_reg.op =/= 0.U), 1.U, 0.U)
-  when((state === s_lookup) & (!is_miss) & (req_reg.op === 1.U)){
+  write_buffer.valid := Mux(((state === s_refill) & io.mem.resp.fire()) | ((state === s_lookup)& (!is_miss) & (!is_miss_reg) & req_reg.op =/= 0.U), 1.U, 0.U)
+  when((state === s_lookup) & (!is_miss) & (!is_miss_reg) & (req_reg.op === 1.U)){
       write_buffer.bits.tag := req_reg.addr.asTypeOf(infos).tag
       write_buffer.bits.index := req_reg.addr.asTypeOf(infos).index
       write_buffer.bits.offset := req_reg.addr.asTypeOf(infos).offset
@@ -630,10 +636,10 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
         }else{
           state := s_fence         // dcache
         }
-      }.elsewhen( (!is_miss) & ((!io.cpu.req.fire()) | conflict_hit_write) ){
+      }.elsewhen( (!is_miss) & ((!io.cpu.req.fire()) | conflict_hit_write) & (!is_miss_reg) ){
         // (hit and no new req) | (hit and new req is conflicted with hit write)
         state := s_idle
-      }.elsewhen( (!is_miss) & (io.cpu.req.fire() & !conflict_hit_write) ){
+      }.elsewhen( (!is_miss) & (io.cpu.req.fire() & !conflict_hit_write) & (!is_miss_reg) ){
         // hit and new req and not conflict with hit write
         state := s_lookup
       }.elsewhen(io.fence_i){

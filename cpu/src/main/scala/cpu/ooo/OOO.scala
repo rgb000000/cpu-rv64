@@ -252,9 +252,11 @@ class OOO(implicit p: Parameters) extends Module {
   prfile.io.write(1).wdata := rob.io.commit.reg(1).bits.data
 
   // to rename
-  rename.io.robCommit.reg(0).bits := rob.io.commit2rename(0).bits
+  rename.io.robCommit.reg(0).bits.prn := rob.io.commit2rename(0).bits.prn
+  rename.io.robCommit.reg(0).bits.skipWB := rob.io.commit2rename(0).bits.skipWB
   rename.io.robCommit.reg(0).valid := rob.io.commit2rename(0).valid
-  rename.io.robCommit.reg(1).bits := rob.io.commit2rename(1).bits
+  rename.io.robCommit.reg(1).bits.prn := rob.io.commit2rename(1).bits.prn
+  rename.io.robCommit.reg(1).bits.skipWB := rob.io.commit2rename(1).bits.skipWB
   rename.io.robCommit.reg(1).valid := rob.io.commit2rename(1).valid
   // rob br info to renameMap
   rename.io.robCommit.br_info.valid := rob.io.commit.br_info.valid
