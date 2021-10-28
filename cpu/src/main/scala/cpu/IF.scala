@@ -146,11 +146,16 @@ class OOOIF (implicit p: Parameters) extends Module {
 
   def get_next_pc(pc: UInt): UInt = Mux(pc(2), pc + 4.U, pc + 8.U)
 
-  def get_pre_pc(pc: UInt): UInt = pc - 8.U
+  def get_pc_4(pc: UInt): UInt = {pc + 4.U}
 
   val req_state =  RegInit(0.U(1.W))
   dontTouch(req_state)
-  when(io.fence_i_do){
+
+  // s_kill 用来处理需要被kill的icache req
+  val s_normal :: s_kill :: s_release :: s_fence :: s_stall :: Nil = Enum(5)
+  val state = RegInit(s_normal)
+
+  when(io.fence_i_do | (state === s_fence)){
     req_state := 0.U
   }.elsewhen(io.icache.req.fire() & !(io.icache.resp.fire() & (io.icache.resp.bits.cmd === 2.U))){
     // req , no resp
@@ -163,9 +168,6 @@ class OOOIF (implicit p: Parameters) extends Module {
     req_state := req_state
   }
 
-  // s_kill 用来处理需要被kill的icache req
-  val s_normal :: s_kill :: s_release :: s_fence :: s_stall :: Nil = Enum(5)
-  val state = RegInit(s_normal)
   switch(state){
     is(s_normal){
       when(io.fence_i_do){
@@ -206,10 +208,32 @@ class OOOIF (implicit p: Parameters) extends Module {
     }
   }
 
-  val pc = RegInit((p(PCStart).asUInt(p(AddresWidth).W) - 8.U))
+  val pc = RegInit((p(PCStart).asUInt(p(AddresWidth).W) - 4.U))
   val npc = Wire(UInt(p(AddresWidth).W))
   val right_tgt = Wire(UInt(p(AddresWidth).W))
   val inst = RegInit(VecInit(Seq.fill(2)(BitPat.bitPatToUInt(ISA.nop))))
+
+//  val isSingleAddr = WireInit(pc(31, 28).asUInt() =/= 8.U)
+  val isSingleAddr = RegInit(true.B)
+  val isSingleAddr_next = RegInit(true.B)
+  val last_single = RegInit(false.B)
+  when(io.icache.req.fire() & (io.icache.req.bits.addr(31, 28) =/= 8.U)){
+    isSingleAddr_next := true.B
+  }.elsewhen(io.icache.req.fire() & (io.icache.req.bits.addr(31, 28) === 8.U)){
+    isSingleAddr_next := false.B
+  }
+
+  when(io.icache.req.fire()){
+    isSingleAddr := isSingleAddr_next
+  }
+
+  when(io.icache.req.fire()){
+    when((!isSingleAddr_next) & isSingleAddr){
+      last_single := true.B
+    }.otherwise{
+      last_single := false.B
+    }
+  }
 
   // br_info的isTaken在rob中已经转换了，意味着实际的跳转方向
   right_tgt := Mux(io.br_info.fire() & !io.br_info.bits.isHit, Mux(io.br_info.bits.isTaken, io.br_info.bits.tgt, io.br_info.bits.cur_pc + 4.U), 0.U)
@@ -224,7 +248,7 @@ class OOOIF (implicit p: Parameters) extends Module {
 
   val inst_valid = RegInit(VecInit(Seq.fill(2)(false.B)))
   inst_valid(0) := Mux(io.icache.req.fire(), npc(2) === 0.U, inst_valid(0))
-  inst_valid(1) := true.B
+  inst_valid(1) := true.B & Mux(isSingleAddr, Mux(io.icache.req.fire(), npc(2) === 1.U, inst_valid(1)), true.B)
 
   // query btb
   val pnpc = Wire(Vec(2, UInt(p(AddresWidth).W)))
@@ -277,8 +301,8 @@ class OOOIF (implicit p: Parameters) extends Module {
   // always read instructions from icache
   io.icache.req.valid := (!io.stall) & (!io.kill) & (state =/= s_kill) & (state =/= s_fence)
   io.icache.req.bits.op := 0.U // must read
-  io.icache.req.bits.addr := (npc >> 3.U) << 3.U // Mux(io.pc_sel === Control.PC_ALU, io.pc_alu, pc)// pc is addr
-  io.icache.req.bits.mask := "b1111_1111".U // Mux(io.icache.req.bits.addr(2) === 1.U, "b1111_0000".U, "b0000_1111".U)  // need 32 bit instructions
+  io.icache.req.bits.addr := Mux(!isSingleAddr, (npc >> 3.U) << 3.U, npc) // Mux(io.pc_sel === Control.PC_ALU, io.pc_alu, pc)// pc is addr
+  io.icache.req.bits.mask := Mux(!isSingleAddr, "b1111_1111".U, Mux(io.icache.req.bits.addr(2) === 1.U, "b1111_0000".U, "b0000_1111".U)) // Mux(io.icache.req.bits.addr(2) === 1.U, "b1111_0000".U, "b0000_1111".U)  // need 32 bit instructions
   io.icache.req.bits.data := 0.U // nerver use because op is read
 
   // update
@@ -300,7 +324,7 @@ class OOOIF (implicit p: Parameters) extends Module {
   io.out(0).valid := (isCacheRet & inst_valid(0) & (state =/= s_kill)) | (is_valid_when_stall(0) & stall_negedge)
 
   io.out(1).bits.pc := io.out(0).bits.pc | "b100".U
-  io.out(1).bits.inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(63, 32), inst(1))
+  io.out(1).bits.inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), Mux((!isSingleAddr) & (!last_single), io.icache.resp.bits.data(63, 32), io.icache.resp.bits.data(31, 0)), inst(1))
   io.out(1).bits.pTaken := pTaken(1)
   io.out(1).bits.pPC := Mux(btb(0).io.query.res.bits.is_miss, 0.U, btb(0).io.query.res.bits.tgt)
 //  io.out(1).valid := (Mux(io.kill | cancel_next_data, 0.U, io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U)) | (is_valid_when_stall(1) & stall_negedge) & inst_valid(1)) & !cancel_inst_1
@@ -319,6 +343,6 @@ class OOOIF (implicit p: Parameters) extends Module {
          Mux(state === s_release, pc,
          Mux(pTaken_f,            pnpc_f,
          Mux(pTaken_when_stall,   pnpc_f_reg,
-         Mux(state === s_stall,   get_next_pc(pc),
-                                  get_next_pc(pc))))))
+         Mux(state === s_stall,   Mux(!isSingleAddr, get_next_pc(pc), get_pc_4(pc)),
+                                  Mux(!isSingleAddr, get_next_pc(pc), get_pc_4(pc)))))))
 }
