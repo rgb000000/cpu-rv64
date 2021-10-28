@@ -87,11 +87,6 @@ class MemUIn(implicit p: Parameters) extends Bundle {
   val pc = UInt(p(AddresWidth).W)
   val inst = UInt(32.W)
   val illegal = Bool()
-  val interrupt = new Bundle {
-    val time = Bool()
-    val soft = Bool()
-    val external = Bool()
-  }
 
   val wen = Bool()
 }
@@ -137,20 +132,20 @@ class MemU(implicit p: Parameters) extends Module {
   val isST = (io.in.bits.st_type.orR()) & !isCSR
   val isALU = (!isCSR) & (!isLD) & (!isST)
 
-  // CSR op
-  val csr = Module(new CSR)
-  csr.io.cmd := io.in.bits.csr_cmd
-  csr.io.in := alu_res
-  csr.io.ctrl_signal.pc := io.in.bits.pc
-  csr.io.ctrl_signal.addr := alu_res
-  csr.io.ctrl_signal.inst := io.in.bits.inst
-  csr.io.ctrl_signal.illegal := io.in.bits.illegal
-  csr.io.ctrl_signal.st_type := io.in.bits.st_type
-  csr.io.ctrl_signal.ld_type := io.in.bits.ld_type
-  csr.io.pc_check := false.B
-  csr.io.interrupt := io.in.bits.interrupt
-  csr.io.stall := false.B
-  csr.io.ctrl_signal.valid := io.in.fire() & isCSR
+//  // CSR op
+//  val csr = Module(new CSR)
+//  csr.io.cmd := io.in.bits.csr_cmd
+//  csr.io.in := alu_res
+//  csr.io.ctrl_signal.pc := io.in.bits.pc
+//  csr.io.ctrl_signal.addr := alu_res
+//  csr.io.ctrl_signal.inst := io.in.bits.inst
+//  csr.io.ctrl_signal.illegal := io.in.bits.illegal
+//  csr.io.ctrl_signal.st_type := io.in.bits.st_type
+//  csr.io.ctrl_signal.ld_type := io.in.bits.ld_type
+//  csr.io.pc_check := false.B
+//  csr.io.interrupt := io.in.bits.interrupt
+//  csr.io.stall := false.B
+//  csr.io.ctrl_signal.valid := io.in.fire() & isCSR
 
   val invalid_mem_addr = !WireInit(addressSpace.map(x => {
     (alu_res >= x._1.U(p(AddresWidth).W)) & (alu_res < (x._1.U(p(AddresWidth).W) + x._2.U(p(AddresWidth).W)))
@@ -271,14 +266,15 @@ class MemU(implicit p: Parameters) extends Module {
 
   when(io.in.fire() & isCSR) {
     // csr op
+    // csr读数只通过commit端口，cdb处不会改变rename和station状态，因为csr放在了rob里面，当前还没有读csr
     io.cdb.bits.idx := io.in.bits.idx
-    io.cdb.bits.prn := io.in.bits.prd
-    io.cdb.bits.data := csr.io.out
-    io.cdb.bits.wen := io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
+    io.cdb.bits.prn := io.in.bits.prd  // rd
+    io.cdb.bits.data := alu_res        // data传递csr的in
+    io.cdb.bits.wen := false.B // !! io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
     io.cdb.bits.brHit := true.B
-    io.cdb.bits.expt := csr.io.expt
+    io.cdb.bits.expt := false.B
     io.cdb.bits.pc := io.in.bits.pc
-    io.cdb.bits.inst := io.in.bits.inst
+    io.cdb.bits.inst := io.in.bits.inst // inst里面蕴含了csr addr
     io.cdb.valid := true.B
   }.elsewhen(io.in.fire() & isALU) {
     // fix point op (NOT including branch)
@@ -330,6 +326,7 @@ class MemU(implicit p: Parameters) extends Module {
       io.cdb.bits.pc := req_reg.pc
       io.cdb.bits.inst := req_reg.inst
       io.cdb.valid := (state === s_ret) & (!kill_reg) & !io.kill
+      io.cdb.bits.addr := addr_reg
     }
   }
 

@@ -257,18 +257,18 @@ class CSR (implicit p: Parameters) extends Module {
     val dcsr = Module(new DifftestCSRState)
     dcsr.io.clock          := clock
     dcsr.io.coreid         := 0.U
-    dcsr.io.priviledgeMode := RegNext(Mux(!io.stall, mstatus.prv,       RegEnable(mstatus.prv, !io.stall)))      // RegNext(mstatus.prv, !io.stall)
-    dcsr.io.mstatus        := RegNext(Mux(!io.stall, mstatus.asUInt(),  RegEnable(mstatus.asUInt(), !io.stall))) // RegNext(mstatus.asUInt(), !io.stall)
-    dcsr.io.mcause         := RegNext(Mux(!io.stall, mcause,            RegEnable(mcause, !io.stall)))           // RegNext(mcause, !io.stall)
-    dcsr.io.mepc           := RegNext(Mux(!io.stall, mepc,              RegEnable(mepc, !io.stall)))             // RegNext(mepc, !io.stall)
+    dcsr.io.priviledgeMode := mstatus.prv     // RegNext(Mux(!io.stall, mstatus.prv,       RegEnable(mstatus.prv, !io.stall)))      // RegNext(mstatus.prv, !io.stall)
+    dcsr.io.mstatus        := mstatus.asUInt()// RegNext(Mux(!io.stall, mstatus.asUInt(),  RegEnable(mstatus.asUInt(), !io.stall))) // RegNext(mstatus.asUInt(), !io.stall)
+    dcsr.io.mcause         := mcause          // RegNext(Mux(!io.stall, mcause,            RegEnable(mcause, !io.stall)))           // RegNext(mcause, !io.stall)
+    dcsr.io.mepc           := mepc            // RegNext(Mux(!io.stall, mepc,              RegEnable(mepc, !io.stall)))             // RegNext(mepc, !io.stall)
     dcsr.io.mip            := 0.U // RegNext(Mux(!io.stall, mip.asUInt(),      RegEnable(mip.asUInt(), !io.stall)))     // RegNext(mip.asUInt(), !io.stall)
-    dcsr.io.mie            := RegNext(Mux(!io.stall, mie.asUInt(),      RegEnable(mie.asUInt(), !io.stall)))     // RegNext(mie.asUInt(), !io.stall)
-    dcsr.io.mtvec          := RegNext(Mux(!io.stall, mtvec,             RegEnable(mtvec, !io.stall)))            // RegNext(mtvec, !io.stall)
-    dcsr.io.sstatus        := RegNext(Mux(!io.stall, sstatus,           RegEnable(sstatus, !io.stall))) // 0.U // RegNext(0.U)
+    dcsr.io.mie            := mie.asUInt()// RegNext(Mux(!io.stall, mie.asUInt(),      RegEnable(mie.asUInt(), !io.stall)))     // RegNext(mie.asUInt(), !io.stall)
+    dcsr.io.mtvec          := mtvec       // RegNext(Mux(!io.stall, mtvec,             RegEnable(mtvec, !io.stall)))            // RegNext(mtvec, !io.stall)
+    dcsr.io.sstatus        := sstatus     // RegNext(Mux(!io.stall, sstatus,           RegEnable(sstatus, !io.stall))) // 0.U // RegNext(0.U)
     dcsr.io.scause         := 0.U // RegNext(0.U)
     dcsr.io.sepc           := 0.U // RegNext(0.U)
     dcsr.io.satp           := 0.U // RegNext(0.U)
-    dcsr.io.mscratch       := RegNext(Mux(!io.stall, mscratch,          RegEnable(mscratch, !io.stall)))
+    dcsr.io.mscratch       := mscratch // RegNext(Mux(!io.stall, mscratch,          RegEnable(mscratch, !io.stall)))
     dcsr.io.sscratch       := 0.U // RegNext(Mux(!io.stall, sstatus,           RegEnable(sstatus, !io.stall))) // 0.U // RegNext(0.U)
     dcsr.io.mideleg        := 0.U // RegNext(0.U)
     dcsr.io.medeleg        := 0.U // RegNext(0.U)
@@ -286,10 +286,10 @@ class CSR (implicit p: Parameters) extends Module {
     val dae = Module(new DifftestArchEvent)
     dae.io.clock := clock
     dae.io.coreid := 0.U
-    dae.io.intrNO := RegNext(Mux(!io.stall, Mux(except_reg, Mux(time_interrupt_reg, mcause, 0.U), 0.U), 0.U))
-    dae.io.cause := RegNext(Mux(!io.stall, Mux(except_reg, Mux(!time_interrupt_reg, mcause, 0.U), 0.U), 0.U))
-    dae.io.exceptionPC := RegNext(Mux(!io.stall, RegEnable(io.ctrl_signal.pc, !io.stall), 0.U))
-    dae.io.exceptionInst := RegNext(Mux(!io.stall, RegEnable(io.ctrl_signal.inst, !io.stall), 0.U))
+    dae.io.intrNO        := Mux(except_reg, Mux(time_interrupt_reg, mcause, 0.U), 0.U)
+    dae.io.cause         := Mux(except_reg, Mux(!time_interrupt_reg, mcause, 0.U), 0.U)
+    dae.io.exceptionPC   := RegEnable(io.ctrl_signal.pc, !io.stall)
+    dae.io.exceptionInst := RegEnable(io.ctrl_signal.inst, !io.stall)
   }
 
 }

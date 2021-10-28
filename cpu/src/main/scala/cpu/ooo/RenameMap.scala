@@ -49,6 +49,8 @@ class RenameMap(implicit p: Parameters) extends Module {
         val isHit = Bool()
         val isJ = Bool()
       }))
+      val except = Input(Bool())
+      val kill = Input(Bool())
     }
 
 
@@ -298,10 +300,16 @@ class RenameMap(implicit p: Parameters) extends Module {
   // commit状态的映射，每时每刻只能存在32个,分别对应32个体系结构寄存器
   assert(cam.map(_.state === STATECONST.COMMIT).map(_.asUInt()).reduce(_ +& _) === 32.U)
 
-  when(io.robCommit.br_info.valid & !io.robCommit.br_info.bits.isHit){
+  when((io.robCommit.br_info.valid & !io.robCommit.br_info.bits.isHit) | io.robCommit.except | io.robCommit.kill){
     // 跳转错误取消的优先级最高
     // isJ表示是无条件跳转，其不用恢复valid，因为无条件跳转需要写回一个pc+4，其次该信号可以用于提交中断。
-    when(!io.robCommit.br_info.bits.isJ){
+    when(io.robCommit.except | io.robCommit.kill){
+      // branch指令跳转错误
+      for(i <- 0 until 64){
+        cam(i).valid := io.robCommit.br_info.bits.current_rename_state(i)
+        cam(i).state := Mux(io.robCommit.br_info.bits.current_rename_state(i), STATECONST.COMMIT, STATECONST.EMPRY)
+      }
+    }.elsewhen(!io.robCommit.br_info.bits.isJ){
       // branch指令跳转错误
       for(i <- 0 until 64){
         cam(i).valid := io.robCommit.br_info.bits.current_rename_state(i)

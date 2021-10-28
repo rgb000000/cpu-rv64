@@ -52,16 +52,16 @@ class OOO(implicit p: Parameters) extends Module {
 
   //= ifet ==================================================
   ifet.io.icache <> io.icache
-  ifet.io.pc_sel := 0.U
+  ifet.io.pc_sel := Mux(rob.io.kill, PC_EPC, 0.U)
   ifet.io.pc_alu := 0.U
-  ifet.io.pc_epc := 0.U
+  ifet.io.pc_epc := rob.io.epc
   ifet.io.stall := station_isfull
   ifet.io.kill := rob_kill
   ifet.io.fence_i_do := 0.U
   ifet.io.fence_i_done := 0.U
   ifet.io.fence_pc := 0.U
-  ifet.io.pc_except_entry.valid := false.B
-  ifet.io.pc_except_entry.bits := 0.U
+  ifet.io.pc_except_entry.valid := rob.io.except
+  ifet.io.pc_except_entry.bits := rob.io.exvec
 
   ifet.io.br_info.valid        := rob.io.commit.br_info.valid
   ifet.io.br_info.bits.isHit   := rob.io.commit.br_info.bits.isHit
@@ -91,12 +91,6 @@ class OOO(implicit p: Parameters) extends Module {
     rename.io.port(i).allocate_c.lr.bits  := id(i).io.rd_addr
     rename.io.port(i).allocate_c.lr.valid := (control(i).io.signal.wen & (id(i).io.rd_addr =/= 0.U)) & if_reg(i).valid & !station_isfull
   }
-
-  val id_interrupt = RegEnable(Cat(Seq(
-    io.time_interrupt & time_interrupt_enable,
-    soft_int & soft_interrupt_enable,
-    external_int & external_interrupt_enable
-  )).asUInt(), 0.U(3.W), !station_isfull)
 
   for(i <- 0 until 2){
     // write to station
@@ -143,6 +137,11 @@ class OOO(implicit p: Parameters) extends Module {
     rob.io.in.fromID(i).bits.isJ                  := station.io.in(i).bits.br_type === "b111".U
     rob.io.in.fromID(i).bits.pTaken               := station.io.in(i).bits.pTaken
     rob.io.in.fromID(i).bits.current_rename_state := station.io.in(i).bits.current_rename_state
+    rob.io.in.fromID(i).bits.csr_cmd              := station.io.in(i).bits.csr_op
+    rob.io.in.fromID(i).bits.interrupt.time       := io.time_interrupt & time_interrupt_enable
+    rob.io.in.fromID(i).bits.interrupt.soft       := soft_int & soft_interrupt_enable
+    rob.io.in.fromID(i).bits.interrupt.external   := external_int & external_interrupt_enable
+    rob.io.in.fromID(i).bits.kill                 := ctrl(i).kill
   }
 
   //= issue ==================================================
@@ -217,9 +216,6 @@ class OOO(implicit p: Parameters) extends Module {
   mem.io.in.bits.pc        := issue_1.info.pc
   mem.io.in.bits.inst      := issue_1.info.inst
   mem.io.in.bits.illegal   := issue_1.info.illeage
-  mem.io.in.bits.interrupt.time := id_interrupt(2)
-  mem.io.in.bits.interrupt.soft := id_interrupt(1)
-  mem.io.in.bits.interrupt.external := id_interrupt(0)
   mem.io.in.bits.idx := issue_1.idx
   mem.io.kill := rob_kill
 
@@ -235,7 +231,13 @@ class OOO(implicit p: Parameters) extends Module {
   rename.io.cdb(1) <> mem.io.cdb
 
   //= commit ==================================================
-  rob_kill := (rob.io.commit.br_info.valid & !rob.io.commit.br_info.bits.isHit)
+  rob_kill := (rob.io.commit.br_info.valid & !rob.io.commit.br_info.bits.isHit) | rob.io.except | rob.io.kill
+
+  station.io.robCommit.except := rob.io.except
+  rename.io.robCommit.except := rob.io.except
+  station.io.robCommit.kill := rob.io.kill
+  rename.io.robCommit.kill := rob.io.kill
+
   rob.io.in.cdb(0) <> fixPointU.io.cdb
   rob.io.in.cdb(1) <> mem.io.cdb
 //  rob.io.memCDB <> mem.io.memCDB

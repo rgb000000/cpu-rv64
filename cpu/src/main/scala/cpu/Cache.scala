@@ -309,6 +309,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
   // ways_compare_res is all 0, {0, 0, 0, 0} means the current req is miss
   val is_miss = ((ways_compare_res.orR() === 0.U) & req_isCached) | (!req_isCached)
+  val is_miss_reg = RegInit(false.B)
 //  assert((p(CacheLineSize) / p(NBank)) == 64)
 
   // adapt ysyxSoC RAM IP
@@ -525,7 +526,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   }
 
 
-  io.cpu.req.ready := ((state === s_idle) | ((state === s_lookup) & (!is_miss))) & !conflict_hit_write
+  io.cpu.req.ready := ((state === s_idle) | ((state === s_lookup) & (!is_miss) & (!is_miss_reg))) & !conflict_hit_write
   req_reg := Mux(io.cpu.req.fire(), io.cpu.req.bits, req_reg)
 
   val uc_start = WireInit(0.U(64.W))
@@ -554,7 +555,11 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
       replace_buffer.way_num := rand_way
       replace_buffer.v := rand_way_data.v
       replace_buffer.d := rand_way_data.d
+
+      is_miss_reg := true.B
     }
+  }.elsewhen(state =/= s_lookup){
+    is_miss_reg := false.B
   }
 
   io.mem.resp.ready := (state === s_refill)
