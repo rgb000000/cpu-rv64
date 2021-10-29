@@ -68,6 +68,21 @@ class InnerCrossBarN21(val n: Int)(implicit p: Parameters) extends Module{
 
   val cur_idx = RegInit(0.U(log2Ceil(n).W))
 
+
+  val s_release :: s_lock :: Nil = Enum(2)
+  val lock_state = RegInit(s_release)
+  val lock_id = RegInit(0.U)
+  when((state === s_idle) & (io.in(0).req.valid ^ io.in(1).req.valid) & (!io.in(0).req.ready) & (!io.in(1).req.ready)){
+    lock_state := s_lock
+    when(io.in(0).req.valid){
+      lock_id := 0.U
+    }.elsewhen(io.in(1).req.valid){
+      lock_id := 1.U
+    }
+  }.elsewhen(thisReq.fire()){
+    lock_state := s_release
+  }
+
   switch (state) {
     is (s_idle) {
       when (thisReq.fire()) {
@@ -90,14 +105,14 @@ class InnerCrossBarN21(val n: Int)(implicit p: Parameters) extends Module{
   // req
   (arbiter.io.in, io.in.map(_.req), 0 until n).zipped.foreach((arb, in, idx) => {
     arb.bits <> in.bits
-    arb.valid := in.valid & ((state === s_idle) |
+    arb.valid := in.valid & (((state === s_idle) & ((lock_state === s_release) | ((lock_state === s_lock) & (lock_id === idx.U)))) |
       ((state === s_writeResp) & (cur_idx === idx.U(log2Ceil(n).W)) & (((in.bits.cmd === MemCmdConst.WriteData) & (in.bits.len =/= 0.U)) | (in.bits.cmd === MemCmdConst.WriteLast))) |
       ((state === s_readResp) & (cur_idx === idx.U(log2Ceil(n).W))))
   })
   (arbiter.io.in, io.in.map(_.req), 0 until n).zipped.foreach((arb, in, idx) => {
     // to guarantee op atomic, a req can be accepted only state === s_idle
     in.ready := arb.ready &
-      ((state === s_idle) |
+      (((state === s_idle) & ((lock_state === s_release) | ((lock_state === s_lock) & (lock_id === idx.U)))) |
         ((state === s_writeResp) & (cur_idx === idx.U(log2Ceil(n).W)) & (((in.bits.cmd === MemCmdConst.WriteData) & (in.bits.len =/= 0.U)) | (in.bits.cmd === MemCmdConst.WriteLast))) |
         ((state === s_readResp) & (cur_idx === idx.U(log2Ceil(n).W))))
   })
