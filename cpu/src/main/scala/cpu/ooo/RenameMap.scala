@@ -31,7 +31,7 @@ class QueryAllocate(implicit p: Parameters) extends Bundle {
   val allocate_c = new Bundle {
     val lr = Flipped(Valid(UInt(5.W))) // logic register
     val pr = Valid(UInt(6.W)) // physics register
-    val current_rename_state = Valid(Vec(64, Bool()))
+    val current_rename_state = Valid(Vec(p(PRNUM), Bool()))
   }
 
   val valid = Input(Bool())
@@ -48,7 +48,7 @@ class RenameMap(implicit p: Parameters) extends Module {
         val skipWB = Bool()
       }))) // commit
       val br_info = Flipped(Valid(new Bundle {
-        val current_rename_state = Vec(64, Bool())
+        val current_rename_state = Vec(p(PRNUM), Bool())
         val isHit = Bool()
         val isJ = Bool()
       }))
@@ -61,7 +61,7 @@ class RenameMap(implicit p: Parameters) extends Module {
       Some(new Bundle {
         val toInstCommit = Vec(2, new Bundle {
           // query a reg
-          val rename_state = Flipped(Valid(Vec(64, Bool())))
+          val rename_state = Flipped(Valid(Vec(p(PRNUM), Bool())))
           val pr = Flipped(Valid(UInt(6.W)))
           val lr = Valid(UInt(5.W))
         })
@@ -99,7 +99,7 @@ class RenameMap(implicit p: Parameters) extends Module {
     tmp.state := STATECONST.COMMIT
     tmp.robIdx := 0.U
     tmp
-  }) ++ Seq.tabulate(32)(n => {
+  }) ++ Seq.tabulate(p(PRNUM) - 32)(n => {
     val tmp = Wire(info.cloneType)
     tmp.LRIdx := 0.U
     tmp.valid := false.B
@@ -151,11 +151,12 @@ class RenameMap(implicit p: Parameters) extends Module {
   }
 
   // 这里有个推测，我觉得64个物理寄存器中，必定每时每刻valid数目都是32,也就是每时每刻所有lr都有其唯一对应的pr
-  val valid_64 = Wire(Vec(64, UInt(1.W)))
+  require(cam.length == p(PRNUM))
+  val valid_64 = Wire(Vec(p(PRNUM), UInt(1.W)))
   (valid_64, cam.map(_.valid)).zipped.foreach(_ := _.asUInt())
   val valid_sum = Wire(UInt(8.W))
   valid_sum := valid_64.reduce(_ +& _) // + vs. +&
-  val valid_value = Wire(UInt(64.W))
+  val valid_value = Wire(UInt(p(PRNUM).W))
   dontTouch(valid_value)
   valid_value := Cat(cam.map(_.valid).reverse).asUInt()
 
@@ -273,7 +274,7 @@ class RenameMap(implicit p: Parameters) extends Module {
     x.state === STATECONST.EMPRY
   })))
   val emptyPRIdx_0 = PriorityEncoder(emptyPR)
-  val emptyPRIdx_1 = 63.U - PriorityEncoder(emptyPR.reverse)
+  val emptyPRIdx_1 = (p(PRNUM) - 1).U - PriorityEncoder(emptyPR.reverse)
   assert(emptyPRIdx_0 =/= emptyPRIdx_1)
 
   // 输出当前valid状态，用于提交时候锁定体系结构寄存器，也可能会被branch指令预测失败使用
@@ -308,13 +309,13 @@ class RenameMap(implicit p: Parameters) extends Module {
     // isJ表示是无条件跳转，其不用恢复valid，因为无条件跳转需要写回一个pc+4，其次该信号可以用于提交中断。
     when(io.robCommit.except | io.robCommit.kill){
       // branch指令跳转错误
-      for(i <- 0 until 64){
+      for(i <- 0 until p(PRNUM)){
         cam(i).valid := io.robCommit.br_info.bits.current_rename_state(i)
         cam(i).state := Mux(io.robCommit.br_info.bits.current_rename_state(i), STATECONST.COMMIT, STATECONST.EMPRY)
       }
     }.elsewhen(!io.robCommit.br_info.bits.isJ){
       // branch指令跳转错误
-      for(i <- 0 until 64){
+      for(i <- 0 until p(PRNUM)){
         cam(i).valid := io.robCommit.br_info.bits.current_rename_state(i)
         cam(i).state := Mux(io.robCommit.br_info.bits.current_rename_state(i), STATECONST.COMMIT, STATECONST.EMPRY)
       }
@@ -326,7 +327,7 @@ class RenameMap(implicit p: Parameters) extends Module {
         // 0, 1
         val commit_0 = cam(io.robCommit.reg(0).bits.prn)
         val commit_1 = cam(io.robCommit.reg(1).bits.prn)
-        for(i <- 0 until 64){
+        for(i <- 0 until p(PRNUM)){
           when((cam(i).LRIdx =/= commit_0.LRIdx) & (cam(i).LRIdx =/= commit_1.LRIdx)){
             // 与提交无关的cam恢复
             cam(i).valid := Mux(cam(i).state === STATECONST.COMMIT, true.B, false.B)
@@ -353,7 +354,7 @@ class RenameMap(implicit p: Parameters) extends Module {
         // 0
         when(io.robCommit.reg(0).fire()){
           val commit_0 = cam(io.robCommit.reg(0).bits.prn)
-          for(i <- 0 until 64){
+          for(i <- 0 until p(PRNUM)){
             when((cam(i).LRIdx =/= commit_0.LRIdx)){
               // 与提交无关的cam恢复
               cam(i).valid := Mux(cam(i).state === STATECONST.COMMIT, true.B, false.B)
@@ -375,7 +376,7 @@ class RenameMap(implicit p: Parameters) extends Module {
           }
         }.elsewhen(io.robCommit.reg(1).fire()){
           val commit_1 = cam(io.robCommit.reg(1).bits.prn)
-          for(i <- 0 until 64){
+          for(i <- 0 until p(PRNUM)){
             when((cam(i).LRIdx =/= commit_1.LRIdx)){
               // 与提交无关的cam恢复
               cam(i).valid := Mux(cam(i).state === STATECONST.COMMIT, true.B, false.B)
@@ -467,8 +468,8 @@ class RenameMap(implicit p: Parameters) extends Module {
   }
 
   def findCAM_LR(LRIdx: UInt, state: Vec[Bool]): UInt = {
-    val query = Wire(Vec(64, Bool()))
-    for (i <- 0 until 64) {
+    val query = Wire(Vec(p(PRNUM), Bool()))
+    for (i <- 0 until p(PRNUM)) {
       query(i) := (cam(i).LRIdx === LRIdx) & state(i)
     }
     val idx = PriorityEncoder(query)

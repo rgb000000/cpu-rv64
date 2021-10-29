@@ -57,8 +57,8 @@ class BTB(implicit p: Parameters) extends Module{
   val io = IO(new BTBIO)
 
   val CAMType = new Bundle{
-    val pc  = UInt(p(XLen).W)
-    val tgt = UInt(p(XLen).W)
+    val pc  = UInt(p(AddresWidth).W)
+    val tgt = UInt(p(AddresWidth).W)
     val bht = UInt(2.W)
   }
 

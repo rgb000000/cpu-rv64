@@ -22,7 +22,7 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val isBr = Bool()
       val isJ = Bool()
       val pTaken = Bool()
-      val current_rename_state = Vec(64, Bool())
+      val current_rename_state = Vec(p(PRNUM), Bool())
       val csr_cmd = UInt(3.W)
       val interrupt = new Bundle {
         val time     = Bool()
@@ -51,7 +51,7 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val wen = Bool()
 
       // from branch, difftest use
-      val current_rename_state = Vec(64, Bool())
+      val current_rename_state = Vec(p(PRNUM), Bool())
       val isHit = Bool()
 //      val right_pc = UInt(p(AddresWidth).W)   // right_pc is the same as data
 
@@ -69,8 +69,8 @@ class ROBIO(implicit p: Parameters) extends Bundle {
     // 这一轮提交的分支预测信息，只update一个分支信息
     val br_info = Valid(new Bundle{
       // to branch
-      val current_rename_state = Vec(64, Bool())
-      val valid_value = UInt(64.W)
+      val current_rename_state = Vec(p(PRNUM), Bool())
+      val valid_value = UInt(p(PRNUM).W)
       val isHit = Bool()
       val isJ = Bool()
       val isTaken = Bool()
@@ -119,7 +119,7 @@ class ROBInfo(implicit p: Parameters) extends Bundle {
   val isBr = Bool()
   val isJ = Bool()
   val pTaken = Bool()
-  val current_rename_state = Vec(64, Bool())
+  val current_rename_state = Vec(p(PRNUM), Bool())
 
   val csr_cmd = UInt(3.W)
   val interrupt = new Bundle {

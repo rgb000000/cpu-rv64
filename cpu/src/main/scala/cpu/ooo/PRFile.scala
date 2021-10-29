@@ -10,8 +10,8 @@ class PRFile(implicit p: Parameters) extends Module{
   val io = IO(new Bundle{
     // read port
     val read = Vec(2, new Bundle{
-      val raddr1 = Input(UInt(log2Ceil(64).W))
-      val raddr2 = Input(UInt(log2Ceil(64).W))
+      val raddr1 = Input(UInt(log2Ceil(p(PRNUM)).W))
+      val raddr2 = Input(UInt(log2Ceil(p(PRNUM)).W))
       val rdata1 = Output(UInt(p(XLen).W))
       val rdata2 = Output(UInt(p(XLen).W))
     })
@@ -19,7 +19,7 @@ class PRFile(implicit p: Parameters) extends Module{
     // writer port
     val write = Vec(2, new Bundle{
       val wen = Input(Bool())
-      val waddr = Input(UInt(log2Ceil(64).W))
+      val waddr = Input(UInt(log2Ceil(p(PRNUM)).W))
       val wdata = Input(UInt(p(XLen).W))
     })
 
@@ -35,7 +35,7 @@ class PRFile(implicit p: Parameters) extends Module{
     })} else {None}
   })
 
-  val registers = RegInit(VecInit(Seq.fill(64)(0.asUInt(p(XLen).W))))
+  val registers = RegInit(VecInit(Seq.fill(p(PRNUM))(0.asUInt(p(XLen).W))))
 
 
   io.read(0).rdata1 := Mux(io.read(0).raddr1.orR() === 0.U, 0.U, Mux(io.write(0).wen & io.write(0).waddr === io.read(0).raddr1, io.write(0).wdata, registers(io.read(0).raddr1)))

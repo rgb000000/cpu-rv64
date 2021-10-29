@@ -21,6 +21,8 @@ case object AddressSpace extends Field[Seq[(String, String, Boolean, Int,       
 
 case object CLINTRegs extends Field[Map[String, String]]
 
+case object PRNUM extends Field[Int]
+
 
 class BaseConfig extends Config ((site, here, up)=>{
   case XLen           => 64
@@ -58,6 +60,8 @@ class BaseConfig extends Config ((site, here, up)=>{
     "uc_range"  -> "h0200_f008",      // pass
     "branch_on" -> "h0200_f010"       // pass
   )
+
+  case PRNUM => 32+16+2
 })
 
 class DifftestEnableConfig extends Config((site, here,up)=>{

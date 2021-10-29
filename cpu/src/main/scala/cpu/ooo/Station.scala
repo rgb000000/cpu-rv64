@@ -11,7 +11,7 @@ class StationIn(implicit p: Parameters) extends Bundle {
   val pr1_s = Bool() // pr1 state
   val pr1_inROB = Bool() // pr1 data in ROB, need to read rob to get it
   val pr1_robIdx = UInt(4.W)
-  val pc = UInt(64.W)
+  val pc = UInt(p(AddresWidth).W)
   val A_sel = UInt(1.W)
 
   // rs2
@@ -51,7 +51,7 @@ class StationIn(implicit p: Parameters) extends Bundle {
   val wen = Bool()
 
   // rename current state 记录了valid状态
-  val current_rename_state = Vec(64, Bool())
+  val current_rename_state = Vec(p(PRNUM), Bool())
 
   // state
   val state = UInt(2.W) // 00: 无效
