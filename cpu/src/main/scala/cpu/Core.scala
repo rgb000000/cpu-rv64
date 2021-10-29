@@ -118,7 +118,7 @@ class ysyx_210013(implicit p: Parameters) extends Module {
     val slave = Flipped(new AXIMaster)
   })
 
-  val core = Module(new Core)
+  val core = Module(new OOOCore)
 
   core.io.memAXI.head.aw.ready := io.master.awready
   io.master.awvalid            := core.io.memAXI.head.aw.valid
