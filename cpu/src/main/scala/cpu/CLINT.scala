@@ -34,8 +34,8 @@ class CLINT(implicit p: Parameters) extends Module{
   BoringUtils.addSink(external_in, "external_in")
   external_int := external_in
 
-  val uc_start = RegInit(0.U(64.W))
-  val uc_range = RegInit(0.U(64.W))
+  val uc_start = RegInit(0.U(p(AddresWidth).W))
+  val uc_range = RegInit(0.U(p(AddresWidth).W))
   val branch_on = RegInit(true.B)
 
   BoringUtils.addSource(soft_int, "soft_int")

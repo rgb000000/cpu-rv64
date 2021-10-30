@@ -21,7 +21,7 @@ class CacheReq(implicit p: Parameters) extends Bundle {
   //
   //    |--------- tag ---------|---index---|--offset--|
   //
-  val addr = UInt(p(XLen).W)
+  val addr = UInt(p(AddresWidth).W)
   val data = UInt(p(XLen).W)
   val mask = UInt((p(XLen)/8).W)
   val op = UInt(1.W)  // 0: rd   1: wr
@@ -344,13 +344,13 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
   // miss info reg
   val miss_info = RegInit(0.U.asTypeOf(new Bundle{
-    val addr = UInt(p(XLen).W)
+    val addr = UInt(p(AddresWidth).W)
     val op = UInt(1.W)
     val data = UInt(p(XLen).W)
   }))
   // replace buffer reg
   val replace_buffer = RegInit(0.U.asTypeOf(new Bundle{
-    val addr = UInt(p(XLen).W)
+    val addr = UInt(p(AddresWidth).W)
     val data = UInt(p(CacheLineSize).W)
     val way_num = UInt(p(NWay).W)
     val v = Bool()

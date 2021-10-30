@@ -37,18 +37,18 @@ class Branch(implicit p: Parameters) extends Module {
 
 class BTBIO(implicit p: Parameters) extends Bundle {
   val query = new Bundle {
-    val pc  = Flipped(Valid(UInt(p(XLen).W)))
+    val pc  = Flipped(Valid(UInt(p(AddresWidth).W)))
 
     val res = Valid(new Bundle {
-      val tgt = UInt(p(XLen).W)
+      val tgt = UInt(p(AddresWidth).W)
       val pTaken = Bool()
       val is_miss = Bool()
     })
   }
 
   val update = Flipped(Valid(new Bundle {
-    val pc  = UInt(p(XLen).W)
-    val tgt = UInt(p(XLen).W)
+    val pc  = UInt(p(AddresWidth).W)
+    val tgt = UInt(p(AddresWidth).W)
     val isTaken = Bool()
   }))
 }

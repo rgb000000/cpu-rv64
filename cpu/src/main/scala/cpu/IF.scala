@@ -113,19 +113,19 @@ class IF (implicit p: Parameters) extends Module {
 class OOOIF (implicit p: Parameters) extends Module {
   val io = IO(new Bundle{
     val out = Vec(2, Valid(new Bundle{
-      val pc = UInt(p(XLen).W)
+      val pc = UInt(p(AddresWidth).W)
       val inst = UInt(32.W)
 
       val pTaken = Bool()
-      val pPC = UInt(p(XLen).W)
+      val pPC = UInt(p(AddresWidth).W)
     }))
 
-    val pc_alu = Input(UInt(p(XLen).W))
-    val pc_epc = Input(UInt(p(XLen).W))
+    val pc_alu = Input(UInt(p(AddresWidth).W))
+    val pc_epc = Input(UInt(p(AddresWidth).W))
     val pc_sel = Input(UInt(2.W))
     val br_info = Flipped(Valid(new BrInfo))
 
-    val pc_except_entry = Flipped(Valid(UInt(p(XLen).W)))
+    val pc_except_entry = Flipped(Valid(UInt(p(AddresWidth).W)))
 
     val stall = Input(Bool())
     val kill = Input(Bool())
@@ -133,7 +133,7 @@ class OOOIF (implicit p: Parameters) extends Module {
     val icache = Flipped(new CacheCPUIO)
 
     val fence_i_done = Input(Bool())
-    val fence_pc = Input(UInt(32.W))
+    val fence_pc = Input(UInt(p(AddresWidth).W))
     val fence_i_do = Input(Bool())
   })
 
