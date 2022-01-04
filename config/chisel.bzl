@@ -216,7 +216,8 @@ def _difftest_compile_impl(ctx):
     simtop = ctx.attr.SimTop.files.to_list()[1]
     difftest_dir_clone = ctx.actions.declare_directory("difftest")
     build_dir = ctx.actions.declare_directory("build")
-    root = "/home/Prj/cpu-rv64"
+    root = "/SSD/sqw/prj/yay/cpu-rv64"
+    print(">>>>>>>> root is", root)
 
     cmd = ""
     if ctx.attr.mode == "SimTop":
@@ -232,7 +233,8 @@ def _difftest_compile_impl(ctx):
     elif ctx.attr.mode == "DRAM3Sim":
         cmd = "echo $PWD && tree && source ~/.zshrc" + \
               "&& cp %s %s" % (simtop.path, build_dir.path) + \
-              "&& cp %s %s" % (root + "/dependency/difftest/SimTop_wrap.v", build_dir.path + "/SimTop.v") + \
+              "&& cp %s %s" % (root + "/dependency/vsrc/SimTop_wrap.v", build_dir.path + "/SimTop.v") + \
+              "&& cp %s %s" % (root + "/dependency/vsrc/S011HD1P_X32Y2D128_BW.v", build_dir.path + "/S011HD1P_X32Y2D128_BW.v") + \
               "&& cp -r %s %s" % (root + "/dependency/difftest/src", difftest_dir_clone.path) + \
               "&& cp -r %s %s" % (root + "/dependency/difftest/config", difftest_dir_clone.path) + \
               "&& cp %s %s" % (root + "/dependency/difftest/Makefile", difftest_dir_clone.path) + \
