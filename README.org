@@ -1,7 +1,9 @@
 * CPU RV64
 
 * init
-=make init=
+1. difftest需要注释$(SIM_TOP_V),因为bazel会产出verilog源文件，不需要使用这个target
+2. 修改chisel.bzl中的root路径指向当前workspace所在目录，因为bazel我找了半天都没有找到获得pwd的方法，可能和其沙盒思想有关
+3. 设置NEMU_HOME, NOOP_HOME, DRAMSim3_HOME
 
 * mill tutorial
 1. =mill resolve _= 显示可用选项
