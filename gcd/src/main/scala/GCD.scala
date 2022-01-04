@@ -3,6 +3,7 @@
 package gcd
 
 import chisel3._
+import chisel3.stage.ChiselStage
 
 /**
   * Compute GCD using subtraction method.
@@ -31,4 +32,14 @@ class GCD extends Module {
 
   io.outputGCD := x
   io.outputValid := y === 0.U
+}
+
+object Emit extends App{
+  (new ChiselStage).execute(
+    Array(
+      "-X", "verilog",
+      "--target-dir", "test_run_dir"
+    ),
+    Seq(chisel3.stage.ChiselGeneratorAnnotation(() => new GCD))
+  )
 }
