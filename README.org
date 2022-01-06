@@ -8,7 +8,7 @@
 * mill tutorial
 1. =mill resolve _= 显示可用选项
 2. =mill mill.scalalib.GenIdea/idea= 为 idea 创建工程
-3. =mill __.test.testOnly xxx.xxx= 进行测试
+3. =mill __.test.testOnly xxx.xxx= 进行测试, =mill __.test.testOnly gcd.GCDSpec=
 
 * bazel tutorial
 1. =bazel build cpu:SimTop=   构建SimTop外加difftest，使用自建的AXIMem(基于RAMHelper)，生成的可执行程序在 =./bazel-out/k8-fastbuild/bin/cpu/build/emu=
