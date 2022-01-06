@@ -46,6 +46,8 @@ object `rocket-chip` extends SbtModule with CommonModule {
 
   object macros extends SbtModule with CommonModule
 
+  override def millSourcePath = os.pwd / "dependency" / "rocket-chip"
+
   override def moduleDeps = super.moduleDeps ++ Seq(
     `api-config-chipsalliance`, macros, hardfloat
   )

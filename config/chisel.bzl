@@ -72,7 +72,7 @@ _chisel_verilog_scala_source = rule(
         "config_name": attr.string(mandatory = True),
         "_template": attr.label(
             allow_single_file = True,
-            default = "//cpu:src/test/scala/cpu/BazelRunner.scala",
+            default = "//cpu:src/test/scala/cpu/BazelRunner.scala.templete",
         ),
         "mode": attr.string(mandatory = True),
     },
