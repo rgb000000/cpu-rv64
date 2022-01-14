@@ -208,7 +208,7 @@ class CSR (implicit p: Parameters) extends Module {
                 Mux(iaddrInvalid,                 Causes.misaligned_fetch.U,
                 Mux(laddrInvalid,                 Causes.misaligned_load.U,
                 Mux(saddrInvalid,                 Causes.misaligned_store.U,
-                Mux(isEcall,                      Causes.user_ecall.U + mstatus.prv,
+                Mux(isEcall,                      Causes.machine_ecall.U,
                 Mux(isEbreak,                     Causes.breakpoint.U,
                                                   Causes.illegal_instruction.U))))))))
       mstatus.mpie := mstatus.mie
