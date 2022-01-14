@@ -58,6 +58,8 @@ class StationIn(implicit p: Parameters) extends Bundle {
   // 01: 等待发射
   // 10: 发射
   // 11： 写回了但是等待提交
+
+  val rocc_cmd = UInt(2.W)
 }
 
 class CDB(implicit p: Parameters) extends Bundle {
@@ -133,14 +135,14 @@ class Station(implicit p: Parameters) extends Module {
 
   // issue
   val which_station_ready_0 = Cat(station.map(x => {
-    // alu op and branch, no ld/st and csr
-    x.pr1_s & x.pr2_s & (!x.ld_type.orR()) & (!x.st_type.orR()) & (!x.csr_op.orR()) & (x.state === S_WAIT)
+    // alu op and branch, no ld/st, no csr, no rocc
+    x.pr1_s & x.pr2_s & (!x.ld_type.orR()) & (!x.st_type.orR()) & (!x.csr_op.orR()) & (!x.rocc_cmd.orR()) & (x.state === S_WAIT)
   }).reverse)
   val readyIdx_0 = WireInit(PriorityEncoder(which_station_ready_0))
 
   val which_station_ready_1 = Cat(station.map(x => {
-    // alu ld/st csr, no branch
-    x.pr1_s & x.pr2_s & (!x.br_type.orR()) & (x.state === S_WAIT)
+    // alu ld/st csr, rocc(need in order like mem inst), no branch
+    x.pr1_s & x.pr2_s & ((!x.br_type.orR()) | x.rocc_cmd.orR()) & (x.state === S_WAIT)
   }).reverse)
   val commit_value = commitPtr.value(3, 0).asUInt()
   val which_station_ready_1_commit = ((which_station_ready_1 >> commit_value).asUInt() | (which_station_ready_1 << (16.U - commit_value)).asUInt())(15, 0).asUInt()

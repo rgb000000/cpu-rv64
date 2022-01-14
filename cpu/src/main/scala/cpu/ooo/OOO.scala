@@ -15,6 +15,8 @@ class OOO(implicit p: Parameters) extends Module {
 
     val fence_i_do   = Output(Bool())
     val fence_i_done = Input(Bool())
+
+//    val rocc = Flipped(new RoCCIO)
   })
 
   import Control._
@@ -34,7 +36,7 @@ class OOO(implicit p: Parameters) extends Module {
   // commit
   val rob = Module(new ROB)
 
-  val dcacheCrossBar = Module(new CPUCacheCrossBarN21(2))
+  val dcacheCrossBar = Module(new CPUCacheCrossBarN21(3))
 
 
   // some intermediate signals
@@ -126,6 +128,7 @@ class OOO(implicit p: Parameters) extends Module {
     station.io.in(i).bits.pPC       := if_reg(i).bits.pPC
     station.io.in(i).bits.current_rename_state := rename.io.port(i).allocate_c.current_rename_state.bits
     station.io.in(i).bits.state     := 1.U // wait to issue
+    station.io.in(i).bits.rocc_cmd  := ctrl(i).rocc_cmd
     station.io.in(i).valid := if_reg(i).valid
 
     // write rob
@@ -148,6 +151,7 @@ class OOO(implicit p: Parameters) extends Module {
     rob.io.in.fromID(i).bits.interrupt.soft       := soft_int & soft_interrupt_enable
     rob.io.in.fromID(i).bits.interrupt.external   := external_int & external_interrupt_enable
     rob.io.in.fromID(i).bits.kill                 := ctrl(i).kill
+    rob.io.in.fromID(i).bits.rocc_cmd             := ctrl(i).rocc_cmd
   }
 
   //= issue ==================================================
@@ -222,8 +226,12 @@ class OOO(implicit p: Parameters) extends Module {
   mem.io.in.bits.pc        := issue_1.info.pc
   mem.io.in.bits.inst      := issue_1.info.inst
   mem.io.in.bits.illegal   := issue_1.info.illeage
-  mem.io.in.bits.idx := issue_1.idx
+  mem.io.in.bits.rocc_cmd  := issue_1.info.rocc_cmd
+  mem.io.in.bits.idx       := issue_1.idx
   mem.io.kill := rob_kill
+
+  // rocc
+  rob.io.in.rocc_queue <> mem.io.rocc_queue
 
   // mem read rob
   rob.io.memRead <> mem.io.readROB
@@ -281,9 +289,14 @@ class OOO(implicit p: Parameters) extends Module {
   station.io.robCommit.br_info.valid := rob.io.commit.br_info.valid
   station.io.robCommit.br_info.bits.isHit := rob.io.commit.br_info.bits.isHit
 
+  val rocc_add = Module(new RoCCAdder)
+  //rob <> rocc
+  rob.io.commit2rocc.cmd <> rocc_add.io.cmd
+  rob.io.commit2rocc.resp <> rocc_add.io.resp
 
-  dcacheCrossBar.io.in(0) <> rob.io.commit.dcache
-  dcacheCrossBar.io.in(1) <> mem.io.dcache
+  dcacheCrossBar.io.in(0) <> rocc_add.io.dcache
+  dcacheCrossBar.io.in(1) <> rob.io.commit.dcache
+  dcacheCrossBar.io.in(2) <> mem.io.dcache
   dcacheCrossBar.io.out <> io.dcache
 
   if(p(Difftest)){
@@ -299,9 +312,10 @@ class OOO(implicit p: Parameters) extends Module {
       dic.io.pc := RegNext(commitPort.bits.pc)
       dic.io.instr := RegNext(commitPort.bits.inst)
       dic.io.skip := RegNext(
-        (  (commitPort.bits.inst === "h0000007b".U)
-          |((commitPort.bits.isST | commitPort.bits.isLD) & (p(CLINTRegs).values.map(commitPort.bits.memAddress === _.U).reduce(_|_)))
-          |(commitPort.bits.inst === BitPat("b101100000000_?????_010_?????_1110011"))
+        (  (commitPort.bits.inst === "h0000007b".U)   // putch
+          |((commitPort.bits.isST | commitPort.bits.isLD) & (p(CLINTRegs).values.map(commitPort.bits.memAddress === _.U).reduce(_|_))) // clint
+          |(commitPort.bits.inst === BitPat("b101100000000_?????_010_?????_1110011"))   // mcycle
+          |(commitPort.bits.inst(6, 0) === BitPat("b0001011"))          // custom_0
           )
       )
       dic.io.isRVC := false.B

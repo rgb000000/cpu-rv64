@@ -83,6 +83,7 @@ class MemUIn(implicit p: Parameters) extends Bundle {
   val s_data = UInt(p(XLen).W)
 
   val csr_cmd = UInt(3.W)
+  val rocc_cmd = UInt(2.W)
   // ctrl signals
   val pc = UInt(p(AddresWidth).W)
   val inst = UInt(32.W)
@@ -112,6 +113,7 @@ class MemU(implicit p: Parameters) extends Module {
     val dcache = Flipped(new CacheCPUIO)
 
     val cdb = Valid(new CDB)
+    val rocc_queue = Decoupled(new RoCCQueueIO)
     //    val memCDB = Valid(new MEMCDB)
 
     val readROB = new MemReadROBIO
@@ -128,6 +130,7 @@ class MemU(implicit p: Parameters) extends Module {
   val alu_res = alu.io.out
 
   val isCSR = io.in.bits.csr_cmd.orR()
+  val isRoCC = io.in.bits.rocc_cmd.orR()
   val isLD = (io.in.bits.ld_type.orR()) & !isCSR
   val isST = (io.in.bits.st_type.orR()) & !isCSR
   val isALU = (!isCSR) & (!isLD) & (!isST)
@@ -221,7 +224,8 @@ class MemU(implicit p: Parameters) extends Module {
     )).asUInt()
   }
 
-  io.in.ready := state === s_idle
+  // if input is a rocc inst, need to make sure rocc_queue is ready to accept rs1 and rs2
+  io.in.ready := (state === s_idle) & ((io.in.valid & io.in.bits.rocc_cmd.orR() & io.rocc_queue.ready) | !io.in.bits.rocc_cmd.orR())
 
 
   when((((state === s_idle) & (io.in.fire() & isLD) & !io.kill) | (state === s_mem)) & io.kill) {
@@ -264,6 +268,11 @@ class MemU(implicit p: Parameters) extends Module {
   io.cdb.bits.addr := 0.U
   io.cdb.bits.mask := 0.U
 
+  // valid can't depend on ready
+  io.rocc_queue.valid := io.in.valid & io.in.bits.rocc_cmd.orR()
+  io.rocc_queue.bits.rs1 := io.in.bits.A
+  io.rocc_queue.bits.rs2 := io.in.bits.B
+
   when(io.in.fire() & isCSR) {
     // csr op
     // csr读数只通过commit端口，cdb处不会改变rename和station状态，因为csr放在了rob里面，当前还没有读csr
@@ -275,6 +284,18 @@ class MemU(implicit p: Parameters) extends Module {
     io.cdb.bits.expt := false.B
     io.cdb.bits.pc := io.in.bits.pc
     io.cdb.bits.inst := io.in.bits.inst // inst里面蕴含了csr addr
+    io.cdb.valid := true.B
+  }.elsewhen(io.in.fire() & isRoCC){
+    // rocc inst also need to execute in order!
+    // and its result is return in commit stage
+    io.cdb.bits.idx := io.in.bits.idx
+    io.cdb.bits.prn := io.in.bits.prd
+    io.cdb.bits.data := alu_res
+    io.cdb.bits.wen := false.B         // !!
+    io.cdb.bits.brHit := true.B
+    io.cdb.bits.expt := false.B
+    io.cdb.bits.pc := io.in.bits.pc
+    io.cdb.bits.inst := io.in.bits.inst // rocc cmd need inst
     io.cdb.valid := true.B
   }.elsewhen(io.in.fire() & isALU) {
     // fix point op (NOT including branch)

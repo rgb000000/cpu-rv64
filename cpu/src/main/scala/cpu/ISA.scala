@@ -97,11 +97,18 @@ trait RVSystem {
 }
 
 trait Custom {
-  def trap   = BitPat("b000000000000_00000_000_00000_1101010") // 6a  trap
-  def putch  = BitPat("b000000000000_00000_000_00000_1101011") // 6a  putch
+//  def trap   = BitPat("b000000000000_00000_000_00000_1101011") // 6b  trap
+//  def putch  = BitPat("b000000000000_00000_000_00000_1111011") // 7b  putch
+
+  //                                            xd xs1 xs2
+  //                            funct   rs2   rs1  000  rd    opcode
+  // custom-0
+  def roccw_rs1_rs2 = BitPat("b???????_?????_?????_011_?????_0001011") // cmd          acc[rs1] = rs2
+  def roccr_rd_rs1  = BitPat("b???????_?????_?????_110_?????_0001011") // cmd + resp   cpu[rd] = acc[rs1]
+
 }
 
-object ISA extends RV64I with RVSystem {
+object ISA extends RV64I with RVSystem with Custom {
 
 }
 

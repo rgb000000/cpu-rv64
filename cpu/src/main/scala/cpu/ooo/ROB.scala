@@ -4,6 +4,12 @@ import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
 import chisel3.util.experimental.BoringUtils
+import Control.{RoCC_W, RoCC_R, RoCC_X}
+
+class RoCCQueueIO(implicit p: Parameters) extends Bundle{
+  val rs1 = UInt(p(XLen).W)
+  val rs2 = UInt(p(XLen).W)
+}
 
 class ROBIO(implicit p: Parameters) extends Bundle {
   val in = new Bundle {
@@ -30,8 +36,11 @@ class ROBIO(implicit p: Parameters) extends Bundle {
         val external = Bool()
       }
       val kill = Bool()
+      val rocc_cmd = UInt(2.W)
     })))
+
     val cdb = Vec(2, Flipped(Valid(new CDB)))
+    val rocc_queue = Flipped(Decoupled(new RoCCQueueIO))
   }
 
   val read = Vec(2, Vec(2, new Bundle {
@@ -63,6 +72,7 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val memAddress = UInt(p(AddresWidth).W)
       val isST = Bool()
       val isLD = Bool()
+      val isRocc = Bool()
     }))
     val dcache = Flipped(new CacheCPUIO)
 
@@ -78,15 +88,22 @@ class ROBIO(implicit p: Parameters) extends Bundle {
       val right_pc = UInt(p(AddresWidth).W)   // right_pc is the same as data
     })
   }
+
   val commit2rename = Vec(2, Valid(new Bundle{
     val prn = UInt(6.W)
     val skipWB = Bool()
   }))
+
   val commit2station = Vec(2, Valid(new Bundle{
     // 如果wen为真就表示这个prn是prn而不是memAddress， station拿到这个信息更新他的表
     val prn = UInt(6.W)
     val wen = Bool()
   }))
+
+  val commit2rocc = new Bundle{
+    val cmd = Decoupled(new RoCCCommand)
+    val resp = Flipped(Decoupled(new RoCCRespone))
+  }
 
   val except = Output(Bool())
   val exvec = Output(UInt(p(AddresWidth).W))    // 中断跳转到exvec执行
@@ -132,7 +149,10 @@ class ROBInfo(implicit p: Parameters) extends Bundle {
   val state = UInt(2.W)
 
   val memAddr = UInt(p(AddresWidth).W) // for difftest skip when r/w clint
+
+  val rocc_cmd = UInt(2.W)
 }
+
 
 class ROB(implicit p: Parameters) extends Module {
   val io = IO(new ROBIO)
@@ -142,6 +162,10 @@ class ROB(implicit p: Parameters) extends Module {
   val S_GETDATA  = 2.U(2.W)
   val S_COMMITED = 3.U(2.W)
 
+  // flush includes kill, expect, branch fail
+  val flush = WireInit(io.except | io.kill | (io.commit.br_info.valid & !io.commit.br_info.bits.isHit))
+  dontTouch(flush)
+  val rocc_queue = withReset(flush | reset.asBool()){ Queue(io.in.rocc_queue, 4) }
 
   val rob = RegInit(VecInit(Seq.fill(16)(0.U.asTypeOf(new ROBInfo))))
 
@@ -166,6 +190,7 @@ class ROB(implicit p: Parameters) extends Module {
     rob(idx).interrupt.time := io.in.fromID(fromIDport).bits.interrupt.time
     rob(idx).interrupt.soft := io.in.fromID(fromIDport).bits.interrupt.soft
     rob(idx).interrupt.external := io.in.fromID(fromIDport).bits.interrupt.external
+    rob(idx).rocc_cmd := io.in.fromID(fromIDport).bits.rocc_cmd
   }
 
   // write rob
@@ -238,7 +263,8 @@ class ROB(implicit p: Parameters) extends Module {
   dontTouch(io.commit)
   def write_prfile(portIdx: Int, rob_info: ROBInfo, valid: Bool) = {
     io.commit.reg(portIdx).bits.prn := rob_info.prdORaddr
-    io.commit.reg(portIdx).bits.data := Mux(rob_info.csr_cmd(1,0).orR(), csr.io.out, rob_info.data)
+    io.commit.reg(portIdx).bits.data := Mux(rob_info.csr_cmd(1,0).orR(), csr.io.out,
+                                        Mux(rob_info.rocc_cmd === RoCC_R, io.commit2rocc.resp.bits.data, rob_info.data))
     io.commit.reg(portIdx).bits.wen := rob_info.wen
     io.commit.reg(portIdx).bits.pc := rob_info.pc
     io.commit.reg(portIdx).bits.inst := rob_info.inst
@@ -249,6 +275,7 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit.reg(portIdx).bits.memAddress := rob_info.memAddr
     io.commit.reg(portIdx).bits.isST := rob_info.st_type.orR()
     io.commit.reg(portIdx).bits.isLD := rob_info.ld_type.orR()
+    io.commit.reg(portIdx).bits.isRocc := rob_info.rocc_cmd.orR()
 
     io.commit.reg(portIdx).bits.fence_i_do := (rob_info.inst === ISA.fence_i) & valid
 
@@ -312,10 +339,23 @@ class ROB(implicit p: Parameters) extends Module {
   // todo： 考虑到两条指令之间的关联比较复杂，这一版本先做单指令提交
   write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
   val head = rob(commitIdx.value)
+  val head_show = WireInit(head)
+  dontTouch(head_show)
   csr_enable(head, head.state === S_GETDATA)
   io.kill := (head.kill & (head.state === S_GETDATA)) & io.commit.reg(0).valid
+
+  val s_rocc_cmd :: s_rocc_resp :: Nil = Enum(2)
+  val rocc_commit_state = RegInit(s_rocc_cmd)
+  io.commit2rocc.cmd.valid := ((rocc_commit_state === s_rocc_cmd) & head.rocc_cmd.orR()) & (head.state === S_GETDATA)
+  io.commit2rocc.cmd.bits.inst := head.inst.asTypeOf(new RoCCInstruction) // 32bit inst
+  io.commit2rocc.cmd.bits.rs1 := rocc_queue.bits.rs1 // 64bit data
+  io.commit2rocc.cmd.bits.rs2 := rocc_queue.bits.rs2 // 64bit data
+  rocc_queue.ready := io.commit2rocc.cmd.fire()
+
+  io.commit2rocc.resp.ready := (rocc_commit_state === s_rocc_resp) & (head.state === S_GETDATA)
+
   when(head.state === S_GETDATA){
-    when(head.isPrd & !head.csr_cmd.orR()){
+    when(head.isPrd & (!head.csr_cmd.orR()) & (!head.rocc_cmd.orR())){
       // 普通指令
       when(!csr.io.expt){
         // 无中断，正常执行
@@ -411,6 +451,62 @@ class ROB(implicit p: Parameters) extends Module {
         }
       }.otherwise{
         // 不执行，提交中断
+        commitIdx.value := 0.U
+        write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
+        write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+        rob.foreach(x => {
+          x.state := S_EMPTY
+        })
+        out_br_info(false.B, head)
+      }
+    }.elsewhen(head.rocc_cmd.orR()){
+      // commit rocc inst
+      when(!csr.io.expt){
+        // no expt
+        when(head.rocc_cmd === RoCC_W){
+          // send cmd
+          when(io.commit2rocc.cmd.fire()){
+            commitIdx.inc()
+            write_prfile(0, head, true.B)
+            write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+            head.state := S_COMMITED
+            out_br_info(true.B, head)
+            printf("commit rocc_w cmd")
+          }.otherwise{
+            write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
+            write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+            out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
+          }
+        }.elsewhen(head.rocc_cmd === RoCC_R){
+          // send cmd, wait resp
+          when(io.commit2rocc.cmd.fire()){
+            rocc_commit_state := s_rocc_resp
+
+            write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
+            write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+            out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
+            printf("commit rocc_r cmd")
+          }.elsewhen(io.commit2rocc.resp.fire()){
+            rocc_commit_state := s_rocc_cmd
+
+            commitIdx.inc()
+            write_prfile(0, head, true.B)
+            write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+            head.state := S_COMMITED
+            out_br_info(true.B, head)
+            printf("commit rocc_r resp")
+          }.otherwise{
+            write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
+            write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+            out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
+          }
+        }.otherwise{
+          write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
+          write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+          out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
+        }
+      }.otherwise{
+        // dont execute, commit expt
         commitIdx.value := 0.U
         write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
         write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)

@@ -4,7 +4,7 @@ load("//config:chisel.bzl", "chisel_library", "chisel_treadle_test", "chisel_ver
 
 chisel_library(
     name = "cpu",
-    srcs = glob(["src/main/scala/cpu/*.scala"]) + glob(["src/main/scala/cpu/ooo/*.scala"]),
+    srcs = glob(["src/main/scala/cpu/*.scala"]) + glob(["src/main/scala/cpu/*/*.scala"]),
     resources = ["src/main/resources"],
     visibility = ["//visibility:public"],
     deps = [
