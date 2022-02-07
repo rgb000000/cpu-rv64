@@ -64,17 +64,17 @@ class BaseConfig extends Config ((site, here, up)=>{
   case PRNUM => 32+16+2
 })
 
-class DifftestEnableConfig extends Config((site, here,up)=>{
+class DifftestEnableConfig extends Config((site, here, up)=>{
   case Difftest       => true
   case DRAM3Sim       => false
 })
 
-class DifftestDisableConfig extends Config((site, here,up)=>{
+class DifftestDisableConfig extends Config((site, here, up)=>{
   case Difftest       => false
   case DRAM3Sim       => false
 })
 
-class DifftestEnableWithDRAM3SimConfig extends Config((site, here,up)=>{
+class DifftestEnableWithDRAM3SimConfig extends Config((site, here, up)=>{
   case Difftest       => true
   case DRAM3Sim       => true
 })
