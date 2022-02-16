@@ -23,4 +23,6 @@ class GEMM4444Config extends Config((site, here, up) => {
   case TileRow => 4
   case TileCol => 4
 
+  case TransposeDIM => here(MeshRow) * here(TileRow)
+
 })
