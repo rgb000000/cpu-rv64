@@ -6,7 +6,7 @@ import chipsalliance.rocketchip.config._
 
 class PEControl() extends Bundle{
   val dataflow = UInt(1.W) // os, ws
-  val mode = UInt(1.W)    // preload, run, out
+  val mode = UInt(2.W)    // idle, preload, run, out
 }
 
 class PEIO[T<:Data](inType: T, outType: T) extends Bundle{
@@ -25,18 +25,12 @@ class PEIO[T<:Data](inType: T, outType: T) extends Bundle{
 }
 
 
-class PE[T<:Data:Arithmetic](inType: T, outType: T, accType: T)(implicit ev: Arithmetic[T]) extends Module {
+class PE[T<:Data:Arithmetic](inType: T, outType: T, accType: T)(implicit ev: Arithmetic[T]) extends Module with GEMMConstant {
   val io = IO(new PEIO(inType, outType))
 
+  dontTouch(io.c_out)
+
   import ev._
-
-  // mode
-  val M_PROLOAD = 0.U
-  val M_RUN = 1.U
-
-  val DF_OS = 0.U
-  val DF_WS = 1.U
-
 
   io.a_out := io.a_in
   io.b_out := io.b_in
@@ -47,10 +41,12 @@ class PE[T<:Data:Arithmetic](inType: T, outType: T, accType: T)(implicit ev: Ari
 
   io.c_out := reg
 
-  when(io.ctrl_in.mode === M_PROLOAD){
+  when(io.ctrl_in.mode === M_PRELOAD){
     // preload d
     reg := io.d_in
-  }.otherwise{
+  }.elsewhen(io.ctrl_in.mode === M_RUN){
     reg := reg.mac(io.a_in, io.b_in)
+  }.otherwise{
+    reg := reg
   }
 }
