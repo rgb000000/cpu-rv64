@@ -90,6 +90,14 @@ object cpu extends SbtModule with CommonModule { m =>
     difftest
   )
 
+  override def scalacOptions = Seq(
+    "-language:reflectiveCalls",
+    "-deprecation",
+    "-feature",
+    "-Xcheckinit",
+    "-P:chiselplugin:genBundleElements"
+  )
+
   override def scalacPluginIvyDeps = Agg(
     ivy"edu.berkeley.cs:::chisel3-plugin:3.4.3",
     ivy"org.scalamacros:::paradise:2.1.1"
