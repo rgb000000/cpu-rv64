@@ -17,7 +17,7 @@ case object IDBits extends Field[Int]           // 1bit 0: inst   1: data
 
 
 // ====================== L1 to CPU IO =========================
-class CacheReq(implicit p: Parameters) extends Bundle {
+class CacheReq(implicit val p: Parameters) extends Bundle {
   //
   //    |--------- tag ---------|---index---|--offset--|
   //
@@ -27,7 +27,7 @@ class CacheReq(implicit p: Parameters) extends Bundle {
   val op = UInt(1.W)  // 0: rd   1: wr
 }
 
-class CacheResp(implicit p: Parameters) extends Bundle{
+class CacheResp(implicit val p: Parameters) extends Bundle{
   val data = UInt(p(XLen).W)
   val cmd = UInt(4.W)
 }
@@ -162,7 +162,7 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
 
 ////////////////////  Cache /////////////////////////
 
-class CacheCPUIO (implicit p: Parameters) extends Bundle{
+class CacheCPUIO (implicit val p: Parameters) extends Bundle{
   val req = Flipped(Decoupled(new CacheReq))
   val resp = Valid(new CacheResp)
 }
