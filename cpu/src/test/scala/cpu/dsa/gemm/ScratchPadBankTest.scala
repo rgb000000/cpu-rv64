@@ -19,6 +19,7 @@ class ScratchPadBankTest extends FreeSpec with ChiselScalatestTester {
 
     def do_read(c: ScratchPadBank, addr: UInt, en: Bool) = {
       c.io.read.req.valid.poke(en)
+      c.io.read.req.bits.id.poke(addr(0).asUInt())
       c.io.read.req.bits.addr.poke(addr)
     }
 
