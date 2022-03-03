@@ -17,14 +17,17 @@ class DMAData(val depth: Int, val w: Int, val nbank: Int) extends Bundle {
 }
 
 class DMACtrl extends Bundle {
-  val op = UInt(1.W)
-  val addr_local = UInt(32.W)
-  val addr_mem = UInt(32.W)
-  val len = UInt(16.W) // count of byte(8bit)
+  val cmd = Flipped(Decoupled(new Bundle{
+    val op = UInt(1.W)
+    val addr_local = UInt(32.W)
+    val addr_mem = UInt(32.W)
+    val len = UInt(16.W) // count of byte(8bit)
+  }))
+  val done = Output(Bool())
 }
 
 class DMAIO(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters) extends Bundle {
-  val ctrl = Flipped(Decoupled(new DMACtrl))
+  val ctrl = new DMACtrl
 
   val toCache = Flipped(new CacheCPUIO)
 
@@ -38,16 +41,16 @@ class DMAIO(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Paramete
 class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) extends Module {
   val io = IO(new DMAIO(depth, w, nbank))
 
-  val s_idle :: s_read :: s_write :: Nil  =  Enum(3)
+  val s_idle :: s_read :: s_write :: s_done :: Nil  =  Enum(4)
   val state = RegInit(s_idle)
 
   val addr_mem = RegInit(0.U(32.W))
   val addr_local = RegInit(0.U(log2Ceil(depth * nbank).W))
   val op = RegInit(0.U(1.W))  // 0: read spad       1: write spad
-  when(io.ctrl.fire()){
-    addr_mem := io.ctrl.bits.addr_mem
-    addr_local := io.ctrl.bits.addr_local
-    op := io.ctrl.bits.op
+  when(io.ctrl.cmd.fire()){
+    addr_mem := io.ctrl.cmd.bits.addr_mem
+    addr_local := io.ctrl.cmd.bits.addr_local
+    op := io.ctrl.cmd.bits.op
   }
 
   // todo: 参数化这个8
@@ -67,8 +70,8 @@ class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) ex
   switch(state){
     is(s_idle){
       // 当接受到ctrl信号时，判断op来跳转到write状态还是read状态
-      when(io.ctrl.fire()){
-        state := Mux(io.ctrl.bits.op === 1.U, s_write, s_read)
+      when(io.ctrl.cmd.fire()){
+        state := Mux(io.ctrl.cmd.bits.op === 1.U, s_write, s_read)
       }
     }
 
@@ -76,15 +79,21 @@ class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) ex
       // 向cacahe发送读请求，将cache resp数据写入wfifo
       // wfifo不断向spad写入数据
       // 当spad写入次数达标则完成一write dma操作
-      state := Mux(io.toSlave.req.fire() & (wcnt.value === (SPAD_CNT_VALUE - 1).U), s_idle, state)
+      state := Mux(io.toSlave.req.fire() & (wcnt.value === (SPAD_CNT_VALUE - 1).U), s_done, state)
     }
 
     is(s_read){
       // 向spad发送读请求，发送一次req就跳转到等待resp的状态s_read_resp
       // 当cache写入次数达标则完成了一轮read dma操作
-      state := Mux(io.toCache.req.fire() & (wcnt.value === (CACHE_CNT_VALUE - 1).U), s_idle, state)
+      state := Mux(io.toCache.req.fire() & (wcnt.value === (CACHE_CNT_VALUE - 1).U), s_done, state)
+    }
+
+    is(s_done){
+      state := s_idle
     }
   }
+
+  io.ctrl.done := state === s_done
 
   // wcnt
   when(state === s_write){
@@ -156,6 +165,6 @@ class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) ex
   wfifo.io.enq.valid := io.toCache.resp.valid & (io.toCache.resp.bits.cmd === 2.U)
   wfifo.io.deq.ready := io.toSlave.req.ready & (state === s_write)
 
-  io.ctrl.ready := state === s_idle
+  io.ctrl.cmd.ready := state === s_idle
 
 }

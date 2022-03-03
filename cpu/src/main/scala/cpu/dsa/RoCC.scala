@@ -15,18 +15,18 @@ class RoCCInstruction extends Bundle {
   val opcode = Bits(7.W)
 }
 
-class RoCCCommand(implicit p: Parameters) extends Bundle{
+class RoCCCommand(implicit val p: Parameters) extends Bundle{
   val inst = new RoCCInstruction
   val rs1 = UInt(p(XLen).W)
   val rs2 = UInt(p(XLen).W)
 }
 
-class RoCCRespone(implicit p: Parameters) extends Bundle{
+class RoCCRespone(implicit val p: Parameters) extends Bundle{
   val rd = UInt(6.W) // TODO: here need no. of physics register
   val data = UInt(p(XLen).W)
 }
 
-class RoCCIO(implicit p: Parameters) extends Bundle {
+class RoCCIO(implicit val p: Parameters) extends Bundle {
   val cmd = Flipped(Decoupled(new RoCCCommand))
   val resp = Decoupled(new RoCCRespone)
   val dcache = Flipped(new CacheCPUIO)

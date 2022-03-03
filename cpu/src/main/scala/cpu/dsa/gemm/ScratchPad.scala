@@ -127,8 +127,8 @@ class ScratchPad(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Par
   val req_q = Queue(tmp_req, 4)
   val resp_q = Queue(tmp_resp, 4)
 
-  io.toDMA.req.ready := tmp_req.ready
-  io.toArray.req.ready := tmp_req.ready & !io.toDMA.req.valid
+  io.toDMA.req.ready := tmp_req.ready & !io.toArray.req.valid
+  io.toArray.req.ready := tmp_req.ready
 
   tmp_req.valid := io.toDMA.req.valid | io.toArray.req.valid
   tmp_req.bits := Mux(io.toDMA.req.valid, io.toDMA.req.bits, io.toArray.req.bits)
