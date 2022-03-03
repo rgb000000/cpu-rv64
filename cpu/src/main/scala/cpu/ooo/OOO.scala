@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
 import chisel3.util.experimental.BoringUtils
+import cpu.dsa.gemm.GEMM
 import difftest._
 
 class OOO(implicit p: Parameters) extends Module {
@@ -289,12 +290,13 @@ class OOO(implicit p: Parameters) extends Module {
   station.io.robCommit.br_info.valid := rob.io.commit.br_info.valid
   station.io.robCommit.br_info.bits.isHit := rob.io.commit.br_info.bits.isHit
 
-  val rocc_add = Module(new RoCCAdder)
+//  val rocc_add = Module(new RoCCAdder)
+  val gemm = Module(new GEMM(32, 16*8, 4))
   //rob <> rocc
-  rob.io.commit2rocc.cmd <> rocc_add.io.cmd
-  rob.io.commit2rocc.resp <> rocc_add.io.resp
+  rob.io.commit2rocc.cmd <> gemm.io.rocc.cmd
+  rob.io.commit2rocc.resp <> gemm.io.rocc.resp
 
-  dcacheCrossBar.io.in(0) <> rocc_add.io.dcache
+  dcacheCrossBar.io.in(0) <> gemm.io.rocc.dcache
   dcacheCrossBar.io.in(1) <> rob.io.commit.dcache
   dcacheCrossBar.io.in(2) <> mem.io.dcache
   dcacheCrossBar.io.out <> io.dcache
