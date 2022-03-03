@@ -6,12 +6,12 @@ import chipsalliance.rocketchip.config._
 import chisel3.util.experimental.BoringUtils
 import Control.{RoCC_W, RoCC_R, RoCC_X}
 
-class RoCCQueueIO(implicit p: Parameters) extends Bundle{
+class RoCCQueueIO(implicit val p: Parameters) extends Bundle{
   val rs1 = UInt(p(XLen).W)
   val rs2 = UInt(p(XLen).W)
 }
 
-class ROBIO(implicit p: Parameters) extends Bundle {
+class ROBIO(implicit val p: Parameters) extends Bundle {
   val in = new Bundle {
     val fromID = Vec(2, Flipped(Valid(new Bundle {
 //      val stationIdx = UInt(4.W)
@@ -112,7 +112,7 @@ class ROBIO(implicit p: Parameters) extends Bundle {
   val epc = Output(UInt(p(AddresWidth).W))      // kill 跳转到epc执行
 }
 
-class ROBInfo(implicit p: Parameters) extends Bundle {
+class ROBInfo(implicit val p: Parameters) extends Bundle {
   val stationIdx = UInt(4.W)
 
   val pc = UInt(p(AddresWidth).W)

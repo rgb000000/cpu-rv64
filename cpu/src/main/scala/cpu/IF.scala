@@ -5,14 +5,14 @@ import chisel3._
 import chisel3.util._
 import chisel3.util.experimental.{BoringUtils, loadMemoryFromFileInline}
 
-class BrInfo(implicit p: Parameters) extends Bundle {
+class BrInfo(implicit val p: Parameters) extends Bundle {
   val isHit = Bool()
   val isTaken = Bool()
   val cur_pc = UInt(p(XLen).W)
   val tgt = UInt(p(AddresWidth).W)
 }
 
-class IF (implicit p: Parameters) extends Module {
+class IF (implicit val p: Parameters) extends Module {
   val io = IO(new Bundle{
     val out = Valid(new Bundle{
       val pc = UInt(p(XLen).W)

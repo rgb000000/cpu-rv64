@@ -8,7 +8,7 @@ import scala.collection.immutable.Nil
 
 
 // 定点执行单元
-class FixPointIn(implicit p: Parameters) extends Bundle {
+class FixPointIn(implicit val p: Parameters) extends Bundle {
   val idx = UInt(4.W)
   //  val pr1_data = UInt(p(XLen).W)
   //  val pr2_data = UInt(p(XLen).W)
@@ -70,7 +70,7 @@ class FixPointU(implicit p: Parameters) extends Module {
 }
 
 // 访储执行单元 and CSR单元
-class MemUIn(implicit p: Parameters) extends Bundle {
+class MemUIn(implicit val p: Parameters) extends Bundle {
   val idx = UInt(4.W)
   val A = UInt(p(XLen).W)
   val B = UInt(p(XLen).W)
@@ -92,7 +92,7 @@ class MemUIn(implicit p: Parameters) extends Bundle {
   val wen = Bool()
 }
 
-class MemReadROBIO(implicit p: Parameters) extends Bundle {
+class MemReadROBIO(implicit val p: Parameters) extends Bundle {
   val req = Valid(new Bundle {
     val addr = UInt(p(AddresWidth).W)
     val mask = UInt(8.W)

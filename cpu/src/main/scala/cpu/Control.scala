@@ -169,7 +169,7 @@ object Control {
   )
 }
 
-class CtrlSignal (implicit p: Parameters) extends Bundle {
+class CtrlSignal (implicit val p: Parameters) extends Bundle {
   val pc_sel  = Output(UInt(2.W))
   val a_sel   = Output(UInt(1.W))
   val b_sel   = Output(UInt(1.W))
@@ -186,7 +186,7 @@ class CtrlSignal (implicit p: Parameters) extends Bundle {
   val rocc_cmd= Output(UInt(2.W))
 }
 
-class ControlIO(implicit p: Parameters) extends Bundle{
+class ControlIO(implicit val p: Parameters) extends Bundle{
   val inst = Input(UInt(32.W))
   val signal = Output(new CtrlSignal)
 }

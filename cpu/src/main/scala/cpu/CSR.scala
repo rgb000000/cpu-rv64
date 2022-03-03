@@ -18,7 +18,7 @@ object CSR {
   val PRV_M = 0x3.U(2.W)
 }
 
-class MStatus (implicit p: Parameters) extends Bundle{
+class MStatus (implicit val p: Parameters) extends Bundle{
   val prv = UInt(2.W) // not included in mstatus
 
   val sd    = Bool()        // The  SD  bit  is  read-only  and  is  set  when  either  the  FS  or  XS  bits  encode  a  Dirty  state  (i.e.,SD=((FS==11) OR (XS==11))).  T
@@ -49,7 +49,7 @@ class MStatus (implicit p: Parameters) extends Bundle{
   val uie   = Bool()        // interrupt-enable
 }
 
-class MIE (implicit p: Parameters) extends Bundle {
+class MIE (implicit val p: Parameters) extends Bundle {
   val ZERO0 = UInt((p(XLen) - 12).W)
   val meie  = Bool()      // external interrupt enable
   val ZERO1 = UInt(1.W)
@@ -65,7 +65,7 @@ class MIE (implicit p: Parameters) extends Bundle {
   val usie  = Bool()      // software interrupt enable
 }
 
-class MIP (implicit p: Parameters) extends Bundle {
+class MIP (implicit val p: Parameters) extends Bundle {
   val ZERO0 = UInt((p(XLen) - 12).W)
   val meip  = Bool()      // externel interrupt pending
   val ZERO1 = UInt(1.W)
@@ -82,7 +82,7 @@ class MIP (implicit p: Parameters) extends Bundle {
 }
 
 
-class CSRIO(implicit p: Parameters) extends Bundle {
+class CSRIO(implicit val p: Parameters) extends Bundle {
   val stall = Input(Bool())
   val cmd = Input(UInt(3.W))
   val in  = Input(UInt(p(XLen).W))

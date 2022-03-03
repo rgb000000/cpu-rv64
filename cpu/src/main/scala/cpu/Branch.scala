@@ -6,7 +6,7 @@ import chipsalliance.rocketchip.config._
 
 case object BTBIndex extends Field[Int]
 
-class BranchIO(implicit p: Parameters) extends Bundle{
+class BranchIO(implicit val p: Parameters) extends Bundle{
   val rs1 = Input(UInt(p(XLen).W))
   val rs2 = Input(UInt(p(XLen).W))
 
@@ -35,7 +35,7 @@ class Branch(implicit p: Parameters) extends Module {
 
 }
 
-class BTBIO(implicit p: Parameters) extends Bundle {
+class BTBIO(implicit val p: Parameters) extends Bundle {
   val query = new Bundle {
     val pc  = Flipped(Valid(UInt(p(AddresWidth).W)))
 

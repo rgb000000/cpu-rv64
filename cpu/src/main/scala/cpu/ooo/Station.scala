@@ -5,7 +5,7 @@ import chisel3.util._
 import chisel3.util.experimental.loadMemoryFromFile
 import chipsalliance.rocketchip.config._
 
-class StationIn(implicit p: Parameters) extends Bundle {
+class StationIn(implicit val p: Parameters) extends Bundle {
   // rs1
   val pr1 = UInt(6.W)
   val pr1_s = Bool() // pr1 state
@@ -62,7 +62,7 @@ class StationIn(implicit p: Parameters) extends Bundle {
   val rocc_cmd = UInt(2.W)
 }
 
-class CDB(implicit p: Parameters) extends Bundle {
+class CDB(implicit val p: Parameters) extends Bundle {
   val idx = UInt(4.W)
   val prn = UInt(6.W)
   val data = UInt(64.W)
@@ -89,7 +89,7 @@ class MEMCDB(implicit p: Parameters) extends Bundle {
   val expt = Bool()
 }
 
-class Station(implicit p: Parameters) extends Module {
+class Station(implicit val p: Parameters) extends Module {
   val io = IO(new Bundle {
     val in = Vec(2, Flipped(Decoupled(new StationIn)))
     val cdb = Vec(2, Flipped(Valid(new CDB)))

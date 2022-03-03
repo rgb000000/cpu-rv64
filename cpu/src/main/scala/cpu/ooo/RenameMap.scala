@@ -5,7 +5,7 @@ import chisel3.util._
 import chisel3.util.experimental.loadMemoryFromFile
 import chipsalliance.rocketchip.config._
 
-class QueryAllocate(implicit p: Parameters) extends Bundle {
+class QueryAllocate(implicit val p: Parameters) extends Bundle {
   val query_a = new Bundle {
     val lr = Flipped(Valid(UInt(5.W))) // logic register
     val pr = Valid(new Bundle {
