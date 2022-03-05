@@ -71,6 +71,8 @@ class OOO(implicit p: Parameters) extends Module {
   ifet.io.fence_pc := rob.io.commit.reg(0).bits.pc
   ifet.io.pc_except_entry.valid := rob.io.except
   ifet.io.pc_except_entry.bits := rob.io.exvec
+  ifet.io.isRocc_R := rob.io.commit.reg(0).bits.isRocc_R
+  ifet.io.Rocc_R_pc := rob.io.commit.reg(0).bits.pc
 
   ifet.io.br_info.valid        := rob.io.commit.br_info.valid
   ifet.io.br_info.bits.isHit   := rob.io.commit.br_info.bits.isHit

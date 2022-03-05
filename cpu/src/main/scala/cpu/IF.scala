@@ -135,6 +135,9 @@ class OOOIF (implicit p: Parameters) extends Module {
     val fence_i_done = Input(Bool())
     val fence_pc = Input(UInt(p(AddresWidth).W))
     val fence_i_do = Input(Bool())
+
+    val isRocc_R = Input(Bool())
+    val Rocc_R_pc = Input(UInt(32.W))
   })
 
   val btb = Seq.fill(2)(Module(new BTB)) // 0 for low, 1 for high
@@ -242,9 +245,10 @@ class OOOIF (implicit p: Parameters) extends Module {
   pc := Mux(io.pc_except_entry.valid, io.pc_except_entry.bits,      // 中断入口
         Mux(io.br_info.fire() & !io.br_info.bits.isHit, right_tgt,  // 跳转未命中
         Mux(io.fence_i_do, io.fence_pc + 4.U,                       // fence_i这条指令的下一条
+        Mux(io.isRocc_R, io.Rocc_R_pc + 4.U,                        // rocc_r next pc
         Mux(io.pc_sel === PC_EPC, io.pc_epc,                        // mret 返回epc执行
         Mux(io.icache.req.fire(), io.icache.req.bits.addr,
-                                  pc)))))
+                                  pc))))))
 
   val inst_valid = RegInit(VecInit(Seq.fill(2)(false.B)))
   inst_valid(0) := Mux(io.icache.req.fire(), npc(2) === 0.U, inst_valid(0))

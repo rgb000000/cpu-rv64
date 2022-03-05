@@ -65,6 +65,7 @@ class ROBIO(implicit val p: Parameters) extends Bundle {
 //      val right_pc = UInt(p(AddresWidth).W)   // right_pc is the same as data
 
       val fence_i_do = Bool()
+      val isRocc_R = Bool()   // need flush pipeline
 
       // for difftest
       val pc = UInt(p(AddresWidth).W)
@@ -278,6 +279,7 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit.reg(portIdx).bits.isRocc := rob_info.rocc_cmd.orR()
 
     io.commit.reg(portIdx).bits.fence_i_do := (rob_info.inst === ISA.fence_i) & valid
+    io.commit.reg(portIdx).bits.isRocc_R := (rob_info.rocc_cmd === RoCC_R) & valid
 
     io.commit2rename(portIdx).valid := rob_info.wen & rob_info.isPrd & valid
     io.commit2rename(portIdx).bits.prn := rob_info.prdORaddr
@@ -478,7 +480,7 @@ class ROB(implicit p: Parameters) extends Module {
             out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
           }
         }.elsewhen(head.rocc_cmd === RoCC_R){
-          // send cmd, wait resp
+          // send cmd, wait resp, and kill rob when resp.fire()
           when(io.commit2rocc.cmd.fire()){
             rocc_commit_state := s_rocc_resp
 
@@ -489,11 +491,13 @@ class ROB(implicit p: Parameters) extends Module {
           }.elsewhen(io.commit2rocc.resp.fire()){
             rocc_commit_state := s_rocc_cmd
 
-            commitIdx.inc()
+            commitIdx.value := 0.U
             write_prfile(0, head, true.B)
             write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
-            head.state := S_COMMITED
             out_br_info(true.B, head)
+            rob.foreach(x => {
+              x.state := S_EMPTY
+            })
             printf("commit rocc_r resp")
           }.otherwise{
             write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
