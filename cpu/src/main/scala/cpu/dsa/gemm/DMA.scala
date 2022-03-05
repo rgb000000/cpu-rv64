@@ -147,7 +147,7 @@ class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) ex
   // s_write需要将wfifo数据写入Spad
   // s_read_req需要发送读spad请求
   // s_read_resp需要将spad resp数据写入rfifo中
-  io.toSlave.req.bits.addr := (addr_local << log2Ceil(w/8)).asUInt() + Mux(op === 1.U, wcnt.value, rcnt.value)
+  io.toSlave.req.bits.addr := (addr_local << log2Ceil(16)).asUInt() + Mux(op === 1.U, wcnt.value, rcnt.value)
   io.toSlave.req.bits.op := op
   io.toSlave.req.bits.mask := "hffff".U
   io.toSlave.req.bits.id := 0.U

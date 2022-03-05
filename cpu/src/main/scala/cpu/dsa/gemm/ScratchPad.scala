@@ -157,7 +157,7 @@ class ScratchPad(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Par
   // 由于多bank访问有可能出现乱序，所以使用了一个order_queue来保证顺序返回结果
   val tmp_order = Wire(Decoupled(UInt(log2Ceil(nbank).W)))
   val order_queue = Queue(tmp_order, 16) // todo: order目前设置的足够大来保证order_queue绝对不会满
-  tmp_order.valid := req_q.valid
+  tmp_order.valid := req_q.fire() & (req_q.bits.op === 0.U) // only for read op
   tmp_order.bits := which_bank
 
   // 连接 tmp_resp信号
