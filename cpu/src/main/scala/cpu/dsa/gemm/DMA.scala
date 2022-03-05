@@ -60,8 +60,8 @@ class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) ex
   require(CACHE_CNT_VALUE == 32)
   require(CACHE_CNT_VALUE > SPAD_CNT_VALUE)
   // 计数器都在目的端进行计数
-  val wcnt = Counter(CACHE_CNT_VALUE)  // 统计写入端次数
-  val rcnt = Counter(CACHE_CNT_VALUE)  // 统计读取端次数
+  val wcnt = Counter(CACHE_CNT_VALUE * 2)  // 统计写入端次数
+  val rcnt = Counter(CACHE_CNT_VALUE * 2)  // 统计读取端次数
 
   // 读写均对于spad而言
   val rfifo = Module(new FIFOw2w(w, 64, 4))
@@ -75,17 +75,17 @@ class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) ex
       }
     }
 
+    is(s_read){
+      // 向spad发送读请求，发送一次req就跳转到等待resp的状态s_read_resp
+      // 当cache写入次数达标则完成了一轮read dma操作
+      state := Mux(io.toCache.req.fire() & (wcnt.value === (CACHE_CNT_VALUE - 1).U), s_done, state)
+    }
+
     is(s_write){
       // 向cacahe发送读请求，将cache resp数据写入wfifo
       // wfifo不断向spad写入数据
       // 当spad写入次数达标则完成一write dma操作
       state := Mux(io.toSlave.req.fire() & (wcnt.value === (SPAD_CNT_VALUE - 1).U), s_done, state)
-    }
-
-    is(s_read){
-      // 向spad发送读请求，发送一次req就跳转到等待resp的状态s_read_resp
-      // 当cache写入次数达标则完成了一轮read dma操作
-      state := Mux(io.toCache.req.fire() & (wcnt.value === (CACHE_CNT_VALUE - 1).U), s_done, state)
     }
 
     is(s_done){
@@ -96,6 +96,7 @@ class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) ex
   io.ctrl.done := state === s_done
 
   // wcnt
+  // s_write inc by toSlave write op; s_read inc by toCache write op
   when(state === s_write){
     when(io.toSlave.req.fire() & (io.toSlave.req.bits.op === 1.U)){
       when(wcnt.value === (SPAD_CNT_VALUE - 1).U){
@@ -117,41 +118,41 @@ class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) ex
   // rcnt
   when(state === s_read){
     when(io.toSlave.req.fire() & (io.toSlave.req.bits.op === 0.U)){
-      when(rcnt.value === (SPAD_CNT_VALUE - 1).U){
-        rcnt.value := 0.U
-      }.otherwise{
-        rcnt.inc()
-      }
+      rcnt.inc()
     }
   }.elsewhen(state === s_write){
     when(io.toCache.req.fire() & (io.toCache.req.bits.op === 0.U)){
-      when(rcnt.value === (CACHE_CNT_VALUE - 1).U){
-        rcnt.value := 0.U
-      }.otherwise{
-        rcnt.inc()
-      }
+      rcnt.inc()  // stop when rcnt === CACHE_CNT_VALUE
     }
+  }.elsewhen(state === s_done){
+    rcnt.value := 0.U
   }
+
+  val rcnt_value = WireInit(rcnt.value)
+  val wcnt_value = WireInit(wcnt.value)
+  dontTouch(rcnt_value)
+  dontTouch(wcnt_value)
 
   // Cache
   // s_write需要从Cache读数据到wfifo
   // s_read_req和s_read_resp状态需要将rfifo中的数据写入Cache
   io.toCache.req.bits.addr := addr_mem + (Mux(!op, wcnt.value, rcnt.value) << log2Ceil(64 / 8))
   io.toCache.req.bits.op := !op
-  io.toCache.req.bits.mask := (-1).S.asUInt()
+  io.toCache.req.bits.mask := "hff".U
   io.toCache.req.bits.data := rfifo.io.deq.bits
-  io.toCache.req.valid := Mux(state === s_write, wfifo.io.enq.ready, (state === s_read) & rfifo.io.deq.valid)
+  io.toCache.req.valid := Mux(state === s_write, wfifo.io.enq.ready & (rcnt.value =/= CACHE_CNT_VALUE.U), (state === s_read) & rfifo.io.deq.valid)
+  dontTouch(io.toCache)
 
   // io.toSlave
   // s_write需要将wfifo数据写入Spad
   // s_read_req需要发送读spad请求
   // s_read_resp需要将spad resp数据写入rfifo中
-  io.toSlave.req.bits.addr := addr_local + (Mux(op === 1.U, wcnt.value, rcnt.value) << log2Ceil(w/8))
+  io.toSlave.req.bits.addr := (addr_local << log2Ceil(w/8)).asUInt() + Mux(op === 1.U, wcnt.value, rcnt.value)
   io.toSlave.req.bits.op := op
-  io.toSlave.req.bits.mask := (-1).S.asUInt()
+  io.toSlave.req.bits.mask := "hffff".U
   io.toSlave.req.bits.id := 0.U
   io.toSlave.req.bits.data := wfifo.io.deq.bits
-  io.toSlave.req.valid := Mux(state === s_write, wfifo.io.deq.valid, (state === s_read) & rfifo.io.enq.ready)
+  io.toSlave.req.valid := Mux(state === s_write, wfifo.io.deq.valid, (state === s_read) & rfifo.io.enq.ready & (rcnt.value =/= SPAD_CNT_VALUE.U))
 
   io.toSlave.resp.ready := (state === s_read) & rfifo.io.enq.ready
 

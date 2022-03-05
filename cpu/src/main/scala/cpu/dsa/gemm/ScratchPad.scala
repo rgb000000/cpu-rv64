@@ -143,11 +143,11 @@ class ScratchPad(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Par
                                        MuxLookup(which_bank, false.B, read_ready_map))
   banks.zipWithIndex.foreach({
     case (bank, index) => {
-      bank.io.read.req.valid := req_q.valid & (req_q.bits.addr === index.U) & (req_q.bits.op === 0.U)
+      bank.io.read.req.valid := req_q.valid & (req_q.bits.addr(log2Ceil(depth*nbank)-1, log2Ceil(depth)).asUInt() === index.U) & (req_q.bits.op === 0.U)
       bank.io.read.req.bits.addr := req_q.bits.addr
       bank.io.read.req.bits.id := req_q.bits.id
 
-      bank.io.write.en := req_q.valid & (req_q.bits.addr === index.U) & (req_q.bits.op === 1.U)
+      bank.io.write.en := req_q.valid & (req_q.bits.addr(log2Ceil(depth*nbank)-1, log2Ceil(depth)).asUInt() === index.U) & (req_q.bits.op === 1.U)
       bank.io.write.addr := req_q.bits.addr
       bank.io.write.mask := req_q.bits.mask
       bank.io.write.data := req_q.bits.data

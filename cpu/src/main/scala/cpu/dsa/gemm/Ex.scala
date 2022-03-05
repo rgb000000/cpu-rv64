@@ -90,7 +90,7 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
   // toSpad
   io.toSPad.req.valid := (state === s_load_d) | (state === s_load_b) | (state === s_load_a) | ((state === s_store_c) & core.io.resp.fire())
   io.toSPad.req.bits.op := Mux(state === s_store_c, 1.U, 0.U)
-  io.toSPad.req.bits.mask := (-1).S.asUInt()
+  io.toSPad.req.bits.mask := "hffff".U
   io.toSPad.req.bits.id := 1.U
   io.toSPad.req.bits.data := Mux(state === s_store_c, core.io.resp.bits.c_out.asUInt(), 0.U)
   io.toSPad.req.bits.addr := MuxLookup(state, 0.U, Seq(
