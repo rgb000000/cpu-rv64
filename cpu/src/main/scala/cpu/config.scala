@@ -2,6 +2,7 @@ package cpu
 
 import chipsalliance.rocketchip.config._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
+import cpu.dsa.gemm.GEMM4444Config
 
 // register width
 case object XLen extends Field[Int]
@@ -86,6 +87,10 @@ class DefaultConfig extends Config (
 
 class DRAM3SimConfig extends Config(
   new BaseConfig ++ new DifftestEnableWithDRAM3SimConfig
+)
+
+class GEMM_DRAM3SimConfig extends Config(
+  new DRAM3SimConfig ++ new GEMM4444Config
 )
 
 class FPGAConfig extends Config(
