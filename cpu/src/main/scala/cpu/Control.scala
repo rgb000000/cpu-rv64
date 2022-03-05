@@ -165,7 +165,9 @@ object Control {
 
     // custom0
     roccw_rs1_rs2 -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N, RoCC_W),
-    roccr_rd_rs1  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_R)
+    roccr_rd_rs1  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_R),
+    rocc_mvin     -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N, RoCC_W),
+    rocc_mvout    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N, RoCC_W)
   )
 }
 
