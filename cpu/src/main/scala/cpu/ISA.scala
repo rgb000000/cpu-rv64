@@ -108,7 +108,7 @@ trait Custom {
 
   def rocc_mvin     = BitPat("b1000000_?????_?????_011_?????_0001011") // dcache数据move到spad中 spad[rs1] = mem[rs2的值] len固定是16
   def rocc_mvout    = BitPat("b1000001_?????_?????_011_?????_0001011") // spad数据move到dcache中 mem[rs2的值] = spad[rs1] len固定是16
-  def gemm_n        = BitPat("b1000010_00000_00000_000_0000?_0001011") // gemm_0 1234   gemm_1 5678  由rd最低bit定义n
+  def gemm_n        = BitPat("b1000010_00000_?????_010_00000_0001011") // gemm_0 1234   gemm_1 5678  由rd最低bit定义n
 }
 
 object ISA extends RV64I with RVSystem with Custom {

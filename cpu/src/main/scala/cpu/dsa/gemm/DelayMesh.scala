@@ -38,9 +38,15 @@ class DelayMesh[T<:Data:Arithmetic](inType: T, outType: T, accType: T)(implicit 
   dontTouch(mesh_b_in)
   dontTouch(mesh_d_in)
 
-  val a_buf = RegEnable(io.a_in.bits, 0.U.asTypeOf(io.a_in.bits), io.a_in.fire())
-  val b_buf = RegEnable(io.b_in.bits, 0.U.asTypeOf(io.b_in.bits), io.b_in.fire())
-  val d_buf = RegEnable(io.d_in.bits, 0.U.asTypeOf(io.d_in.bits), io.d_in.fire())
+//  val a_buf = RegEnable(io.a_in.bits, 0.U.asTypeOf(io.a_in.bits), io.a_in.fire())
+//  val b_buf = RegEnable(io.b_in.bits, 0.U.asTypeOf(io.b_in.bits), io.b_in.fire())
+//  val d_buf = RegEnable(io.d_in.bits, 0.U.asTypeOf(io.d_in.bits), io.d_in.fire())
+  val a_buf = RegInit(0.U.asTypeOf(io.a_in.bits))
+  val b_buf = RegInit(0.U.asTypeOf(io.b_in.bits))
+  val d_buf = RegInit(0.U.asTypeOf(io.d_in.bits))
+  a_buf := Mux(io.a_in.fire(), io.a_in.bits, 0.U.asTypeOf(io.a_in.bits))
+  b_buf := Mux(io.b_in.fire(), io.b_in.bits, 0.U.asTypeOf(io.b_in.bits))
+  d_buf := Mux(io.d_in.fire(), io.d_in.bits, 0.U.asTypeOf(io.d_in.bits))
 
   val req_buf = RegEnable(io.req.bits, 0.U.asTypeOf(io.req.bits), io.req.fire())
 
