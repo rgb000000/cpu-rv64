@@ -473,7 +473,7 @@ class ROB(implicit p: Parameters) extends Module {
             write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
             head.state := S_COMMITED
             out_br_info(true.B, head)
-            printf("commit rocc_w cmd")
+//            printf("commit rocc_w cmd")
           }.otherwise{
             write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
             write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
@@ -487,7 +487,7 @@ class ROB(implicit p: Parameters) extends Module {
             write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
             write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
             out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
-            printf("commit rocc_r cmd")
+//            printf("commit rocc_r cmd")
           }.elsewhen(io.commit2rocc.resp.fire()){
             rocc_commit_state := s_rocc_cmd
 

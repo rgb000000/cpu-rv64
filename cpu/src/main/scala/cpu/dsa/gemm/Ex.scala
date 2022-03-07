@@ -27,17 +27,18 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
 
   // c = a*b + d
   // 先加载c进入pe阵列reg中，然后加载b让其经过转置，然后再加载a同时开始计算，等计算完成就读出c  todo: 在读出c的同时能不能同时加载下一轮的d?
-  val s_idle :: s_load_d :: s_load_b :: s_wait_a :: s_load_a :: s_wait_run :: s_store_c :: s_done :: Nil = Enum(8)
+//  val s_idle :: s_load_d :: s_load_b :: s_wait_a :: s_load_a :: s_wait_run :: s_store_c :: s_done :: Nil = Enum(8)
+  val s_idle :: s_load_D :: s_load_A :: s_wait_B :: s_load_B :: s_wait_run :: s_store_C :: s_done :: Nil = Enum(8)
   val state = RegInit(s_idle)
 
   val OP_TIMES = p(MeshRow) * p(TileRow)
   require(OP_TIMES == 16)
-  val cnt = Counter(OP_TIMES)
+  val read_cnt = Counter(OP_TIMES)
   val req_cnt = Counter(OP_TIMES*2) // use to close req
   val run_cnt = Counter(OP_TIMES) // use to stop mesh run
 
-  val read_cnt_meet = io.toSPad.resp.fire() & (cnt.value === (OP_TIMES - 1).U)
-  val write_cnt_meet = io.toSPad.req.fire() & (io.toSPad.req.bits.op === 1.U) & (cnt.value === (OP_TIMES - 1).U)
+  val read_cnt_meet = io.toSPad.resp.fire() & (read_cnt.value === (OP_TIMES - 1).U)
+  val write_cnt_meet = io.toSPad.req.fire() & (io.toSPad.req.bits.op === 1.U) & (req_cnt.value === (OP_TIMES - 1).U)
   val req_cnt_meet = req_cnt.value === OP_TIMES.U
   val run_cnt_meet = run_cnt.value === (p(MeshRow)*2).U
 
@@ -46,30 +47,30 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
   // fsm
   switch(state){
     is(s_idle){
-      state := Mux(io.ctrl.cmd.fire(), s_load_d, state)
+      state := Mux(io.ctrl.cmd.fire(), s_load_D, state)
     }
 
-    is(s_load_d){
-      state := Mux(read_cnt_meet, s_load_b, state)
+    is(s_load_D){
+      state := Mux(read_cnt_meet, s_load_A, state)
     }
 
-    is(s_load_b){
-      state := Mux(read_cnt_meet, s_wait_a, state)
+    is(s_load_A){
+      state := Mux(read_cnt_meet, s_wait_B, state)
     }
 
-    is(s_wait_a){
-      state := Mux(io.toSPad.resp.valid, s_load_a, state)
+    is(s_wait_B){
+      state := Mux(io.toSPad.resp.valid, s_load_B, state)
     }
 
-    is(s_load_a){
+    is(s_load_B){
       state := Mux(read_cnt_meet, s_wait_run, state)
     }
 
     is(s_wait_run){
-      state := Mux(run_cnt_meet, s_store_c, state)
+      state := Mux(run_cnt_meet, s_store_C, state)
     }
 
-    is(s_store_c){
+    is(s_store_C){
       state := Mux(write_cnt_meet, s_done, state)
     }
 
@@ -79,12 +80,14 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
   }
 
   // run_cnt
-  when(state === s_wait_run){
+  when(run_cnt_meet){
+    run_cnt.value := 0.U
+  }.elsewhen(state === s_wait_run){
     run_cnt.inc()
   }
 
-  // req_cnt
-  when(read_cnt_meet){
+  // req_cnt, only for read
+  when(read_cnt_meet | write_cnt_meet){
     req_cnt.value := 0.U
   }.elsewhen(io.toSPad.req.fire()){
     when(req_cnt.value =/= OP_TIMES.U){
@@ -92,7 +95,12 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
     }
   }
 
-  io.ctrl.done := state === s_done
+  // cnt
+  when((state === s_load_D) | (state === s_load_A) | (state === s_load_B)){
+    when(io.toSPad.resp.fire()){
+      read_cnt.inc()
+    }
+  }
 
   // addrs
   when(state === s_idle){
@@ -100,64 +108,56 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
       addrs := io.ctrl.cmd.bits
     }
   }
-  io.ctrl.cmd.ready := state === s_idle
 
-  // cnt
-  when((state === s_load_d) | (state === s_load_b) | (state === s_load_a)){
-    when(io.toSPad.resp.fire()){
-      cnt.inc()
-    }
-  }.elsewhen(state === s_store_c){
-    when(io.toSPad.req.fire()){
-      cnt.inc()
-    }
-  }
+  io.ctrl.cmd.ready := state === s_idle
+  io.ctrl.done := state === s_done
+
 
   // toSpad
-  io.toSPad.req.valid := (((state === s_load_d) | (state === s_load_b) | (state === s_load_a) | (state === s_wait_a)) & !req_cnt_meet) | ((state === s_store_c) & core.io.resp.fire())
-  io.toSPad.req.bits.op := Mux(state === s_store_c, 1.U, 0.U)
+  io.toSPad.req.valid := (((state === s_load_D) | (state === s_load_A) | (state === s_load_B) | (state === s_wait_B)) & !req_cnt_meet) | ((state === s_store_C) & core.io.resp.fire())
+  io.toSPad.req.bits.op := Mux(state === s_store_C, 1.U, 0.U)
   io.toSPad.req.bits.mask := "hffff".U
   io.toSPad.req.bits.id := 1.U
-  io.toSPad.req.bits.data := Mux(state === s_store_c, core.io.resp.bits.c_out.asUInt(), 0.U)
+  io.toSPad.req.bits.data := Mux(state === s_store_C, core.io.resp.bits.c_out.asUInt(), 0.U)
   io.toSPad.req.bits.addr := MuxLookup(state, 0.U, Seq(
-    s_load_d -> addrs.d_addr,
-    s_load_b -> addrs.b_addr,
-    s_wait_a -> addrs.a_addr,
-    s_load_a -> addrs.a_addr,
-    s_wait_run -> addrs.a_addr,
-    s_store_c -> addrs.c_addr
-  ))
+    s_load_D -> (addrs.d_addr + 0xf.U),  // d order is reverse
+    s_load_A -> addrs.a_addr,
+    s_wait_B -> addrs.b_addr,
+    s_load_B -> addrs.b_addr,
+    s_wait_run -> addrs.b_addr,
+    s_store_C -> (addrs.c_addr + 0xf.U)   // c order is reverse
+  )) + Mux((state =/= s_store_C) & (state =/= s_load_D), req_cnt.value, (1 << io.toSPad.req.bits.addr.getWidth).U - req_cnt.value)
 
-  io.toSPad.resp.ready := (state === s_load_d) | (state === s_load_b) | ((state === s_load_a) & core.io.a_in.ready)
+  io.toSPad.resp.ready := (state === s_load_D) | (state === s_load_A) | ((state === s_load_B) & core.io.a_in.ready)
 
   // mesh
   // 这里要有个要求，需要数据是连续的的来，但凡中间差一个cycle都会导致数据传输错误，所以需要保证Spad能在固定延迟返回数据，一旦流起来就不能中断，所以mesh对spad的优先级要高于dma
-  core.io.req.valid := (state === s_load_d) | (state === s_load_b) | (state === s_load_a) | (state === s_store_c)
+  core.io.req.valid := (state === s_load_D) | (state === s_load_A) | (state === s_load_B) | (state === s_store_C)
   core.io.req.bits.ctrl.foreach(_.foreach(_.dataflow := 0.U))
   core.io.req.bits.ctrl.foreach(_.foreach(_.mode := MuxLookup(state, 0.U, Seq(
-    s_load_d -> 1.U,
-    s_load_b -> 0.U,  // 加载b的时候mesh要停止什么也不做
-    s_wait_a -> 0.U,
-    s_load_a -> 2.U,  // 当加载a的时候b已经经过transposer了，可以直接开始计算了
-    s_wait_run -> 2.U,  // 当加载a的时候b已经经过transposer了，可以直接开始计算了
-    s_store_c -> 3.U
+    s_load_D -> 1.U,
+    s_load_A -> 0.U,  // 加载a的时候mesh要停止什么也不做
+    s_wait_B -> 0.U,
+    s_load_B -> 2.U,  // 当加载b的时候a已经经过transposer了，可以直接开始计算了
+    s_wait_run -> 2.U,  // 当加载b的时候a已经经过transposer了，可以直接开始计算了
+    s_store_C -> 3.U
   ))))
 
-  // a
-  core.io.a_in.valid := ((state === s_load_a) | (state === s_wait_run)) & io.toSPad.resp.fire()
-  core.io.a_in.bits := io.toSPad.resp.bits.data.asTypeOf(core.io.a_in.bits)
-
   // b
-  transpose.io.in.valid := (state === s_load_b) & io.toSPad.resp.fire()
+  core.io.b_in.valid := ((state === s_load_B) | (state === s_wait_run)) & io.toSPad.resp.fire()
+  core.io.b_in.bits := io.toSPad.resp.bits.data.asTypeOf(core.io.b_in.bits)
+
+  // a
+  transpose.io.in.valid := (state === s_load_A) & io.toSPad.resp.fire()
   transpose.io.in.bits := io.toSPad.resp.bits.data.asTypeOf(transpose.io.in.bits)
-  transpose.io.out.ready := core.io.b_in.ready
-  core.io.b_in.valid := transpose.io.out.valid
-  core.io.b_in.bits := transpose.io.out.bits.asTypeOf(core.io.b_in.bits)
+  transpose.io.out.ready := core.io.a_in.ready
+  core.io.a_in.valid := transpose.io.out.valid
+  core.io.a_in.bits := transpose.io.out.bits.asTypeOf(core.io.a_in.bits)
 
   // d
-  core.io.d_in.valid := (state === s_load_d) & io.toSPad.resp.fire()
+  core.io.d_in.valid := (state === s_load_D) & io.toSPad.resp.fire()
   core.io.d_in.bits := io.toSPad.resp.bits.data.asTypeOf(core.io.d_in.bits)
 
   // c
-  core.io.resp.ready := state === s_store_c
+  core.io.resp.ready := state === s_store_C
 }

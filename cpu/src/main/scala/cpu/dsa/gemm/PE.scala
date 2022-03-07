@@ -41,8 +41,8 @@ class PE[T<:Data:Arithmetic](inType: T, outType: T, accType: T)(implicit ev: Ari
 
   io.c_out := reg
 
-  when(io.ctrl_in.mode === M_PRELOAD){
-    // preload d
+  when((io.ctrl_in.mode === M_PRELOAD) | (io.ctrl_in.mode === M_OUT)){
+    // preload d or output C
     reg := io.d_in
   }.elsewhen(io.ctrl_in.mode === M_RUN){
     reg := reg.mac(io.a_in, io.b_in)

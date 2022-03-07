@@ -53,7 +53,7 @@ class DelayMesh[T<:Data:Arithmetic](inType: T, outType: T, accType: T)(implicit 
   val mesh = Module(new Mesh(inType, outType, accType))
 
   io.req.ready := 1.U
-  io.resp.valid := req_buf.ctrl.head.head.mode === M_PRELOAD
+  io.resp.valid := req_buf.ctrl.head.head.mode === M_OUT
   io.a_in.ready := req_buf.ctrl.head.head.mode === M_RUN
   io.b_in.ready := req_buf.ctrl.head.head.mode === M_RUN
   io.d_in.ready := req_buf.ctrl.head.head.mode === M_PRELOAD
@@ -65,6 +65,11 @@ class DelayMesh[T<:Data:Arithmetic](inType: T, outType: T, accType: T)(implicit 
   mesh.io.ctrl_in := mesh_ctrl_in
 
   io.resp.bits.c_out := mesh.io.c_out
+//  for(i <- 0 until p(MeshCol)){
+//    for(j <- 0 until p(TileCol)){
+//      io.resp.bits.c_out(i)(j) := mesh.io.c_out(p(MeshCol) - i - 1)(p(TileCol) - j - 1)
+//    }
+//  }
 
   // delay a_in
   for(r <- 0 until row){

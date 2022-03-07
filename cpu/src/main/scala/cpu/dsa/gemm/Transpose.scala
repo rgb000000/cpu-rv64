@@ -69,7 +69,7 @@ class Transpose[T <: Data](inType: T)(implicit p: Parameters) extends Module wit
 
   // io.out
   for(i <- 0 until dim){
-    io.out.bits(i) := pearray.head(i).io.up
+    io.out.bits(i) := pearray.head.reverse(i).io.up
   }
 
   // dir and en
