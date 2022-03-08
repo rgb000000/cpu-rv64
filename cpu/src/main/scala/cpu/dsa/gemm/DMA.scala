@@ -153,6 +153,7 @@ class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) ex
   io.toSlave.req.bits.id := 0.U
   io.toSlave.req.bits.data := wfifo.io.deq.bits
   io.toSlave.req.valid := Mux(state === s_write, wfifo.io.deq.valid, (state === s_read) & rfifo.io.enq.ready & (rcnt.value =/= SPAD_CNT_VALUE.U))
+  io.toSlave.req.bits.isTwins := false.B
 
   io.toSlave.resp.ready := (state === s_read) & rfifo.io.enq.ready
 

@@ -99,6 +99,7 @@ class ScratchPadBank(val depth: Int, val w: Int)(implicit p: Parameters) extends
 class ScratchPadReq(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters) extends Bundle {
   val op = Bool()
   val addr = UInt(log2Ceil(depth*nbank).W)
+  val isTwins = Bool()   // read (addr + 0x10)
   val mask = UInt((w/8).W)
   val data = UInt(w.W)
   val id = UInt(1.W)  // 0: dma    1: ctrl
@@ -106,6 +107,7 @@ class ScratchPadReq(val depth: Int, val w: Int, val nbank: Int)(implicit val p: 
 
 class ScratchPadResp(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters) extends Bundle {
   val data = UInt(w.W)
+  val data2 = UInt(w.W)
   val id = UInt(1.W)  // 0: dma   1: ctrl
 }
 
@@ -143,7 +145,8 @@ class ScratchPad(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Par
                                        MuxLookup(which_bank, false.B, read_ready_map))
   banks.zipWithIndex.foreach({
     case (bank, index) => {
-      bank.io.read.req.valid := req_q.valid & (req_q.bits.addr(log2Ceil(depth*nbank)-1, log2Ceil(depth)).asUInt() === index.U) & (req_q.bits.op === 0.U)
+      bank.io.read.req.valid := (req_q.valid & (req_q.bits.addr(log2Ceil(depth*nbank)-1, log2Ceil(depth)).asUInt() === index.U) & (req_q.bits.op === 0.U)) |
+                                (req_q.valid & ((req_q.bits.addr(log2Ceil(depth*nbank)-1, log2Ceil(depth)).asUInt()+1.U) === index.U) & (req_q.bits.op === 0.U) & (req_q.bits.isTwins === true.B))
       bank.io.read.req.bits.addr := req_q.bits.addr
       bank.io.read.req.bits.id := req_q.bits.id
 
@@ -155,10 +158,14 @@ class ScratchPad(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Par
   })
 
   // 由于多bank访问有可能出现乱序，所以使用了一个order_queue来保证顺序返回结果
-  val tmp_order = Wire(Decoupled(UInt(log2Ceil(nbank).W)))
+  val tmp_order = Wire(Decoupled(new Bundle{
+    val order = UInt(log2Ceil(nbank).W)
+    val isTwins = Bool()
+  }))
   val order_queue = Queue(tmp_order, 16) // todo: order目前设置的足够大来保证order_queue绝对不会满
   tmp_order.valid := req_q.fire() & (req_q.bits.op === 0.U) // only for read op
-  tmp_order.bits := which_bank
+  tmp_order.bits.order := which_bank
+  tmp_order.bits.isTwins := req_q.bits.isTwins
 
   // 连接 tmp_resp信号
   tmp_resp.valid := Cat(banks.map(_.io.read.resp.valid)).orR()
@@ -173,24 +180,31 @@ class ScratchPad(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Par
       index.U -> bank.io.read.resp.bits.id
     }
   })
-  tmp_resp.bits.data := MuxLookup(order_queue.bits, 0.U, resp_data_map)
-  tmp_resp.bits.id := MuxLookup(order_queue.bits, 0.U, resp_id_map)
+  tmp_resp.bits.data := MuxLookup(order_queue.bits.order, 0.U, resp_data_map)
+  tmp_resp.bits.id := MuxLookup(order_queue.bits.order, 0.U, resp_id_map)
+  tmp_resp.bits.data2 := MuxLookup(order_queue.bits.order, 0.U, Seq(
+    0.U -> banks(1).io.read.resp.bits.data,
+    2.U -> banks(3).io.read.resp.bits.data
+  ))
 
   order_queue.ready := tmp_resp.fire()
 
   // 连接banks的ready信号和
   banks.zipWithIndex.foreach({
     case (bank, index) => {
-      bank.io.read.resp.ready := order_queue.valid & (order_queue.bits === index.U) & tmp_resp.ready
+      bank.io.read.resp.ready := (order_queue.valid & (order_queue.bits.order === index.U) & tmp_resp.ready) |
+                                 (order_queue.valid & order_queue.bits.isTwins & ((order_queue.bits.order+1.U) === index.U))
     }
   })
 
   // 连接output
   io.toDMA.resp.bits.data := resp_q.bits.data
+  io.toDMA.resp.bits.data2 := resp_q.bits.data2
   io.toDMA.resp.bits.id := resp_q.bits.id
   io.toDMA.resp.valid := resp_q.valid & (resp_q.bits.id === 0.U)
 
   io.toArray.resp.bits.data := resp_q.bits.data
+  io.toArray.resp.bits.data2 := resp_q.bits.data2
   io.toArray.resp.bits.id := resp_q.bits.id
   io.toArray.resp.valid := resp_q.valid & (resp_q.bits.id === 1.U)
 

@@ -79,13 +79,13 @@ class Ctrl(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameter
   io.dmaCtrl.cmd.bits.len := 16.U    // todo: len是否需要起作用，还是说dma操作就是固定16次?
 
   io.exCtrl.cmd.valid := state === s_ex
-  //    0: a        2: b        4: a        6: b
-  //    1: d        3: c        5: d        7: c
+  //    0: d        2: a        4: d        6: a
+  //    1: b        3: c        5: b        7: c
 
   // spad深度等于2倍的pe阵列行数
   val base = log2Ceil(depth/2)
-  io.exCtrl.cmd.bits.a_addr := Mux(req.rs1 === 0.U, 0.U, 4.U) << base
-  io.exCtrl.cmd.bits.b_addr := Mux(req.rs1 === 0.U, 2.U, 6.U) << base
+  io.exCtrl.cmd.bits.a_addr := Mux(req.rs1 === 0.U, 2.U, 6.U) << base
+  io.exCtrl.cmd.bits.b_addr := Mux(req.rs1 === 0.U, 1.U, 5.U) << base
   io.exCtrl.cmd.bits.c_addr := Mux(req.rs1 === 0.U, 3.U, 7.U) << base
-  io.exCtrl.cmd.bits.d_addr := Mux(req.rs1 === 0.U, 1.U, 5.U) << base
+  io.exCtrl.cmd.bits.d_addr := Mux(req.rs1 === 0.U, 0.U, 4.U) << base
 }
