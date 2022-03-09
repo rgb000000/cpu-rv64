@@ -13,6 +13,8 @@ class ExCtrl(val depth: Int, val w: Int, val nbank: Int) extends Bundle {
 
     val readD = Bool()
     val writeC = Bool()
+
+    val shift = UInt(3.W)
   }))
   val done = Output(Bool())
 }
@@ -66,7 +68,7 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
     }
 
     is(s_wait_run){
-      state := Mux(run_cnt_meet, s_store_C, state)
+      state := Mux(run_cnt_meet, Mux(addrs.writeC, s_store_C, s_done), state)
     }
 
     is(s_store_C){
@@ -118,7 +120,7 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
   io.toSPad.req.bits.mask := "hffff".U
   io.toSPad.req.bits.id := 1.U
   io.toSPad.req.bits.data := Mux(state === s_store_C, core.io.resp.bits.c_out.asUInt(), 0.U)
-  io.toSPad.req.bits.isTwins := Mux(state === s_load_DA, true.B, false.B)
+  io.toSPad.req.bits.isTwins := Mux(state === s_load_DA, addrs.readD, false.B)
   io.toSPad.req.bits.addr := MuxLookup(state, 0.U, Seq(
     s_load_DA -> (addrs.a_addr + 0xf.U),  // d order is reverse
     s_wait_B -> addrs.b_addr,
@@ -134,12 +136,13 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
   core.io.req.valid := (state === s_load_DA) | (state === s_wait_B) | (state === s_load_B) | (state === s_store_C)
   core.io.req.bits.ctrl.foreach(_.foreach(_.dataflow := 0.U))
   core.io.req.bits.ctrl.foreach(_.foreach(_.mode := MuxLookup(state, 0.U, Seq(
-    s_load_DA -> 1.U,
+    s_load_DA -> addrs.readD,
     s_wait_B -> 0.U,
     s_load_B -> 2.U,  // 当加载b的时候a已经经过transposer了，可以直接开始计算了
     s_wait_run -> 2.U,  // 当加载b的时候a已经经过transposer了，可以直接开始计算了
     s_store_C -> 3.U
   ))))
+  core.io.req.bits.ctrl.foreach(_.foreach(_.shift := addrs.shift))
 
   // b data
   core.io.b_in.valid := ((state === s_load_B) | (state === s_wait_run)) & io.toSPad.resp.fire()
@@ -153,7 +156,7 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
   core.io.a_in.bits := transpose.io.out.bits.asTypeOf(core.io.a_in.bits)
 
   // d
-  core.io.d_in.valid := (state === s_load_DA) & io.toSPad.resp.fire()
+  core.io.d_in.valid := (state === s_load_DA) & io.toSPad.resp.fire() & addrs.readD
   core.io.d_in.bits := io.toSPad.resp.bits.data2.asTypeOf(core.io.d_in.bits)
 
   // c

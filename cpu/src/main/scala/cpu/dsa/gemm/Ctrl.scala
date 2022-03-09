@@ -78,7 +78,6 @@ class Ctrl(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameter
   io.dmaCtrl.cmd.bits.addr_mem := req.rs2
   io.dmaCtrl.cmd.bits.len := 16.U    // todo: len是否需要起作用，还是说dma操作就是固定16次?
 
-  io.exCtrl.cmd.valid := state === s_ex
   //    0: a        2: d        4: a        6: d
   //    1: b        3: c        5: b        7: c
 
@@ -92,10 +91,14 @@ class Ctrl(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameter
   val readD = req.rs1(12).asBool()
   val writeC = req.rs1(13).asBool()
 
+  val shift = req.rs1(16, 14).asUInt()
+
+  io.exCtrl.cmd.valid := state === s_ex
   io.exCtrl.cmd.bits.a_addr := a << base
   io.exCtrl.cmd.bits.b_addr := b << base
   io.exCtrl.cmd.bits.d_addr := d << base
   io.exCtrl.cmd.bits.c_addr := c << base
   io.exCtrl.cmd.bits.readD := readD
   io.exCtrl.cmd.bits.writeC := writeC
+  io.exCtrl.cmd.bits.shift := shift
 }

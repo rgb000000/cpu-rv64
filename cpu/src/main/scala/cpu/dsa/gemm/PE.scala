@@ -7,6 +7,7 @@ import chipsalliance.rocketchip.config._
 class PEControl() extends Bundle{
   val dataflow = UInt(1.W) // os, ws
   val mode = UInt(2.W)    // idle, preload, run, out
+  val shift = UInt(3.W)   // todo: need to parametrize shift width
 }
 
 class PEIO[T<:Data](inType: T, outType: T) extends Bundle{
@@ -21,6 +22,7 @@ class PEIO[T<:Data](inType: T, outType: T) extends Bundle{
   val ctrl_in = Input(new PEControl)
   val ctrl_out = Output(new PEControl)
 
+  // inType and outType can be "val", need cloneType!
   override def cloneType = new PEIO(inType, outType).asInstanceOf[this.type]
 }
 
@@ -39,10 +41,16 @@ class PE[T<:Data:Arithmetic](inType: T, outType: T, accType: T)(implicit ev: Ari
 
   val reg = RegInit(0.U.asTypeOf(accType))
 
-  io.c_out := reg
+  val pre_mode = RegNext(io.ctrl_in.mode)
+  val do_shift = WireInit((pre_mode =/= M_OUT) & (io.ctrl_in.mode === M_OUT))
 
-  when((io.ctrl_in.mode === M_PRELOAD) | (io.ctrl_in.mode === M_OUT)){
-    // preload d or output C
+  io.c_out := Mux(do_shift, (reg >> io.ctrl_in.shift).clipped2witdhOf(outType), reg)
+
+  when(io.ctrl_in.mode === M_PRELOAD){
+    // preload d
+    reg := io.d_in
+  }.elsewhen(io.ctrl_in.mode === M_OUT){
+    // output C, need clipped!
     reg := io.d_in
   }.elsewhen(io.ctrl_in.mode === M_RUN){
     reg := reg.mac(io.a_in, io.b_in)
