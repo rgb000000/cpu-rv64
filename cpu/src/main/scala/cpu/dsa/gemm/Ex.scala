@@ -10,6 +10,9 @@ class ExCtrl(val depth: Int, val w: Int, val nbank: Int) extends Bundle {
     val b_addr = UInt(log2Ceil(depth * nbank).W)
     val d_addr = UInt(log2Ceil(depth * nbank).W)
     val c_addr = UInt(log2Ceil(depth * nbank).W)
+
+    val readD = Bool()
+    val writeC = Bool()
   }))
   val done = Output(Bool())
 }
@@ -117,7 +120,7 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
   io.toSPad.req.bits.data := Mux(state === s_store_C, core.io.resp.bits.c_out.asUInt(), 0.U)
   io.toSPad.req.bits.isTwins := Mux(state === s_load_DA, true.B, false.B)
   io.toSPad.req.bits.addr := MuxLookup(state, 0.U, Seq(
-    s_load_DA -> (addrs.d_addr + 0xf.U),  // d order is reverse
+    s_load_DA -> (addrs.a_addr + 0xf.U),  // d order is reverse
     s_wait_B -> addrs.b_addr,
     s_load_B -> addrs.b_addr,
     s_wait_run -> addrs.b_addr,
@@ -142,16 +145,16 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
   core.io.b_in.valid := ((state === s_load_B) | (state === s_wait_run)) & io.toSPad.resp.fire()
   core.io.b_in.bits := io.toSPad.resp.bits.data.asTypeOf(core.io.b_in.bits)
 
-  // a data2
+  // a data
   transpose.io.in.valid := (state === s_load_DA) & io.toSPad.resp.fire()
-  transpose.io.in.bits := io.toSPad.resp.bits.data2.asTypeOf(transpose.io.in.bits)
+  transpose.io.in.bits := io.toSPad.resp.bits.data.asTypeOf(transpose.io.in.bits)
   transpose.io.out.ready := core.io.a_in.ready
   core.io.a_in.valid := transpose.io.out.valid
   core.io.a_in.bits := transpose.io.out.bits.asTypeOf(core.io.a_in.bits)
 
   // d
   core.io.d_in.valid := (state === s_load_DA) & io.toSPad.resp.fire()
-  core.io.d_in.bits := io.toSPad.resp.bits.data.asTypeOf(core.io.d_in.bits)
+  core.io.d_in.bits := io.toSPad.resp.bits.data2.asTypeOf(core.io.d_in.bits)
 
   // c
   core.io.resp.ready := state === s_store_C

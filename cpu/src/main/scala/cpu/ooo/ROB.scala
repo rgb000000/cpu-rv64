@@ -498,7 +498,7 @@ class ROB(implicit p: Parameters) extends Module {
             rob.foreach(x => {
               x.state := S_EMPTY
             })
-            printf("commit rocc_r resp")
+//            printf("commit rocc_r resp")
           }.otherwise{
             write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
             write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
