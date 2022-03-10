@@ -269,7 +269,7 @@ class MemU(implicit p: Parameters) extends Module {
   io.cdb.bits.mask := 0.U
 
   // valid can't depend on ready
-  io.rocc_queue.valid := io.in.valid & io.in.bits.rocc_cmd.orR()
+  io.rocc_queue.valid := io.in.fire() & io.in.bits.rocc_cmd.orR()
   io.rocc_queue.bits.rs1 := io.in.bits.A
   io.rocc_queue.bits.rs2 := io.in.bits.B
 
