@@ -3,9 +3,7 @@ package cpu
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
-
-import scala.collection.immutable.Nil
-
+import cpu.ooo.{Divider, Multiplier, SignExt}
 
 // 定点执行单元
 class FixPointIn(implicit val p: Parameters) extends Bundle {
@@ -32,6 +30,7 @@ class FixPointIn(implicit val p: Parameters) extends Bundle {
 class FixPointU(implicit p: Parameters) extends Module {
   val io = IO(new Bundle {
     val in = Flipped(Decoupled(new FixPointIn))
+    val kill = Input(Bool())
 
     val cdb = Valid(new CDB)
   })
@@ -49,22 +48,92 @@ class FixPointU(implicit p: Parameters) extends Module {
   br.io.rs2 := io.in.bits.B
   br.io.br_type := io.in.bits.br_type
 
-  io.cdb.bits.idx := io.in.bits.idx
-  io.cdb.bits.prn := io.in.bits.prd
-  io.cdb.bits.data := Mux(io.in.bits.br_type === "b111".U, io.in.bits.pc + 4.U, alu_res)
-  io.cdb.bits.j_pc := alu_res
-  io.cdb.bits.wen := io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
-  io.cdb.bits.brHit := Mux(io.in.bits.br_type.orR(), (br.io.taken === io.in.bits.pTaken) & ((br.io.taken & (io.in.bits.pPC === alu_res)) | (!br.io.taken)), true.B)
-  io.cdb.bits.isTaken := br.io.taken
-  io.cdb.bits.expt := false.B // FixPointU can't generate except
-  io.cdb.bits.pc := io.in.bits.pc
-  io.cdb.bits.inst := io.in.bits.inst
-  io.cdb.valid := io.in.valid
+  // mul
+  val mul = Module(new Multiplier)
+  val mul_a = Mux(io.in.bits.alu_op === ALU.ALU_MULHU, io.in.bits.A, SignExt(io.in.bits.A, p(XLen)+1))
+  val mul_b = Mux(Seq(ALU.ALU_MULHSU, ALU.ALU_MULHU).map(_ === io.in.bits.alu_op).reduce(_ | _), io.in.bits.B, SignExt(io.in.bits.B, p(XLen)+1))
+  val mul_sign = true.B  // ignore
+  val mul_isW = io.in.bits.alu_op === ALU.ALU_MULW
+  val mul_isHi = Seq(ALU.ALU_MULH, ALU.ALU_MULHSU, ALU.ALU_MULHU).map(_ === io.in.bits.alu_op).reduce(_ | _)
+  mul.io.in.bits.src(0) := mul_a
+  mul.io.in.bits.src(1) := mul_b
+  mul.io.in.bits.ctrl.sign := mul_sign
+  mul.io.in.bits.ctrl.isW := mul_isW
+  mul.io.in.bits.ctrl.isHi := mul_isHi
+  mul.io.kill := io.kill
 
+  val mul_info = Wire(Decoupled(io.in.bits))
+  mul_info.valid := mul.io.in.valid
+  mul_info.bits := io.in.bits
+  mul_info.ready := mul.io.in.ready
+  val mul_info_q = Queue(mul_info, 2)  // mul latency is 2
+  mul_info.ready := mul.io.out.valid & !div.io.out.valid
+
+  // div
+  val div = Module(new Divider)
+  val div_a = io.in.bits.A
+  val div_b = io.in.bits.B
+  val div_sign = Seq(ALU.ALU_DIV, ALU.ALU_DIVW, ALU.ALU_REM, ALU.ALU_REMW).map(_ === io.in.bits.alu_op).reduce(_ | _)
+  val div_isW = Seq(ALU.ALU_DIVW, ALU.ALU_DIVUW, ALU.ALU_REMW, ALU.ALU_REMUW).map(_ === io.in.bits.alu_op).reduce(_ | _)
+  val div_isHi = Seq(ALU.ALU_REM, ALU.ALU_REMUW, ALU.ALU_REMU, ALU.ALU_REMW).map(_ === io.in.bits.alu_op).reduce(_ | _)
+  div.io.in.bits.src(0) := div_a
+  div.io.in.bits.src(1) := div_b
+  div.io.in.bits.ctrl.sign := div_sign
+  div.io.in.bits.ctrl.isW := div_isW
+  div.io.in.bits.ctrl.isHi := div_isHi
+  div.io.kill := io.kill
+
+  val div_info = Wire(Decoupled(io.in.bits))
+  div_info.valid := div.io.in.valid
+  div_info.bits := io.in.bits
+  div_info.ready := io.in.ready
+  val div_info_q = Queue(div_info, 1)
+  div_info.ready := div.io.out.valid
+
+  when(div.io.out.valid){
+    io.cdb.bits.idx := div_info_q.bits.idx
+    io.cdb.bits.prn := div_info.bits.prd
+    io.cdb.bits.data := div.io.out.bits
+    io.cdb.bits.wen := true.B & (io.cdb.bits.prn =/= 0.U)
+    io.cdb.bits.brHit := true.B
+    io.cdb.bits.isTaken := false.B
+    io.cdb.bits.pc := div_info_q.bits.pc
+    io.cdb.bits.inst := div_info.bits.inst
+    io.cdb.valid := true.B
+  }.elsewhen(mul.io.out.valid){
+    io.cdb.bits.idx := mul_info_q.bits.idx
+    io.cdb.bits.prn := mul_info.bits.prd
+    io.cdb.bits.data := mul.io.out.bits
+    io.cdb.bits.wen := true.B & (io.cdb.bits.prn =/= 0.U)
+    io.cdb.bits.brHit := true.B
+    io.cdb.bits.isTaken := false.B
+    io.cdb.bits.pc := mul_info_q.bits.pc
+    io.cdb.bits.inst := mul_info.bits.inst
+    io.cdb.valid := true.B
+  }.otherwise{
+    io.cdb.bits.idx := io.in.bits.idx
+    io.cdb.bits.prn := io.in.bits.prd
+    io.cdb.bits.data := Mux(io.in.bits.br_type === "b111".U, io.in.bits.pc + 4.U, alu_res)
+    io.cdb.bits.j_pc := alu_res
+    io.cdb.bits.wen := io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
+    io.cdb.bits.brHit := Mux(io.in.bits.br_type.orR(), (br.io.taken === io.in.bits.pTaken) & ((br.io.taken & (io.in.bits.pPC === alu_res)) | (!br.io.taken)), true.B)
+    io.cdb.bits.isTaken := br.io.taken
+    io.cdb.bits.pc := io.in.bits.pc
+    io.cdb.bits.inst := io.in.bits.inst
+    io.cdb.valid := io.in.valid
+  }
   io.cdb.bits.addr := 0.U
   io.cdb.bits.mask := 0.U
+  io.cdb.bits.expt := false.B // FixPointU can't generate except
 
-  io.in.ready := true.B // fixPointU always ready
+  div.io.out.ready := div.io.out.valid
+  mul.io.out.ready := mul.io.out.valid & !div.io.out.valid
+
+  io.in.ready := io.in.valid & MuxCase(false.B, Seq(
+    Seq(ALU.ALU_MUL, ALU.ALU_MULH, ALU.ALU_MULHSU, ALU.ALU_MULHU, ALU.ALU_MULW).map(_ === io.in.bits.alu_op).reduce(_ | _) -> mul.io.in.ready,
+    Seq(ALU.ALU_DIV, ALU.ALU_DIVU, ALU.ALU_DIVW, ALU.ALU_DIVUW).map(_ === io.in.bits.alu_op).reduce(_ | _) -> div.io.in.ready,
+    Seq(ALU.ALU_REM, ALU.ALU_REMU, ALU.ALU_REMW, ALU.ALU_REMUW).map(_ === io.in.bits.alu_op).reduce(_ | _) -> div.io.in.ready,
+  ))
 
   dontTouch(io.cdb)
 }

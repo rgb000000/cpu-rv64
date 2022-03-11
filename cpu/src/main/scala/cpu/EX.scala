@@ -5,30 +5,45 @@ import chisel3.util._
 import chipsalliance.rocketchip.config._
 
 object ALU {
-  val ALU_ADD    =  0.U(5.W) // +
-  val ALU_SUB    =  1.U(5.W) // -
-  val ALU_AND    =  2.U(5.W) // &
-  val ALU_OR     =  3.U(5.W) // |
-  val ALU_XOR    =  4.U(5.W) // ^
-  val ALU_SLT    =  5.U(5.W) // <
-  val ALU_SLL    =  6.U(5.W) // << logic
-  val ALU_SLTU   =  7.U(5.W) // < unsigned
-  val ALU_SRL    =  8.U(5.W) // >> logic
-  val ALU_SRA    =  9.U(5.W) // >> arithmetic
-  val ALU_COPY_A = 10.U(5.W) // rs1
-  val ALU_COPY_B = 11.U(5.W) // rs2
+  val ALU_ADD    =  0.U(6.W) // +
+  val ALU_SUB    =  1.U(6.W) // -
+  val ALU_AND    =  2.U(6.W) // &
+  val ALU_OR     =  3.U(6.W) // |
+  val ALU_XOR    =  4.U(6.W) // ^
+  val ALU_SLT    =  5.U(6.W) // <
+  val ALU_SLL    =  6.U(6.W) // << logic
+  val ALU_SLTU   =  7.U(6.W) // < unsigned
+  val ALU_SRL    =  8.U(6.W) // >> logic
+  val ALU_SRA    =  9.U(6.W) // >> arithmetic
+  val ALU_COPY_A = 10.U(6.W) // rs1
+  val ALU_COPY_B = 11.U(6.W) // rs2
 
-  val ALU_SLLW   = 12.U(5.W) // sext((x[rs1]≪x[rs2][4:0])[31:0])
-  val ALU_SRLW   = 13.U(5.W) // sext(x[rs1][31:0] ≫_𝑢 x[rs2][4:0])
-  val ALU_SRAW   = 14.U(5.W) // sext(x[rs1][31:0] ≫_𝑠 x[rs2][4:0])
-  val ALU_ADDW   = 15.U(5.W) // sext((x[rs1] + x[rs2])[31:0])
-  val ALU_SUBW   = 16.U(5.W) // sext((x[rs1] - x[rs2])[31:0])
-  val ALU_SLLIW  = 17.U(5.W) // sext((x[rs1] ≪ shamt)[31:0])
-  val ALU_SRLIW  = 18.U(5.W) // sext(x[rs1][31:0] ≫_𝑢 shamt)
-  val ALU_SRAIW  = 19.U(5.W) // sext(x[rs1][31:0]≫_𝑠 shamt)
-  val ALU_ADDIW  = 20.U(5.W) // sext((x[rs1] + sext(immediate))[31:0])
+  val ALU_SLLW   = 12.U(6.W) // sext((x[rs1]≪x[rs2][4:0])[31:0])
+  val ALU_SRLW   = 13.U(6.W) // sext(x[rs1][31:0] ≫_𝑢 x[rs2][4:0])
+  val ALU_SRAW   = 14.U(6.W) // sext(x[rs1][31:0] ≫_𝑠 x[rs2][4:0])
+  val ALU_ADDW   = 15.U(6.W) // sext((x[rs1] + x[rs2])[31:0])
+  val ALU_SUBW   = 16.U(6.W) // sext((x[rs1] - x[rs2])[31:0])
+  val ALU_SLLIW  = 17.U(6.W) // sext((x[rs1] ≪ shamt)[31:0])
+  val ALU_SRLIW  = 18.U(6.W) // sext(x[rs1][31:0] ≫_𝑢 shamt)
+  val ALU_SRAIW  = 19.U(6.W) // sext(x[rs1][31:0]≫_𝑠 shamt)
+  val ALU_ADDIW  = 20.U(6.W) // sext((x[rs1] + sext(immediate))[31:0])
 
-  val ALU_XXX    = 21.U(5.W)//
+  val ALU_MUL    = 21.U(6.W)
+  val ALU_MULH   = 22.U(6.W)
+  val ALU_MULHSU = 23.U(6.W)
+  val ALU_MULHU  = 24.U(6.W)
+  val ALU_MULW   = 25.U(6.W)
+
+  val ALU_DIV    = 26.U(6.W)
+  val ALU_DIVU   = 27.U(6.W)
+  val ALU_REM    = 28.U(6.W)
+  val ALU_REMU   = 29.U(6.W)
+  val ALU_DIVW   = 30.U(6.W)
+  val ALU_DIVUW  = 31.U(6.W)
+  val ALU_REMW   = 32.U(6.W)
+  val ALU_REMUW  = 33.U(6.W)
+
+  val ALU_XXX    = 34.U(6.W)//
 }
 
 class ALU (implicit p: Parameters) extends Module {

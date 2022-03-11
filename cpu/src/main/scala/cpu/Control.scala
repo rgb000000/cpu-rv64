@@ -116,7 +116,7 @@ object Control {
     ebreak -> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.P, N, RoCC_X),
     mret   -> List(PC_EPC, A_XXX,  B_XXX, IMM_X,   ALU_XXX,    BR_XXX, Y, ST_XXX, LD_XXX, WB_ALU, N, CSR.P, N, RoCC_X),
     sret   -> List(PC_EPC, A_XXX,  B_XXX, IMM_X,   ALU_XXX,    BR_XXX, Y, ST_XXX, LD_XXX, WB_ALU, N, CSR.P, N, RoCC_X),
-    wfi    -> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N, RoCC_X),
+    wfi     -> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N, RoCC_X),
 
     // TODO: CSR aspects need to be improved
     csrrw  -> List(PC_4,   A_RS1,  B_XXX, IMM_X,   ALU_COPY_A, BR_XXX, N, ST_XXX, LD_XXX, WB_CSR, Y, CSR.W, N, RoCC_X),
@@ -162,6 +162,21 @@ object Control {
     addiw  -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADDIW,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
     lwu    -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    BR_XXX, N, ST_XXX, LD_LWU, WB_MEM, Y, CSR.N, N, RoCC_X),
     ld     -> List(PC_4,   A_RS1,  B_IMM, IMM_I,   ALU_ADD,    BR_XXX, N, ST_XXX, LD_LD,  WB_MEM, Y, CSR.N, N, RoCC_X),
+
+    // RV64M all in R type
+    mul    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_MUL,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    mulh   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_MULH,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    mulhsu -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_MULHSU, BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    mulhu  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_MULHU,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    mulw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_MULW,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    div    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_DIV,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    divu   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_DIVU,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    divw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_DIVW,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    divu   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_DIVU,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    rem    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_REM,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    remw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_REMW,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    remu   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_REMU,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    remuw  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_REMUW,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
 
     // custom0
     roccw_rs1_rs2 -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N, RoCC_W),
