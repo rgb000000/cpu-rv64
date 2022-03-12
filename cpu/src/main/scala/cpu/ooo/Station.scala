@@ -26,7 +26,7 @@ class StationIn(implicit val p: Parameters) extends Bundle {
   val prd = UInt(6.W)
 
   // alu op
-  val alu_op = UInt(5.W)
+  val alu_op = UInt(6.W)
 
   // br_type
   val br_type = UInt(3.W)
@@ -141,8 +141,8 @@ class Station(implicit val p: Parameters) extends Module {
   val readyIdx_0 = WireInit(PriorityEncoder(which_station_ready_0))
 
   val which_station_ready_1 = Cat(station.map(x => {
-    // alu ld/st csr, rocc(need in order like mem inst), no branch
-    x.pr1_s & x.pr2_s & ((!x.br_type.orR()) | x.rocc_cmd.orR()) & (x.state === S_WAIT)
+    // alu ld/st csr, rocc(need in order like mem inst), no branch, no M extension
+    x.pr1_s & x.pr2_s & ((!x.br_type.orR()) | x.rocc_cmd.orR()) & (x.state === S_WAIT) & (x.alu_op <= ALU.ALU_XXX)
   }).reverse)
   val commit_value = commitPtr.value(3, 0).asUInt()
   val which_station_ready_1_commit = ((which_station_ready_1 >> commit_value).asUInt() | (which_station_ready_1 << (16.U - commit_value)).asUInt())(15, 0).asUInt()

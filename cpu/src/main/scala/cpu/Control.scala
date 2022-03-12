@@ -192,7 +192,7 @@ class CtrlSignal (implicit val p: Parameters) extends Bundle {
   val a_sel   = Output(UInt(1.W))
   val b_sel   = Output(UInt(1.W))
   val imm_sel = Output(UInt(3.W))
-  val alu_op  = Output(UInt(5.W))
+  val alu_op  = Output(UInt(6.W))
   val br_type = Output(UInt(3.W))
   val kill    = Output(UInt(1.W))
   val st_type = Output(UInt(3.W))

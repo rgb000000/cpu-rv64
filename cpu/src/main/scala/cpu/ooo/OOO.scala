@@ -212,6 +212,7 @@ class OOO(implicit p: Parameters) extends Module {
   fixPointU.io.in.bits.pc       := issue_0.info.pc
   fixPointU.io.in.bits.inst     := issue_0.info.inst
   fixPointU.io.in.bits.idx      := issue_0.idx
+  fixPointU.io.kill             := rob_kill
   dontTouch(fixPointU.io)
 
   // memU

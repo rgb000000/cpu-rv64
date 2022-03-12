@@ -202,7 +202,7 @@ class Multiplier(implicit val p: Parameters) extends Module{
   io.in.ready := reg_0_ready
   io.out.valid := reg_1_valid
 
-  val reg_0_enable = io.in.fire()
+  val reg_0_enable = io.in.fire() & !io.kill
   val reg_1_enable = reg_0_valid & reg_1_ready
 
   val ctrl_reg_0 = RegEnable(io.in.bits.ctrl, 0.U.asTypeOf(io.in.bits.ctrl), reg_0_enable)

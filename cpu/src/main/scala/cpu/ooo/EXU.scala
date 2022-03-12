@@ -12,7 +12,7 @@ class FixPointIn(implicit val p: Parameters) extends Bundle {
   //  val pr2_data = UInt(p(XLen).W)
   val A = UInt(p(XLen).W)
   val B = UInt(p(XLen).W)
-  val alu_op = UInt(5.W)
+  val alu_op = UInt(6.W)
   val prd = UInt(6.W) // physics rd id
   val imm = UInt(p(XLen).W)
 
@@ -50,6 +50,8 @@ class FixPointU(implicit p: Parameters) extends Module {
 
   // mul
   val mul = Module(new Multiplier)
+  val div = Module(new Divider)
+
   val mul_a = Mux(io.in.bits.alu_op === ALU.ALU_MULHU, io.in.bits.A, SignExt(io.in.bits.A, p(XLen)+1))
   val mul_b = Mux(Seq(ALU.ALU_MULHSU, ALU.ALU_MULHU).map(_ === io.in.bits.alu_op).reduce(_ | _), io.in.bits.B, SignExt(io.in.bits.B, p(XLen)+1))
   val mul_sign = true.B  // ignore
@@ -62,15 +64,13 @@ class FixPointU(implicit p: Parameters) extends Module {
   mul.io.in.bits.ctrl.isHi := mul_isHi
   mul.io.kill := io.kill
 
-  val mul_info = Wire(Decoupled(io.in.bits))
+  val mul_info = Wire(Decoupled(io.in.bits.cloneType))
   mul_info.valid := mul.io.in.valid
   mul_info.bits := io.in.bits
-  mul_info.ready := mul.io.in.ready
-  val mul_info_q = Queue(mul_info, 2)  // mul latency is 2
-  mul_info.ready := mul.io.out.valid & !div.io.out.valid
+  val mul_info_q = withReset(reset.toBool() | io.kill){Queue(mul_info, 3)}  // mul latency is 2
+  mul_info_q.ready := mul.io.out.valid & !div.io.out.valid
 
   // div
-  val div = Module(new Divider)
   val div_a = io.in.bits.A
   val div_b = io.in.bits.B
   val div_sign = Seq(ALU.ALU_DIV, ALU.ALU_DIVW, ALU.ALU_REM, ALU.ALU_REMW).map(_ === io.in.bits.alu_op).reduce(_ | _)
@@ -83,56 +83,62 @@ class FixPointU(implicit p: Parameters) extends Module {
   div.io.in.bits.ctrl.isHi := div_isHi
   div.io.kill := io.kill
 
-  val div_info = Wire(Decoupled(io.in.bits))
-  div_info.valid := div.io.in.valid
+  val div_info = Wire(Decoupled(io.in.bits.cloneType))
+  div_info.valid := div.io.in.fire()
   div_info.bits := io.in.bits
-  div_info.ready := io.in.ready
-  val div_info_q = Queue(div_info, 1)
-  div_info.ready := div.io.out.valid
+  val div_info_q = withReset(reset.toBool() | io.kill){Queue(div_info, 1)}
+  div_info_q.ready := div.io.out.valid
 
-  when(div.io.out.valid){
+  val isDiv = Seq(ALU.ALU_DIV, ALU.ALU_DIVU, ALU.ALU_DIVW, ALU.ALU_DIVUW).map(_ === io.in.bits.alu_op).reduce(_ | _) | Seq(ALU.ALU_REM, ALU.ALU_REMU, ALU.ALU_REMW, ALU.ALU_REMUW).map(_ === io.in.bits.alu_op).reduce(_ | _)
+  val isMul = Seq(ALU.ALU_MUL, ALU.ALU_MULH, ALU.ALU_MULHSU, ALU.ALU_MULHU, ALU.ALU_MULW).map(_ === io.in.bits.alu_op).reduce(_ | _)
+
+  when(div.io.out.fire()){
     io.cdb.bits.idx := div_info_q.bits.idx
-    io.cdb.bits.prn := div_info.bits.prd
+    io.cdb.bits.prn := div_info_q.bits.prd
     io.cdb.bits.data := div.io.out.bits
     io.cdb.bits.wen := true.B & (io.cdb.bits.prn =/= 0.U)
     io.cdb.bits.brHit := true.B
     io.cdb.bits.isTaken := false.B
     io.cdb.bits.pc := div_info_q.bits.pc
-    io.cdb.bits.inst := div_info.bits.inst
+    io.cdb.bits.inst := div_info_q.bits.inst
     io.cdb.valid := true.B
-  }.elsewhen(mul.io.out.valid){
+  }.elsewhen(mul.io.out.fire()){
     io.cdb.bits.idx := mul_info_q.bits.idx
-    io.cdb.bits.prn := mul_info.bits.prd
+    io.cdb.bits.prn := mul_info_q.bits.prd
     io.cdb.bits.data := mul.io.out.bits
     io.cdb.bits.wen := true.B & (io.cdb.bits.prn =/= 0.U)
     io.cdb.bits.brHit := true.B
     io.cdb.bits.isTaken := false.B
     io.cdb.bits.pc := mul_info_q.bits.pc
-    io.cdb.bits.inst := mul_info.bits.inst
+    io.cdb.bits.inst := mul_info_q.bits.inst
     io.cdb.valid := true.B
   }.otherwise{
     io.cdb.bits.idx := io.in.bits.idx
     io.cdb.bits.prn := io.in.bits.prd
     io.cdb.bits.data := Mux(io.in.bits.br_type === "b111".U, io.in.bits.pc + 4.U, alu_res)
-    io.cdb.bits.j_pc := alu_res
     io.cdb.bits.wen := io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
     io.cdb.bits.brHit := Mux(io.in.bits.br_type.orR(), (br.io.taken === io.in.bits.pTaken) & ((br.io.taken & (io.in.bits.pPC === alu_res)) | (!br.io.taken)), true.B)
     io.cdb.bits.isTaken := br.io.taken
     io.cdb.bits.pc := io.in.bits.pc
     io.cdb.bits.inst := io.in.bits.inst
-    io.cdb.valid := io.in.valid
+    // common inst req accept and commit
+    io.cdb.valid := io.in.valid & (!isDiv) & (!isMul)
   }
+  io.cdb.bits.j_pc := alu_res
   io.cdb.bits.addr := 0.U
   io.cdb.bits.mask := 0.U
   io.cdb.bits.expt := false.B // FixPointU can't generate except
 
-  div.io.out.ready := div.io.out.valid
+  div.io.out.ready := div.io.out.valid & RegNext(div.io.out.valid)
   mul.io.out.ready := mul.io.out.valid & !div.io.out.valid
 
-  io.in.ready := io.in.valid & MuxCase(false.B, Seq(
-    Seq(ALU.ALU_MUL, ALU.ALU_MULH, ALU.ALU_MULHSU, ALU.ALU_MULHU, ALU.ALU_MULW).map(_ === io.in.bits.alu_op).reduce(_ | _) -> mul.io.in.ready,
-    Seq(ALU.ALU_DIV, ALU.ALU_DIVU, ALU.ALU_DIVW, ALU.ALU_DIVUW).map(_ === io.in.bits.alu_op).reduce(_ | _) -> div.io.in.ready,
-    Seq(ALU.ALU_REM, ALU.ALU_REMU, ALU.ALU_REMW, ALU.ALU_REMUW).map(_ === io.in.bits.alu_op).reduce(_ | _) -> div.io.in.ready,
+
+  div.io.in.valid := io.in.valid & isDiv & !io.kill
+  mul.io.in.valid := io.in.valid & isMul & !io.kill
+
+  io.in.ready := io.in.valid & MuxCase(true.B & (!div.io.out.fire()) & (!mul.io.out.fire()), Seq(
+     isMul -> mul.io.in.ready,
+     isDiv -> div.io.in.ready,
   ))
 
   dontTouch(io.cdb)

@@ -460,13 +460,14 @@ class Divider(implicit val p: Parameters) extends Module {
 
   val divider = Module(new SRT16DividerDataModule(p(XLen)))
 
-  val kill_w = io.kill
-  val kill_r = !divider.io.in_ready && io.kill
-
   val newReq = io.in.fire()
+
+  val kill_w = io.kill
+  val kill_r = (!divider.io.in_ready) && io.kill
+
   val ctrlReg = RegEnable(io.in.bits.ctrl, 0.U.asTypeOf(io.in.bits.ctrl), newReq)
 
-  divider.io.valid := io.in.valid
+  divider.io.valid := io.in.valid & !io.kill
   divider.io.kill_w := kill_w
   divider.io.kill_r := kill_r
   divider.io.sign := io.in.bits.ctrl.sign

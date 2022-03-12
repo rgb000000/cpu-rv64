@@ -20,10 +20,10 @@ class DividerTest extends FreeSpec with ChiselScalatestTester {
 
     RawTester.test(new Divider, annos){c =>
       c.io.in.valid.poke(true.B)
-      c.io.in.bits.src(0).poke(0x10.U)
+      c.io.in.bits.src(0).poke(0x0.U)
       c.io.in.bits.src(1).poke(0x3.U)
       c.io.in.bits.ctrl.sign.poke(false.B)
-      c.io.in.bits.ctrl.isW.poke(false.B)
+      c.io.in.bits.ctrl.isW.poke(true.B)
       c.io.in.bits.ctrl.isHi.poke(false.B)
       c.io.kill.poke(false.B)
 

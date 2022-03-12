@@ -28,22 +28,23 @@ object ALU {
   val ALU_SRAIW  = 19.U(6.W) // sext(x[rs1][31:0]≫_𝑠 shamt)
   val ALU_ADDIW  = 20.U(6.W) // sext((x[rs1] + sext(immediate))[31:0])
 
-  val ALU_MUL    = 21.U(6.W)
-  val ALU_MULH   = 22.U(6.W)
-  val ALU_MULHSU = 23.U(6.W)
-  val ALU_MULHU  = 24.U(6.W)
-  val ALU_MULW   = 25.U(6.W)
+  val ALU_XXX    = 21.U(6.W) //
 
-  val ALU_DIV    = 26.U(6.W)
-  val ALU_DIVU   = 27.U(6.W)
-  val ALU_REM    = 28.U(6.W)
-  val ALU_REMU   = 29.U(6.W)
-  val ALU_DIVW   = 30.U(6.W)
-  val ALU_DIVUW  = 31.U(6.W)
-  val ALU_REMW   = 32.U(6.W)
-  val ALU_REMUW  = 33.U(6.W)
+  val ALU_MUL    = 22.U(6.W)
+  val ALU_MULH   = 23.U(6.W)
+  val ALU_MULHSU = 24.U(6.W)
+  val ALU_MULHU  = 25.U(6.W)
+  val ALU_MULW   = 26.U(6.W)
 
-  val ALU_XXX    = 34.U(6.W)//
+  val ALU_DIV    = 27.U(6.W)
+  val ALU_DIVU   = 28.U(6.W)
+  val ALU_REM    = 29.U(6.W)
+  val ALU_REMU   = 30.U(6.W)
+  val ALU_DIVW   = 31.U(6.W)
+  val ALU_DIVUW  = 32.U(6.W)
+  val ALU_REMW   = 33.U(6.W)
+  val ALU_REMUW  = 34.U(6.W)
+
 }
 
 class ALU (implicit p: Parameters) extends Module {
