@@ -172,7 +172,7 @@ object Control {
     div    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_DIV,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
     divu   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_DIVU,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
     divw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_DIVW,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
-    divu   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_DIVU,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    divuw  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_DIVUW,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
     rem    -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_REM,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
     remw   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_REMW,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
     remu   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_REMU,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),

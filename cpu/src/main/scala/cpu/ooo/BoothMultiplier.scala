@@ -180,7 +180,7 @@ class ArrayMulDataModule(len: Int) extends Module {
 
 class MultiplierIO(implicit val p: Parameters) extends Bundle{
   val in = Flipped(Decoupled(new Bundle{
-    val src = Vec(2, UInt(p(XLen).W))
+    val src = Vec(2, UInt((p(XLen)+1).W))
     val ctrl = new Bundle {
       val sign = Bool()
       val isW = Bool()
@@ -188,7 +188,7 @@ class MultiplierIO(implicit val p: Parameters) extends Bundle{
     }
   }))
   val kill = Input(Bool())
-  val out = Decoupled(UInt((p(XLen)*2).W))
+  val out = Decoupled(UInt(((p(XLen)+1)*2).W))
 }
 
 class Multiplier(implicit val p: Parameters) extends Module{
