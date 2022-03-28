@@ -124,6 +124,9 @@ class CSR (implicit p: Parameters) extends Module {
   val mcause  = RegInit(0.U(p(XLen).W))
   val mcycle  = RegInit(0.U(p(XLen).W))
 
+  val medeleg = RegInit(0.U(p(XLen).W))
+  val mideleg = RegInit(0.U(p(XLen).W))
+
   mcycle := mcycle + 1.U
 
   val reset_mstatus = WireInit(0.U.asTypeOf(new MStatus))
@@ -153,7 +156,9 @@ class CSR (implicit p: Parameters) extends Module {
     BitPat(CSRs.mie.U(12.W))      -> mie.asUInt(),
     BitPat(CSRs.mcycle.U(12.W))   -> mcycle,
     BitPat(CSRs.mhartid.U(12.W))  -> mhardid,
-    BitPat(CSRs.mscratch.U(12.W)) -> mscratch
+    BitPat(CSRs.mscratch.U(12.W)) -> mscratch,
+    BitPat(CSRs.medeleg.U(12.W))  -> medeleg,
+    BitPat(CSRs.medeleg.U(12.W))  -> mideleg,
   )
 
   io.out := Lookup(csr_addr, 0.U, csrFile).asUInt()
@@ -218,9 +223,11 @@ class CSR (implicit p: Parameters) extends Module {
     .elsewhen(isMret) {
       mstatus.mie := mstatus.mpie
       mstatus.mpie := true.B
+      mstatus.mpp := "b11".U
+      mstatus.prv := mstatus.mpp
     }.elsewhen(isSret){
-    mstatus.mie := mstatus.mpie
-    mstatus.mpie := true.B
+      mstatus.mie := mstatus.mpie
+      mstatus.mpie := true.B
     }
     .elsewhen(wen) {
       when(csr_addr === CSRs.mstatus.U) {
@@ -243,11 +250,13 @@ class CSR (implicit p: Parameters) extends Module {
         mie.msie := tmp_mie.msie
         mie.meie := tmp_mie.meie
       }
-      .elsewhen(csr_addr === CSRs.mepc.U) { mepc := wdata >> 2.U << 2.U }
-      .elsewhen(csr_addr === CSRs.mcause.U) { mcause := wdata & (BigInt(1) << (p(XLen)-1) | 0xf).U }
-      .elsewhen(csr_addr === CSRs.mtvec.U) { mtvec := wdata}
-      .elsewhen(csr_addr === CSRs.mcycle.U){ mcycle := wdata}
-      .elsewhen(csr_addr === CSRs.mscratch.U){ mscratch := wdata}
+      .elsewhen(csr_addr === CSRs.mepc.U)     { mepc := wdata >> 2.U << 2.U }
+      .elsewhen(csr_addr === CSRs.mcause.U)   { mcause := wdata & (BigInt(1) << (p(XLen)-1) | 0xf).U }
+      .elsewhen(csr_addr === CSRs.mtvec.U)    { mtvec := wdata}
+      .elsewhen(csr_addr === CSRs.mcycle.U)   { mcycle := wdata}
+      .elsewhen(csr_addr === CSRs.mscratch.U) { mscratch := wdata}
+      .elsewhen(csr_addr === CSRs.medeleg.U)  { medeleg := wdata & "hf3ff".U}
+      .elsewhen(csr_addr === CSRs.mideleg.U)  { mideleg := wdata & "h222".U}
     }
   }
 
@@ -270,8 +279,8 @@ class CSR (implicit p: Parameters) extends Module {
     dcsr.io.satp           := 0.U // RegNext(0.U)
     dcsr.io.mscratch       := mscratch // RegNext(Mux(!io.stall, mscratch,          RegEnable(mscratch, !io.stall)))
     dcsr.io.sscratch       := 0.U // RegNext(Mux(!io.stall, sstatus,           RegEnable(sstatus, !io.stall))) // 0.U // RegNext(0.U)
-    dcsr.io.mideleg        := 0.U // RegNext(0.U)
-    dcsr.io.medeleg        := 0.U // RegNext(0.U)
+    dcsr.io.mideleg        := mideleg // RegNext(0.U)
+    dcsr.io.medeleg        := medeleg // RegNext(0.U)
     dcsr.io.mtval          := 0.U // RegNext(0.U)
     dcsr.io.stval          := 0.U // RegNext(0.U)
     dcsr.io.stvec          := 0.U // RRegNextegNext(0.U)
