@@ -30,6 +30,7 @@ object ALU {
 
   val ALU_XXX    = 21.U(6.W) //
 
+  // 下面这些并非ALU操作了
   val ALU_MUL    = 22.U(6.W)
   val ALU_MULH   = 23.U(6.W)
   val ALU_MULHSU = 24.U(6.W)
@@ -44,6 +45,29 @@ object ALU {
   val ALU_DIVUW  = 32.U(6.W)
   val ALU_REMW   = 33.U(6.W)
   val ALU_REMUW  = 34.U(6.W)
+
+  val ALU_AMOADD_W   = 35.U(6.W)
+  val ALU_AMOXOR_W   = 36.U(6.W)
+  val ALU_AMOOR_W    = 37.U(6.W)
+  val ALU_AMOAND_W   = 38.U(6.W)
+  val ALU_AMOMIN_W   = 39.U(6.W)
+  val ALU_AMOMAX_W   = 40.U(6.W)
+  val ALU_AMOMINU_W  = 41.U(6.W)
+  val ALU_AMOMAXU_W  = 42.U(6.W)
+  val ALU_AMOSWAP_W  = 43.U(6.W)
+  val ALU_AMOADD_D   = 44.U(6.W)
+  val ALU_AMOXOR_D   = 45.U(6.W)
+  val ALU_AMOOR_D    = 46.U(6.W)
+  val ALU_AMOAND_D   = 47.U(6.W)
+  val ALU_AMOMIN_D   = 48.U(6.W)
+  val ALU_AMOMAX_D   = 49.U(6.W)
+  val ALU_AMOMINU_D  = 50.U(6.W)
+  val ALU_AMOMAXU_D  = 51.U(6.W)
+  val ALU_AMOSWAP_D  = 52.U(6.W)
+  val ALU_LR_W       = 53.U(6.W)
+  val ALU_SC_W       = 54.U(6.W)
+  val ALU_LR_D       = 55.U(6.W)
+  val ALU_SC_D       = 56.U(6.W)
 
 }
 

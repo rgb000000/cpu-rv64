@@ -67,7 +67,7 @@ class FixPointU(implicit p: Parameters) extends Module {
   val mul_info = Wire(Decoupled(io.in.bits.cloneType))
   mul_info.valid := mul.io.in.valid
   mul_info.bits := io.in.bits
-  val mul_info_q = withReset(reset.toBool() | io.kill){Queue(mul_info, 3)}  // mul latency is 2
+  val mul_info_q = withReset(reset.asBool() | io.kill){Queue(mul_info, 3)}  // mul latency is 2
   mul_info_q.ready := mul.io.out.valid & !div.io.out.valid
 
   // div
@@ -86,7 +86,7 @@ class FixPointU(implicit p: Parameters) extends Module {
   val div_info = Wire(Decoupled(io.in.bits.cloneType))
   div_info.valid := div.io.in.fire()
   div_info.bits := io.in.bits
-  val div_info_q = withReset(reset.toBool() | io.kill){Queue(div_info, 1)}
+  val div_info_q = withReset(reset.asBool() | io.kill){Queue(div_info, 1)}
   div_info_q.ready := div.io.out.valid
 
   val isDiv = Seq(ALU.ALU_DIV, ALU.ALU_DIVU, ALU.ALU_DIVW, ALU.ALU_DIVUW).map(_ === io.in.bits.alu_op).reduce(_ | _) | Seq(ALU.ALU_REM, ALU.ALU_REMU, ALU.ALU_REMW, ALU.ALU_REMUW).map(_ === io.in.bits.alu_op).reduce(_ | _)
@@ -150,7 +150,7 @@ class MemUIn(implicit val p: Parameters) extends Bundle {
   val A = UInt(p(XLen).W)
   val B = UInt(p(XLen).W)
   val imm = UInt(p(XLen).W)
-  val alu_op = UInt(5.W)
+  val alu_op = UInt(6.W)
   val prd = UInt(6.W) // physics rd id
 
   val ld_type = UInt(3.W)
@@ -180,90 +180,111 @@ class MemReadROBIO(implicit val p: Parameters) extends Bundle {
   }))
 }
 
-class MemU(implicit p: Parameters) extends Module {
+class LSU(implicit val p: Parameters) extends Module {
   val addressSpace = p(AddressSpace)
-  val io = IO(new Bundle {
+  val io = IO(new Bundle{
     val in = Flipped(Decoupled(new MemUIn))
-
     val dcache = Flipped(new CacheCPUIO)
-
     val cdb = Valid(new CDB)
     val rocc_queue = Decoupled(new RoCCQueueIO)
-    //    val memCDB = Valid(new MEMCDB)
-
     val readROB = new MemReadROBIO
-
     val kill = Input(Bool())
   })
 
   import Control._
 
   val alu = Module(new ALU)
-  alu.io.rs1 := io.in.bits.A
-  alu.io.rs2 := Mux(io.in.bits.st_type.orR(), io.in.bits.imm, io.in.bits.B)
-  alu.io.alu_op := io.in.bits.alu_op
-  val alu_res = alu.io.out
+}
 
-  val isCSR = io.in.bits.csr_cmd.orR()
-  val isRoCC = io.in.bits.rocc_cmd.orR()
-  val isLD = (io.in.bits.ld_type.orR()) & !isCSR
-  val isST = (io.in.bits.st_type.orR()) & !isCSR
-  val isALU = (!isCSR) & (!isLD) & (!isST)
+// LoadU for loading from rob and mem
+class LoadU(implicit val p: Parameters) extends Module {
+  val addressSpace = p(AddressSpace)
+  val io = IO(new Bundle{
+    val req = Flipped(Decoupled(new Bundle{
+      val addr = UInt(32.W)
+      val ld_type = UInt(3.W)
+      val idx = UInt(4.W)    // 当前的指令的保留站idx，用于rob读取时候向前查找最近的一项
+    }))
+    val resp = Decoupled(new Bundle{
+      val data = UInt(p(XLen).W)
+    })
+    val dcache = Flipped(new CacheCPUIO)
+    val readROB = new MemReadROBIO
+    val kill = Input(Bool())
+  })
 
-//  // CSR op
-//  val csr = Module(new CSR)
-//  csr.io.cmd := io.in.bits.csr_cmd
-//  csr.io.in := alu_res
-//  csr.io.ctrl_signal.pc := io.in.bits.pc
-//  csr.io.ctrl_signal.addr := alu_res
-//  csr.io.ctrl_signal.inst := io.in.bits.inst
-//  csr.io.ctrl_signal.illegal := io.in.bits.illegal
-//  csr.io.ctrl_signal.st_type := io.in.bits.st_type
-//  csr.io.ctrl_signal.ld_type := io.in.bits.ld_type
-//  csr.io.pc_check := false.B
-//  csr.io.interrupt := io.in.bits.interrupt
-//  csr.io.stall := false.B
-//  csr.io.ctrl_signal.valid := io.in.fire() & isCSR
-
-  val invalid_mem_addr = !WireInit(addressSpace.map(x => {
-    (alu_res >= x._1.U(p(AddresWidth).W)) & (alu_res < (x._1.U(p(AddresWidth).W) + x._2.U(p(AddresWidth).W)))
-  }).reduce(_ | _))
-  // mem FSM
+  // 如果需要的数据全在rob中就可以ret，如果不在或者不全在就需要mem load一次然后ret
   val s_idle :: s_mem :: s_ret :: Nil = Enum(3)
   val state = RegInit(s_idle)
-  val ld_data = RegInit(0.U(p(XLen).W))
-  // Mem op
-  val req_reg = RegInit(0.U.asTypeOf(io.in.bits))
-  val addr_reg = RegInit(0.U(p(AddresWidth).W))
-  val kill_reg = RegInit(false.B)
-  val diff_mask = RegInit(0.U(8.W))
+  val req_reg = RegInit(0.U.asTypeOf(io.req.bits)) // 缓存req
+  val addr_reg = RegInit(0.U(32.W))   // 缓存req 地址
+  val diff_mask = RegInit(0.U(8.W))   // rob存在的数据和req需要的数据之间的差
 
+  // 检测超出地址空间的无效地址
+  val invalid_mem_addr = !WireInit(addressSpace.map(x => {
+    (io.req.bits.addr >= x._1.U(p(AddresWidth).W)) & (io.req.bits.addr < (x._1.U(p(AddresWidth).W) + x._2.U(p(AddresWidth).W)))
+  }).reduce(_ | _))
+
+  // mem 封装了从cache load数据的功能
   val mem = Module(new OOOMEM)
-  mem.io.ld_type := Mux(state === s_idle, io.in.bits.ld_type, req_reg.ld_type)
-  mem.io.alu_res := Mux(state === s_idle, alu_res, addr_reg)
-  mem.io.inst_valid := (!io.kill) & io.in.fire() & (state === s_idle) & isLD & (io.readROB.resp.fire() & !io.readROB.resp.bits.meet) & (!invalid_mem_addr) // idle状态，来了mem指令，并且rob中无
+  mem.io.ld_type := Mux(state === s_idle, io.req.bits.ld_type, req_reg.ld_type)
+  mem.io.alu_res := Mux(state === s_idle, io.req.bits.addr, addr_reg)
+  mem.io.inst_valid := (!io.kill) & io.req.fire() & (state === s_idle) & (io.readROB.resp.fire & !io.readROB.resp.bits.meet) & (!invalid_mem_addr) // idle状态，来了mem指令，并且rob中无
   mem.io.dcache <> io.dcache
 
+  // 最终拼凑的结果
+  val ld_data = RegInit(0.U(p(XLen).W))
+
+  switch(state) {
+    is(s_idle) {
+      when(io.req.fire() & !io.kill) {
+        req_reg := io.req.bits
+        addr_reg := io.req.bits.addr
+        when(io.readROB.resp.fire & io.readROB.resp.bits.meet) {
+          // 全部在rob中，可以直接ret
+          state := s_ret
+          diff_mask := io.readROB.resp.bits.mask ^ io.readROB.req.bits.mask
+        }.elsewhen(invalid_mem_addr) {
+          // 无效的地址,由于乱须执行导致
+          state := s_ret
+        }.elsewhen(io.readROB.resp.fire & !io.readROB.resp.bits.meet) {
+          // 不在或者不完全在rob中，需要向mem发送ld请求
+          state := s_mem
+          diff_mask := io.readROB.resp.bits.mask ^ io.readROB.req.bits.mask
+        }
+      }
+    }
+    is(s_mem) {
+      when(mem.io.l_data.valid) {
+        // get data from dcache by mem
+        state := s_ret
+      }
+    }
+    is(s_ret) {
+      // return data
+      state := s_idle
+    }
+  }
+
   // 读取rob的时候要找最近的addr和mask都能匹配上的那一项
-  io.readROB.req.valid := io.in.fire() & isLD
-  io.readROB.req.bits.addr := alu_res
-  io.readROB.req.bits.mask := MuxLookup(io.in.bits.ld_type, 0.U, Array(
-    LD_LD -> ("b1111_1111".U),
-    LD_LW -> ("b0000_1111".U << alu_res(2, 0).asUInt()), // <<0 or << 4
-    LD_LH -> ("b0000_0011".U << alu_res(2, 0).asUInt()), // <<0, 2, 4, 6
-    LD_LB -> ("b0000_0001".U << alu_res(2, 0).asUInt()), // <<0, 1, 2, 3 ... 7
-    LD_LWU -> ("b0000_1111".U << alu_res(2, 0).asUInt()), // <<0 or << 4
-    LD_LHU -> ("b0000_0011".U << alu_res(2, 0).asUInt()), // <<0, 2, 4, 6
-    LD_LBU -> ("b0000_0001".U << alu_res(2, 0).asUInt()), // <<0, 1, 2, 3 ... 7
+  io.readROB.req.valid := io.req.fire()
+  io.readROB.req.bits.addr := io.req.bits.addr
+  io.readROB.req.bits.mask := MuxLookup(io.req.bits.ld_type, 0.U, Array(
+    Control.LD_LD  -> ("b1111_1111".U),
+    Control.LD_LW  -> ("b0000_1111".U << io.req.bits.addr(2, 0).asUInt()), // <<0 or << 4
+    Control.LD_LH  -> ("b0000_0011".U << io.req.bits.addr(2, 0).asUInt()), // <<0, 2, 4, 6
+    Control.LD_LB  -> ("b0000_0001".U << io.req.bits.addr(2, 0).asUInt()), // <<0, 1, 2, 3 ... 7
+    Control.LD_LWU -> ("b0000_1111".U << io.req.bits.addr(2, 0).asUInt()), // <<0 or << 4
+    Control.LD_LHU -> ("b0000_0011".U << io.req.bits.addr(2, 0).asUInt()), // <<0, 2, 4, 6
+    Control.LD_LBU -> ("b0000_0001".U << io.req.bits.addr(2, 0).asUInt()), // <<0, 1, 2, 3 ... 7
   ))(7, 0)
-  io.readROB.req.bits.idx := io.in.bits.idx
+  io.readROB.req.bits.idx := io.req.bits.idx
 
-
-  when((state === s_idle)) {
-    when(io.readROB.resp.fire()) {
+  when(state === s_idle) {
+    when(io.readROB.resp.fire) {
       when(io.readROB.resp.bits.meet) {
         val res = io.readROB.resp.bits.data >> (io.readROB.req.bits.addr(2, 0) << 3.U).asUInt()
-        ld_data := MuxLookup(io.in.bits.ld_type, 0.S(p(XLen).W), Seq(
+        ld_data := MuxLookup(io.req.bits.ld_type, 0.S(p(XLen).W), Seq(
           Control.LD_LD -> res(63, 0).asSInt(),
           Control.LD_LW -> res(31, 0).asSInt(),
           Control.LD_LH -> res(15, 0).asSInt(),
@@ -299,46 +320,149 @@ class MemU(implicit p: Parameters) extends Module {
     )).asUInt()
   }
 
-  // if input is a rocc inst, need to make sure rocc_queue is ready to accept rs1 and rs2
-  io.in.ready := (state === s_idle) & ((io.in.valid & io.in.bits.rocc_cmd.orR() & io.rocc_queue.ready) | !io.in.bits.rocc_cmd.orR())
+  io.req.ready := state === s_idle
+  // resp逻辑
+  io.resp.valid := state === s_ret
+  io.resp.bits.data := ld_data
+}
 
+class MemU(implicit p: Parameters) extends Module {
+  val addressSpace = p(AddressSpace)
+  val io = IO(new Bundle {
+    val in = Flipped(Decoupled(new MemUIn))
 
-  when((((state === s_idle) & (io.in.fire() & isLD) & !io.kill) | (state === s_mem)) & io.kill) {
+    val dcache = Flipped(new CacheCPUIO)
+
+    val cdb = Valid(new CDB)
+    val rocc_queue = Decoupled(new RoCCQueueIO)
+    //    val memCDB = Valid(new MEMCDB)
+
+    val readROB = new MemReadROBIO
+
+    val kill = Input(Bool())
+  })
+
+  import Control._
+
+  val alu = Module(new ALU)
+  alu.io.rs1 := io.in.bits.A
+  alu.io.rs2 := Mux(io.in.bits.st_type.orR(), io.in.bits.imm, io.in.bits.B)
+  alu.io.alu_op := io.in.bits.alu_op
+  val alu_res = alu.io.out
+
+  val isCSR = io.in.bits.csr_cmd.orR()
+  val isRoCC = io.in.bits.rocc_cmd.orR()
+  val isLD = (io.in.bits.ld_type.orR()) & !isCSR
+  val isST = (io.in.bits.st_type.orR()) & !isCSR
+  val isAMOW = (io.in.bits.alu_op >= ALU.ALU_AMOADD_W) & (io.in.bits.alu_op <= ALU.ALU_AMOSWAP_W)
+  val isAMOD = (io.in.bits.alu_op >= ALU.ALU_AMOADD_D) & (io.in.bits.alu_op <= ALU.ALU_AMOSWAP_D)
+  val isAMO = isAMOW | isAMOD
+  val isLR = (io.in.bits.alu_op === ALU.ALU_LR_W) | (io.in.bits.alu_op === ALU.ALU_LR_D)
+  val isSC = (io.in.bits.alu_op === ALU.ALU_SC_W) | (io.in.bits.alu_op === ALU.ALU_SC_D)
+  val isALU = (!isCSR) & (!isLD) & (!isST) & (!isRoCC) & (!isAMO) & (!isLR) & (!isSC)
+
+  val in_reg = RegInit(0.U.asTypeOf(io.in.bits))
+  val isAMOW_reg = RegInit(false.B)
+  val addr_reg = RegInit(0.U(32.W))
+  val kill_reg = RegInit(false.B)
+
+  val s_idle :: s_load :: s_amoload :: s_amocal :: s_amostore :: Nil = Enum(5)
+  val state = RegInit(s_idle)
+
+  when(io.in.fire() & (isLD | isAMO)){
+    in_reg := io.in.bits
+    addr_reg := alu_res
+    isAMOW_reg := isAMOW
+  }
+  when((state =/= s_idle) & io.kill){
     kill_reg := true.B
-  }.elsewhen(state === s_ret) {
+  }.elsewhen(state === s_idle){
     kill_reg := false.B
   }
 
-  switch(state) {
-    is(s_idle) {
-      req_reg := io.in.bits
-      addr_reg := alu_res
-      when(io.in.fire() & isLD & !io.kill) {
-        when(io.readROB.resp.fire() & io.readROB.resp.bits.meet) {
-          // 全部在rob中，可以直接ret
-          state := s_ret
-          diff_mask := io.readROB.resp.bits.mask ^ io.readROB.req.bits.mask
-        }.elsewhen(invalid_mem_addr) {
-          // 无效的地址,由于乱须执行导致
-          state := s_ret
-        }.elsewhen(io.readROB.resp.fire() & !io.readROB.resp.bits.meet) {
-          // 不在或者不完全在rob中，需要向mem发送ld请求
-          state := s_mem
-          diff_mask := io.readROB.resp.bits.mask ^ io.readROB.req.bits.mask
-        }
-      }
+  val loadU = Module(new LoadU)
+  loadU.io.dcache <> io.dcache
+  loadU.io.readROB <> io.readROB
+  loadU.io.kill := io.kill
+  loadU.io.req.valid := io.in.fire() & (isLD | isAMO)
+  loadU.io.req.bits.addr := Mux(isLD, alu_res, io.in.bits.A)
+  loadU.io.req.bits.ld_type := Mux(isLD, io.in.bits.ld_type, Mux(isAMOW, Control.LD_LW, Control.LD_LD))
+  loadU.io.req.bits.idx := io.in.bits.idx
+  loadU.io.resp.ready := (state === s_load) | (state === s_amoload)
+
+
+  // idle 并且 loadU也idle才可以接受 req  todo: 是否可以让直接转发的req直接通过?
+  io.in.ready := (state === s_idle) & (loadU.io.req.ready)
+
+  val ld_data = RegInit(0.U(p(XLen).W))
+  ld_data := Mux(loadU.io.resp.fire(), loadU.io.resp.bits.data, ld_data)
+
+  val amo_res = RegInit(0.U(p(XLen).W))
+  val amo_a = ld_data
+  val amo_b = in_reg.B
+
+  val issub = ((in_reg.alu_op =/= ALU.ALU_AMOADD_D) | (in_reg.alu_op =/= ALU.ALU_AMOADD_W)).asBool()
+  val _add = (amo_a +& (amo_b ^ Cat(Seq.fill(p(XLen))(issub)).asUInt())) + issub
+  val _xor = amo_a ^ amo_b
+  val _or  = amo_a | amo_b
+  val _and = amo_a & amo_b
+  val a_lessu_b = !_add(p(XLen))    // _add = a - b + Mod，如果a-b是正数，那么最高位为1, a>b
+  val a_less_b  = _xor(p(XLen)-1) ^ a_lessu_b  // a，b异号  a-b 的符号位置相加为0，扩展的符号位不会变
+  val _minu = Mux(a_lessu_b, amo_a, amo_b)
+  val _maxu = Mux(a_lessu_b, amo_b, amo_a)
+  val _min = Mux(a_less_b, amo_a, amo_b)
+  val _max = Mux(a_less_b, amo_b, amo_a)
+
+  when(state === s_amocal){
+    amo_res := MuxLookup(in_reg.alu_op, 0.U, Seq(
+      ALU.ALU_AMOADD_W  -> _add,
+      ALU.ALU_AMOXOR_W  -> _xor,
+      ALU.ALU_AMOOR_W   -> _or,
+      ALU.ALU_AMOAND_W  -> _and,
+      ALU.ALU_AMOMIN_W  -> _min,
+      ALU.ALU_AMOMAX_W  -> _max,
+      ALU.ALU_AMOMINU_W -> _minu,
+      ALU.ALU_AMOMAXU_W -> _maxu,
+      ALU.ALU_AMOSWAP_W -> amo_b,
+      ALU.ALU_AMOADD_D  -> _add,
+      ALU.ALU_AMOXOR_D  -> _xor,
+      ALU.ALU_AMOOR_D   -> _or,
+      ALU.ALU_AMOAND_D  -> _and,
+      ALU.ALU_AMOMIN_D  -> _min,
+      ALU.ALU_AMOMAX_D  -> _max,
+      ALU.ALU_AMOMINU_D -> _minu,
+      ALU.ALU_AMOMAXU_D -> _maxu,
+      ALU.ALU_AMOSWAP_D -> amo_b,
+    ))
+  }
+
+  switch(state){
+    is(s_idle){
+      state := MuxCase(state, Seq(
+        (io.in.fire() & isLD & !io.kill) -> s_load,
+        (io.in.fire() & isAMO & !io.kill) -> s_amoload
+      ))
     }
-    is(s_mem) {
-      when(mem.io.l_data.valid) {
-        // get data from dcache by mem
-        state := s_ret
-      }
+    is(s_load){
+      state := MuxCase(state, Seq(
+        loadU.io.resp.fire() -> s_idle
+      ))
     }
-    is(s_ret) {
-      // return data
+    is(s_amoload){
+      state := MuxCase(state, Seq(
+        loadU.io.resp.fire() -> s_amocal
+      ))
+    }
+    is(s_amocal){
+      // 计算
+      state := s_amostore
+    }
+    is(s_amostore){
+      // 存储
       state := s_idle
     }
   }
+
 
   io.cdb.bits.addr := 0.U
   io.cdb.bits.mask := 0.U
@@ -411,17 +535,30 @@ class MemU(implicit p: Parameters) extends Module {
       //      io.memCDB.bits.brHit := true.B
       //      io.memCDB.bits.expt  := false.B
       //      io.memCDB.valid := true.B
-    }.otherwise {
-      // load inst
-      io.cdb.bits.idx := req_reg.idx
-      io.cdb.bits.prn := req_reg.prd
-      io.cdb.bits.data := Mux(state === s_ret, ld_data, 0.U)
-      io.cdb.bits.wen := req_reg.wen & (io.cdb.bits.prn =/= 0.U)
+    }.elsewhen(state === s_amostore){
+      // amo store
+      io.cdb.bits.idx := in_reg.idx
+      io.cdb.bits.prn := in_reg.prd
+      io.cdb.bits.data := amo_res
+      io.cdb.bits.wen := true.B  // amo need write back to register, it will done by csr
       io.cdb.bits.brHit := true.B
       io.cdb.bits.expt := false.B
-      io.cdb.bits.pc := req_reg.pc
-      io.cdb.bits.inst := req_reg.inst
-      io.cdb.valid := (state === s_ret) & (!kill_reg) & !io.kill
+      io.cdb.bits.pc := in_reg.pc
+      io.cdb.bits.inst := in_reg.inst
+      io.cdb.valid := true.B & !kill_reg & !io.kill
+      io.cdb.bits.addr := addr_reg
+      io.cdb.bits.mask := Mux(isAMOW_reg, "b0000_1111".U << io.cdb.bits.addr(2, 0).asUInt(), "b1111_1111".U)
+    }.otherwise {
+      // load inst
+      io.cdb.bits.idx := in_reg.idx
+      io.cdb.bits.prn := in_reg.prd
+      io.cdb.bits.data := loadU.io.resp.bits.data
+      io.cdb.bits.wen := in_reg.wen & (io.cdb.bits.prn =/= 0.U)
+      io.cdb.bits.brHit := true.B
+      io.cdb.bits.expt := false.B
+      io.cdb.bits.pc := in_reg.pc
+      io.cdb.bits.inst := in_reg.inst
+      io.cdb.valid := ((state === s_load) & loadU.io.resp.fire()) & (!kill_reg) & !io.kill
       io.cdb.bits.addr := addr_reg
     }
   }

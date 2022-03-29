@@ -77,7 +77,7 @@ class RenameMap(implicit p: Parameters) extends Module {
     }
   })
 
-  val STATECONST = new Bundle {
+  val STATECONST = new {
     val EMPRY = 0.U(2.W)
     val MAPPED = 1.U(2.W)
     val WB = 2.U(2.W)

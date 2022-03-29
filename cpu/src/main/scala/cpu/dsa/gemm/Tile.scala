@@ -18,8 +18,6 @@ class TileIO[T<:Data](inType: T, outType: T, accType: T)(implicit p: Parameters)
 
   val ctrl_in = Input(Vec(p(TileCol), new PEControl))
   val ctrl_out = Output(Vec(p(TileCol), new PEControl))
-
-  override def cloneType = new TileIO(inType, outType, accType).asInstanceOf[this.type]
 }
 
 class Tile[T<:Data:Arithmetic](inType: T, outType: T, accType: T)(implicit p: Parameters) extends Module {

@@ -19,8 +19,6 @@ class DelayMeshIO[T<:Data](inType: T, outType: T, accType: T)(implicit p: Parame
   val resp = Decoupled(new Bundle{
     val c_out = Vec(col, Vec(p(TileCol), outType))
   })
-
-  override def cloneType = new DelayMeshIO(inType, outType, accType).asInstanceOf[this.type]
 }
 
 class DelayMesh[T<:Data:Arithmetic](inType: T, outType: T, accType: T)(implicit p: Parameters) extends Module with GEMMConstant {

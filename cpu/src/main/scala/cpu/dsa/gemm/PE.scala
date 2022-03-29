@@ -21,9 +21,6 @@ class PEIO[T<:Data](inType: T, outType: T) extends Bundle{
 
   val ctrl_in = Input(new PEControl)
   val ctrl_out = Output(new PEControl)
-
-  // inType and outType can be "val", need cloneType!
-  override def cloneType = new PEIO(inType, outType).asInstanceOf[this.type]
 }
 
 

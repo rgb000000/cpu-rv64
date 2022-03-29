@@ -35,8 +35,6 @@ class ScratchPadBankWriteIO(val depth: Int, val w: Int)(implicit p: Parameters) 
 class ScratchPadBankIO(val depth: Int, val w: Int)(implicit p: Parameters) extends Bundle {
   val read = new ScratchPanBankReadIO(depth, w)
   val write = new ScratchPadBankWriteIO(depth, w)
-
-  override def cloneType = new ScratchPadBankIO(depth, w).asInstanceOf[this.type]
 }
 
 class ScratchPadBank(val depth: Int, val w: Int)(implicit p: Parameters) extends Module {

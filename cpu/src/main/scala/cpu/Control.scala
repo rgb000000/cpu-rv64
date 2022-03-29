@@ -178,7 +178,33 @@ object Control {
     remu   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_REMU,   BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
     remuw  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_REMUW,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
 
-    // custom0
+    // RV64A all in R type
+
+    amoadd_w  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOADD_W ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amoxor_w  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOXOR_W ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amoor_w   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOOR_W  ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amoand_w  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOAND_W ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amomin_w  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOMIN_W ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amomax_w  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOMAX_W ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amominu_w -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOMINU_W,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amomaxu_w -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOMAXU_W,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amoswap_w -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOSWAP_W,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    lr_w      -> List(PC_4,   A_RS1,  B_XXX, IMM_X,   ALU_LR_W     ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    sc_w      -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SC_W     ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amoadd_d  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOADD_D ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amoxor_d  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOXOR_D ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amoor_d   -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOOR_D  ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amoand_d  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOAND_D ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amomin_d  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOMIN_D ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amomax_d  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOMAX_D ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amominu_d -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOMINU_D,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amomaxu_d -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOMAXU_D,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    amoswap_d -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_AMOSWAP_D,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    lr_d      -> List(PC_4,   A_RS1,  B_XXX, IMM_X,   ALU_LR_D     ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+    sc_d      -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SC_D     ,  BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
+
+
+  // custom0
     roccw_rs1_rs2 -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N, RoCC_W),
     roccr_rd_rs1  -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_R),
     rocc_mvin     -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N, RoCC_W),

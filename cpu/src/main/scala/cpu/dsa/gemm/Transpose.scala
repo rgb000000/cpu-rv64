@@ -11,8 +11,6 @@ class TransposeIO[T <: Data](inType: T)(implicit p: Parameters) extends Bundle{
 
   val in = Flipped(Decoupled(Vec(dim, inType)))
   val out = Decoupled(Vec(dim, inType))
-
-  override def cloneType = new TransposeIO(inType).asInstanceOf[this.type]
 }
 
 trait TransposeParam{

@@ -18,8 +18,6 @@ class MeshIO[T<:Data](inType: T, outType: T, accType: T)(implicit p: Parameters)
   val c_out = Output(Vec(col, Vec(p(TileCol), outType)))
 
   val ctrl_in = Input(Vec(col, Vec(p(TileCol), new PEControl)))
-
-  override def cloneType = new MeshIO(inType, outType, accType).asInstanceOf[this.type]
 }
 
 class Mesh[T<:Data:Arithmetic](inType: T, outType: T, accType: T)(implicit p: Parameters) extends Module {
