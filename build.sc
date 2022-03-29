@@ -29,7 +29,9 @@ object `api-config-chipsalliance` extends CommonModule {
 
 object difftest extends CommonModule {
   override def millSourcePath = os.pwd / "dependency" / "difftest"
-  override def ivyDeps = super.ivyDeps() ++ chisel
+  override def ivyDeps = super.ivyDeps() ++ Agg(
+    ivy"edu.berkeley.cs::chisel3:3.5.1",
+  )
 }
 
 object hardfloat extends SbtModule with CommonModule {
@@ -41,7 +43,7 @@ object `rocket-chip` extends SbtModule with CommonModule {
 
   override def ivyDeps = super.ivyDeps() ++ Agg(
     ivy"${scalaOrganization()}:scala-reflect:${scalaVersion()}",
-    ivy"org.json4s::json4s-jackson:3.6.1"
+    // ivy"org.json4s::json4s-jackson:3.6.1"
   ) ++ chisel
 
   object macros extends SbtModule with CommonModule
@@ -78,17 +80,10 @@ object gcd extends SbtModule with CommonModule { m =>
 }
 
 
-object cpu extends SbtModule with CommonModule { m =>
+object cpu extends SbtModule { m =>
   override def millSourcePath = os.pwd / "cpu"
 
-  override def forkArgs = Seq("-Xmx64G")
-
-  override def ivyDeps = super.ivyDeps() ++ chisel
-
-  override def moduleDeps = super.moduleDeps ++ Seq(
-    `rocket-chip`,
-    difftest
-  )
+  override def scalaVersion = "2.13.8"
 
   override def scalacOptions = Seq(
     "-language:reflectiveCalls",
@@ -98,14 +93,24 @@ object cpu extends SbtModule with CommonModule { m =>
     "-P:chiselplugin:genBundleElements"
   )
 
+  override def ivyDeps = Agg(
+    ivy"edu.berkeley.cs::chisel3:3.5.1",
+  )
+
   override def scalacPluginIvyDeps = Agg(
-    ivy"edu.berkeley.cs:::chisel3-plugin:3.4.3",
-    ivy"org.scalamacros:::paradise:2.1.1"
+    ivy"edu.berkeley.cs:::chisel3-plugin:3.5.1",
   )
 
   object test extends Tests with ScalaTest {
     override def ivyDeps = m.ivyDeps() ++ Agg(
-      ivy"edu.berkeley.cs::chiseltest:0.3.3"
+      ivy"edu.berkeley.cs::chiseltest:0.5.1"
     )
   }
+
+  override def forkArgs = Seq("-Xmx64G")
+
+  override def moduleDeps = super.moduleDeps ++ Seq(
+    `rocket-chip`,
+    difftest
+  )
 }

@@ -1,32 +1,27 @@
 load("@io_bazel_rules_scala//scala:scala.bzl", "scala_binary", "scala_library", "scala_test")
-load("@rules_verilog//verilog:defs.bzl", "VerilogModuleInfo")
-load("@rules_verilator//verilator:defs.bzl", "verilator_cc_library")
 
 _chisel_deps = [
-    "@maven//:edu_berkeley_cs_chisel3_2_12",
-    "@maven//:edu_berkeley_cs_chisel3_core_2_12",
-    "@maven//:edu_berkeley_cs_chisel3_macros_2_12",
-    "@maven//:edu_berkeley_cs_firrtl_2_12",
+    "@maven//:edu_berkeley_cs_chisel3_2_13",
+    "@maven//:edu_berkeley_cs_chisel3_core_2_13",
+    "@maven//:edu_berkeley_cs_chisel3_macros_2_13",
+    "@maven//:edu_berkeley_cs_firrtl_2_13",
     "@io_bazel_rules_scala//testing/toolchain:scalatest_classpath",
 ]
 
 _chiseltest_deps = [
-    "@maven//:edu_berkeley_cs_chiseltest_2_12",
+    "@maven//:edu_berkeley_cs_chiseltest_2_13",
 ]
 
 _chisel_plugins = [
-    "@maven//:org_scalamacros_paradise_2_12_13",
-    "@maven//:edu_berkeley_cs_chisel3_plugin_2_12_13",
+    "@maven//:edu_berkeley_cs_chisel3_plugin_2_13_8",
 ]
 
 _scalacopts = [
-    "-Xsource:2.11",
     "-language:reflectiveCalls",
     "-deprecation",
     "-feature",
     "-Xcheckinit",
-    # Enables autoclonetype2 in 3.4.x (on by default in 3.5)
-    "-P:chiselplugin:useBundlePlugin",
+    "-P:chiselplugin:genBundleElements"
 ]
 
 def chisel_library(name, srcs, deps = [], resources = [], visibility = None):
@@ -93,10 +88,6 @@ def _chisel_verilog_run_generator_impl(ctx):
     )
     return [
         DefaultInfo(files = depset([out, v_file])),
-        VerilogModuleInfo(
-            top = ctx.attr.module_name,
-            files = depset([out]),
-        ),
     ]
 
 _chisel_verilog_run_generator = rule(
