@@ -323,7 +323,7 @@ class RenameMap(implicit p: Parameters) extends Module {
       // 无条件跳转错误，不用恢复valid，commit为valid，其余状态恢复empty,本次commit提交
       // 来自rob的提交要么reg0，reg1都有效，要么reg0有效，reg1无效，只有这两种情况
       // 这里的fire表示valid并且wen为1
-      when(io.robCommit.reg(0).fire() & io.robCommit.reg(1).fire()){
+      when(io.robCommit.reg(0).fire & io.robCommit.reg(1).fire){
         // 0, 1
         val commit_0 = cam(io.robCommit.reg(0).bits.prn)
         val commit_1 = cam(io.robCommit.reg(1).bits.prn)
@@ -352,7 +352,7 @@ class RenameMap(implicit p: Parameters) extends Module {
         }
       }.otherwise{
         // 0
-        when(io.robCommit.reg(0).fire()){
+        when(io.robCommit.reg(0).fire){
           val commit_0 = cam(io.robCommit.reg(0).bits.prn)
           for(i <- 0 until p(PRNUM)){
             when((cam(i).LRIdx =/= commit_0.LRIdx)){
@@ -366,7 +366,8 @@ class RenameMap(implicit p: Parameters) extends Module {
             }.otherwise{
               // 否则就是此次需要提交的
               cam(i).valid := true.B
-              when((i.U =/= 0.U)| io.robCommit.reg(0).bits.skipWB){
+              // todo: skipWB ???
+              when((i.U =/= 0.U) & !io.robCommit.reg(0).bits.skipWB){
                 // cam0 is 0号结构寄存器  其状态不会改变
 //                printf(">>> commit_0 cam(i) lr: %d pr: %d state: %d\n", cam(i).LRIdx, i.U, cam(i).state)
                 assert(cam(i).state === STATECONST.WB)
@@ -374,7 +375,7 @@ class RenameMap(implicit p: Parameters) extends Module {
               cam(i).state := STATECONST.COMMIT
             }
           }
-        }.elsewhen(io.robCommit.reg(1).fire()){
+        }.elsewhen(io.robCommit.reg(1).fire){
           val commit_1 = cam(io.robCommit.reg(1).bits.prn)
           for(i <- 0 until p(PRNUM)){
             when((cam(i).LRIdx =/= commit_1.LRIdx)){
@@ -406,8 +407,8 @@ class RenameMap(implicit p: Parameters) extends Module {
   }.otherwise{
     // cdb、robCommit和allocate三者不会冲突
     io.cdb.foreach(cdb => {
-      when(cdb.fire() & (cdb.bits.prn =/= 0.U)) {
-        assert(cam(cdb.bits.prn).state === STATECONST.MAPPED)
+      when(cdb.fire & (cdb.bits.prn =/= 0.U)) {
+        assert(cam(cdb.bits.prn).state === STATECONST.MAPPED, s"${cdb.bits.pc.toString()} wb reg error, state =/= MAPPED")
         cam(cdb.bits.prn).state := STATECONST.WB
         cam(cdb.bits.prn).robIdx := cdb.bits.idx
       }

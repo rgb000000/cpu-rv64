@@ -135,9 +135,9 @@ class OOO(implicit p: Parameters) extends Module {
     station.io.in(i).valid := if_reg(i).valid
 
     // write rob
-    rob.io.in.fromID(i).bits.prdORaddr            := station.io.in(i).bits.prd     // Mux(ctrl(i).st_type.orR(), 0.U, rename.io.port(i).allocate_c.pr.bits) // todo: how to make sure mem address?
+    rob.io.in.fromID(i).bits.prn                  := station.io.in(i).bits.prd     // Mux(ctrl(i).st_type.orR(), 0.U, rename.io.port(i).allocate_c.pr.bits) // todo: how to make sure mem address?
     rob.io.in.fromID(i).bits.needData             := ctrl(i).st_type.orR() | ctrl(i).wen
-    rob.io.in.fromID(i).bits.isPrd                := !ctrl(i).st_type.orR()
+//    rob.io.in.fromID(i).bits.isPrd                := !ctrl(i).st_type.orR()
     rob.io.in.fromID(i).bits.wen                  := station.io.in(i).bits.wen
     rob.io.in.fromID(i).bits.wb_type              := station.io.in(i).bits.wb_type
     rob.io.in.fromID(i).bits.st_type              := station.io.in(i).bits.st_type

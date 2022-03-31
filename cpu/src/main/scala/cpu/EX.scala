@@ -36,7 +36,6 @@ object ALU {
   val ALU_MULHSU = 24.U(6.W)
   val ALU_MULHU  = 25.U(6.W)
   val ALU_MULW   = 26.U(6.W)
-
   val ALU_DIV    = 27.U(6.W)
   val ALU_DIVU   = 28.U(6.W)
   val ALU_REM    = 29.U(6.W)

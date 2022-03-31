@@ -95,7 +95,7 @@ class FixPointU(implicit p: Parameters) extends Module {
   when(div.io.out.fire()){
     io.cdb.bits.idx := div_info_q.bits.idx
     io.cdb.bits.prn := div_info_q.bits.prd
-    io.cdb.bits.data := div.io.out.bits
+    io.cdb.bits.prn_data := div.io.out.bits
     io.cdb.bits.wen := true.B & (io.cdb.bits.prn =/= 0.U)
     io.cdb.bits.brHit := true.B
     io.cdb.bits.isTaken := false.B
@@ -105,7 +105,7 @@ class FixPointU(implicit p: Parameters) extends Module {
   }.elsewhen(mul.io.out.fire()){
     io.cdb.bits.idx := mul_info_q.bits.idx
     io.cdb.bits.prn := mul_info_q.bits.prd
-    io.cdb.bits.data := mul.io.out.bits
+    io.cdb.bits.prn_data := mul.io.out.bits
     io.cdb.bits.wen := true.B & (io.cdb.bits.prn =/= 0.U)
     io.cdb.bits.brHit := true.B
     io.cdb.bits.isTaken := false.B
@@ -115,7 +115,7 @@ class FixPointU(implicit p: Parameters) extends Module {
   }.otherwise{
     io.cdb.bits.idx := io.in.bits.idx
     io.cdb.bits.prn := io.in.bits.prd
-    io.cdb.bits.data := Mux(io.in.bits.br_type === "b111".U, io.in.bits.pc + 4.U, alu_res)
+    io.cdb.bits.prn_data := Mux(io.in.bits.br_type === "b111".U, io.in.bits.pc + 4.U, alu_res)
     io.cdb.bits.wen := io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
     io.cdb.bits.brHit := Mux(io.in.bits.br_type.orR(), (br.io.taken === io.in.bits.pTaken) & ((br.io.taken & (io.in.bits.pPC === alu_res)) | (!br.io.taken)), true.B)
     io.cdb.bits.isTaken := br.io.taken
@@ -128,6 +128,7 @@ class FixPointU(implicit p: Parameters) extends Module {
   io.cdb.bits.addr := 0.U
   io.cdb.bits.mask := 0.U
   io.cdb.bits.expt := false.B // FixPointU can't generate except
+  io.cdb.bits.store_data := 0.U // FixPoiuntU can't handle store inst
 
   div.io.out.ready := div.io.out.valid & RegNext(div.io.out.valid)
   mul.io.out.ready := mul.io.out.valid & !div.io.out.valid
@@ -371,7 +372,7 @@ class MemU(implicit p: Parameters) extends Module {
 
   when(io.in.fire() & (isLD | isAMO)){
     in_reg := io.in.bits
-    addr_reg := alu_res
+    addr_reg := Mux(isAMO | isLR, io.in.bits.A, alu_res)  // amoop addr is rs1, not alu_res
     isAMOW_reg := isAMOW
   }
   when((state =/= s_idle) & io.kill){
@@ -385,8 +386,8 @@ class MemU(implicit p: Parameters) extends Module {
   loadU.io.readROB <> io.readROB
   loadU.io.kill := io.kill
   loadU.io.req.valid := io.in.fire() & (isLD | isAMO)
-  loadU.io.req.bits.addr := Mux(isLD, alu_res, io.in.bits.A)
-  loadU.io.req.bits.ld_type := Mux(isLD, io.in.bits.ld_type, Mux(isAMOW, Control.LD_LW, Control.LD_LD))
+  loadU.io.req.bits.addr := Mux(isLD & !isLR, alu_res, io.in.bits.A)
+  loadU.io.req.bits.ld_type := Mux(isLD & !isLR, io.in.bits.ld_type, Mux(isAMOW, Control.LD_LW, Control.LD_LD))
   loadU.io.req.bits.idx := io.in.bits.idx
   loadU.io.resp.ready := (state === s_load) | (state === s_amoload)
 
@@ -395,13 +396,14 @@ class MemU(implicit p: Parameters) extends Module {
   io.in.ready := (state === s_idle) & (loadU.io.req.ready)
 
   val ld_data = RegInit(0.U(p(XLen).W))
+  dontTouch(ld_data)
   ld_data := Mux(loadU.io.resp.fire(), loadU.io.resp.bits.data, ld_data)
 
   val amo_res = RegInit(0.U(p(XLen).W))
   val amo_a = ld_data
   val amo_b = in_reg.B
 
-  val issub = ((in_reg.alu_op =/= ALU.ALU_AMOADD_D) | (in_reg.alu_op =/= ALU.ALU_AMOADD_W)).asBool()
+  val issub = ((in_reg.alu_op =/= ALU.ALU_AMOADD_D) & (in_reg.alu_op =/= ALU.ALU_AMOADD_W)).asBool()
   val _add = (amo_a +& (amo_b ^ Cat(Seq.fill(p(XLen))(issub)).asUInt())) + issub
   val _xor = amo_a ^ amo_b
   val _or  = amo_a | amo_b
@@ -415,15 +417,15 @@ class MemU(implicit p: Parameters) extends Module {
 
   when(state === s_amocal){
     amo_res := MuxLookup(in_reg.alu_op, 0.U, Seq(
-      ALU.ALU_AMOADD_W  -> _add,
-      ALU.ALU_AMOXOR_W  -> _xor,
-      ALU.ALU_AMOOR_W   -> _or,
-      ALU.ALU_AMOAND_W  -> _and,
-      ALU.ALU_AMOMIN_W  -> _min,
-      ALU.ALU_AMOMAX_W  -> _max,
-      ALU.ALU_AMOMINU_W -> _minu,
-      ALU.ALU_AMOMAXU_W -> _maxu,
-      ALU.ALU_AMOSWAP_W -> amo_b,
+      ALU.ALU_AMOADD_W  -> ( _add(31, 0) << (addr_reg(2, 0) << 3.U).asUInt()),
+      ALU.ALU_AMOXOR_W  -> ( _xor(31, 0) << (addr_reg(2, 0) << 3.U).asUInt()),
+      ALU.ALU_AMOOR_W   -> (  _or(31, 0) << (addr_reg(2, 0) << 3.U).asUInt()),
+      ALU.ALU_AMOAND_W  -> ( _and(31, 0) << (addr_reg(2, 0) << 3.U).asUInt()),
+      ALU.ALU_AMOMIN_W  -> ( _min(31, 0) << (addr_reg(2, 0) << 3.U).asUInt()),
+      ALU.ALU_AMOMAX_W  -> ( _max(31, 0) << (addr_reg(2, 0) << 3.U).asUInt()),
+      ALU.ALU_AMOMINU_W -> (_minu(31, 0) << (addr_reg(2, 0) << 3.U).asUInt()),
+      ALU.ALU_AMOMAXU_W -> (_maxu(31, 0) << (addr_reg(2, 0) << 3.U).asUInt()),
+      ALU.ALU_AMOSWAP_W -> (amo_b(31, 0) << (addr_reg(2, 0) << 3.U).asUInt()),
       ALU.ALU_AMOADD_D  -> _add,
       ALU.ALU_AMOXOR_D  -> _xor,
       ALU.ALU_AMOOR_D   -> _or,
@@ -477,8 +479,9 @@ class MemU(implicit p: Parameters) extends Module {
     // csr读数只通过commit端口，cdb处不会改变rename和station状态，因为csr放在了rob里面，当前还没有读csr
     io.cdb.bits.idx := io.in.bits.idx
     io.cdb.bits.prn := io.in.bits.prd  // rd
-    io.cdb.bits.data := alu_res        // data传递csr的in
-    io.cdb.bits.wen := false.B // !! io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
+    io.cdb.bits.prn_data := alu_res        // data传递csr的in
+    io.cdb.bits.store_data := 0.U
+    io.cdb.bits.wen := false.B // !! io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)  csr data not occur here
     io.cdb.bits.brHit := true.B
     io.cdb.bits.expt := false.B
     io.cdb.bits.pc := io.in.bits.pc
@@ -489,7 +492,8 @@ class MemU(implicit p: Parameters) extends Module {
     // and its result is return in commit stage
     io.cdb.bits.idx := io.in.bits.idx
     io.cdb.bits.prn := io.in.bits.prd
-    io.cdb.bits.data := alu_res
+    io.cdb.bits.prn_data := alu_res
+    io.cdb.bits.store_data := 0.U
     io.cdb.bits.wen := false.B         // !!
     io.cdb.bits.brHit := true.B
     io.cdb.bits.expt := false.B
@@ -500,7 +504,8 @@ class MemU(implicit p: Parameters) extends Module {
     // fix point op (NOT including branch)
     io.cdb.bits.idx := io.in.bits.idx
     io.cdb.bits.prn := io.in.bits.prd
-    io.cdb.bits.data := alu_res
+    io.cdb.bits.prn_data := alu_res
+    io.cdb.bits.store_data := 0.U
     io.cdb.bits.wen := io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
     io.cdb.bits.brHit := true.B
     io.cdb.bits.expt := false.B // FixPointU can't generate except
@@ -509,12 +514,13 @@ class MemU(implicit p: Parameters) extends Module {
     io.cdb.valid := true.B
   }.otherwise {
     // mem op
-    when(io.in.fire() & io.in.bits.st_type.orR()) {
+    when(io.in.fire() & (io.in.bits.st_type.orR() & !isAMO)) {
       // store inst
       io.cdb.bits.idx := io.in.bits.idx
       io.cdb.bits.prn := 0.U
-      io.cdb.bits.addr := alu_res // 传递st的地址
-      io.cdb.bits.data := (io.in.bits.s_data << (alu_res(2, 0) << 3.U).asUInt()) (63, 0) // 传递st的数据
+      io.cdb.bits.prn_data := 0.U
+      io.cdb.bits.addr := Mux(isSC, io.in.bits.A, alu_res) // 传递st的地址
+      io.cdb.bits.store_data := (io.in.bits.s_data << (io.cdb.bits.addr(2, 0) << 3.U).asUInt()) (63, 0) // 传递st的数据
       io.cdb.bits.wen := 0.U
       io.cdb.bits.brHit := true.B
       io.cdb.bits.expt := false.B
@@ -528,18 +534,11 @@ class MemU(implicit p: Parameters) extends Module {
         ST_SH -> ("b0000_0011".U << io.cdb.bits.addr(2, 0).asUInt()), // <<0, 2, 4, 6
         ST_SB -> ("b0000_0001".U << io.cdb.bits.addr(2, 0).asUInt()), // <<0, 1, 2, 3 ... 7
       ))(7, 0)
-
-      //      io.memCDB.bits.prn   := alu_res
-      //      io.memCDB.bits.data  := io.in.bits.s_data
-      //      io.memCDB.bits.wen   := 0.U
-      //      io.memCDB.bits.brHit := true.B
-      //      io.memCDB.bits.expt  := false.B
-      //      io.memCDB.valid := true.B
     }.elsewhen(state === s_amostore){
       // amo store
       io.cdb.bits.idx := in_reg.idx
       io.cdb.bits.prn := in_reg.prd
-      io.cdb.bits.data := amo_res
+      io.cdb.bits.prn_data := ld_data
       io.cdb.bits.wen := true.B  // amo need write back to register, it will done by csr
       io.cdb.bits.brHit := true.B
       io.cdb.bits.expt := false.B
@@ -547,12 +546,14 @@ class MemU(implicit p: Parameters) extends Module {
       io.cdb.bits.inst := in_reg.inst
       io.cdb.valid := true.B & !kill_reg & !io.kill
       io.cdb.bits.addr := addr_reg
+      io.cdb.bits.store_data := amo_res
       io.cdb.bits.mask := Mux(isAMOW_reg, "b0000_1111".U << io.cdb.bits.addr(2, 0).asUInt(), "b1111_1111".U)
     }.otherwise {
       // load inst
       io.cdb.bits.idx := in_reg.idx
       io.cdb.bits.prn := in_reg.prd
-      io.cdb.bits.data := loadU.io.resp.bits.data
+      io.cdb.bits.prn_data := loadU.io.resp.bits.data
+      io.cdb.bits.store_data := 0.U
       io.cdb.bits.wen := in_reg.wen & (io.cdb.bits.prn =/= 0.U)
       io.cdb.bits.brHit := true.B
       io.cdb.bits.expt := false.B

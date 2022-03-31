@@ -9,6 +9,10 @@ case object XLen extends Field[Int]
 
 case object AddresWidth extends Field[Int]
 
+case object VAddrWidth extends Field[Int]
+
+case object PAddrWidth extends Field[Int]
+
 case object PCStart extends Field[String]
 
 case object PCEVec extends Field[String]
@@ -37,6 +41,7 @@ class BaseConfig extends Config ((site, here, up)=>{
   case NBank          => 1
   case IDBits         => 4
   case AddresWidth    => 32
+  case VAddrWidth     => 32
 
   case BTBIndex       => 16
 

@@ -15,9 +15,9 @@ class ROBIO(implicit val p: Parameters) extends Bundle {
   val in = new Bundle {
     val fromID = Vec(2, Flipped(Valid(new Bundle {
 //      val stationIdx = UInt(4.W)
-      val prdORaddr = UInt(p(AddresWidth).W)
+      val prn = UInt(p(AddresWidth).W)
       val needData = Bool()
-      val isPrd = Bool()
+//      val isPrd = Bool()
 
       val wen = Bool()
       val wb_type = UInt(2.W)
@@ -119,11 +119,15 @@ class ROBInfo(implicit val p: Parameters) extends Bundle {
   val pc = UInt(p(AddresWidth).W)
   val inst = UInt(32.W)
 
-  val prdORaddr = UInt(p(AddresWidth).W)
-  val data = UInt(p(XLen).W)
+  // for writing back reg
+  val prn = UInt(6.W)
+  val prn_data = UInt(p(XLen).W)
+  // for store inst
+  val addr = UInt(p(AddresWidth).W)
+  val store_data = UInt(64.W)
+
   val j_pc = UInt(p(AddresWidth).W)
   val needData = Bool()
-  val isPrd = Bool()    //决定prdORaddr是prn还是memAddress
   val mask = UInt(8.W)
   val wen = Bool()
   val wb_type = UInt(2.W)
@@ -138,6 +142,9 @@ class ROBInfo(implicit val p: Parameters) extends Bundle {
   val isJ = Bool()
   val pTaken = Bool()
   val current_rename_state = Vec(p(PRNUM), Bool())
+
+  val isLR = Bool()
+  val isSC = Bool()
 
   val csr_cmd = UInt(3.W)
   val interrupt = new Bundle {
@@ -171,9 +178,8 @@ class ROB(implicit p: Parameters) extends Module {
   val rob = RegInit(VecInit(Seq.fill(16)(0.U.asTypeOf(new ROBInfo))))
 
   def write_rob(fromIDport: Int, idx: UInt) = {
-    rob(idx).prdORaddr := io.in.fromID(fromIDport).bits.prdORaddr
+    rob(idx).prn := io.in.fromID(fromIDport).bits.prn
     rob(idx).needData := io.in.fromID(fromIDport).bits.needData
-    rob(idx).isPrd := io.in.fromID(fromIDport).bits.isPrd
     rob(idx).wen := io.in.fromID(fromIDport).bits.wen | io.in.fromID(fromIDport).bits.csr_cmd(1,0).orR()
     rob(idx).wb_type := io.in.fromID(fromIDport).bits.wb_type
     rob(idx).st_type := io.in.fromID(fromIDport).bits.st_type
@@ -184,6 +190,8 @@ class ROB(implicit p: Parameters) extends Module {
     rob(idx).inst := io.in.fromID(fromIDport).bits.inst
     rob(idx).isBr := io.in.fromID(fromIDport).bits.isBr
     rob(idx).isJ  := io.in.fromID(fromIDport).bits.isJ
+    rob(idx).isLR := io.in.fromID(fromIDport).bits.ld_type.orR() & (io.in.fromID(fromIDport).bits.inst(6, 0) === "b0101111".U) & (io.in.fromID(fromIDport).bits.inst(28) === "b1".U)
+    rob(idx).isSC := io.in.fromID(fromIDport).bits.st_type.orR() & (io.in.fromID(fromIDport).bits.inst(6, 0) === "b0101111".U) & (io.in.fromID(fromIDport).bits.inst(28) === "b1".U)
     rob(idx).pTaken := io.in.fromID(fromIDport).bits.pTaken
     rob(idx).current_rename_state := io.in.fromID(fromIDport).bits.current_rename_state
     rob(idx).csr_cmd := io.in.fromID(fromIDport).bits.csr_cmd
@@ -217,28 +225,21 @@ class ROB(implicit p: Parameters) extends Module {
 
   // getData
   io.in.cdb.foreach(cdb => {
-    when(cdb.fire() & rob(cdb.bits.idx).isPrd) {
-      // prd是寄存器，不是st指令
+    when(cdb.fire) {
       rob(cdb.bits.idx).state := S_GETDATA
-      rob(cdb.bits.idx).data := cdb.bits.data
-      rob(cdb.bits.idx).j_pc := cdb.bits.j_pc
 
-      rob(cdb.bits.idx).isTake := cdb.bits.isTaken
-      rob(cdb.bits.idx).brHit := cdb.bits.brHit
-      rob(cdb.bits.idx).expt := cdb.bits.expt
+      // prn
+      rob(cdb.bits.idx).prn_data := cdb.bits.prn_data
 
-      rob(cdb.bits.idx).memAddr := cdb.bits.addr
-    }.elsewhen(cdb.fire() & !rob(cdb.bits.idx).isPrd){
-      // st指令
-      rob(cdb.bits.idx).prdORaddr := cdb.bits.addr
+      // store
+      rob(cdb.bits.idx).addr := cdb.bits.addr
       rob(cdb.bits.idx).mask := cdb.bits.mask
-      rob(cdb.bits.idx).state := S_GETDATA
-      rob(cdb.bits.idx).data := cdb.bits.data
-      rob(cdb.bits.idx).j_pc := cdb.bits.j_pc
+      rob(cdb.bits.idx).store_data := cdb.bits.store_data
 
       rob(cdb.bits.idx).isTake := cdb.bits.isTaken
       rob(cdb.bits.idx).brHit := cdb.bits.brHit
       rob(cdb.bits.idx).expt := cdb.bits.expt
+      rob(cdb.bits.idx).j_pc := cdb.bits.j_pc
 
       rob(cdb.bits.idx).memAddr := cdb.bits.addr
     }
@@ -247,7 +248,7 @@ class ROB(implicit p: Parameters) extends Module {
   val csr = Module(new CSR)
   def csr_enable(rob_info: ROBInfo, valid: Bool): Unit = {
     csr.io.cmd                 := rob_info.csr_cmd
-    csr.io.in                  := rob_info.data
+    csr.io.in                  := rob_info.prn_data
     csr.io.ctrl_signal.pc      := rob_info.pc
     csr.io.ctrl_signal.addr    := 0.U
     csr.io.ctrl_signal.inst    := rob_info.inst
@@ -260,12 +261,22 @@ class ROB(implicit p: Parameters) extends Module {
     csr.io.ctrl_signal.valid   := valid
   }
 
+  val monitor = Module(new Monitor)
+  monitor.io.kill := io.except  // only kill when except
+  def monitor_enable(rob_info: ROBInfo, valid: Bool): Unit = {
+    monitor.io.update.valid := valid & (rob_info.isLR | rob_info.isSC)
+    monitor.io.update.bits.addr := rob_info.addr
+    monitor.io.update.bits.op := rob_info.isSC
+    monitor.io.sc_addr := rob_info.addr
+  }
+
 
   dontTouch(io.commit)
   def write_prfile(portIdx: Int, rob_info: ROBInfo, valid: Bool) = {
-    io.commit.reg(portIdx).bits.prn := rob_info.prdORaddr
+    io.commit.reg(portIdx).bits.prn := rob_info.prn
     io.commit.reg(portIdx).bits.data := Mux(rob_info.csr_cmd(1,0).orR(), csr.io.out,
-                                        Mux(rob_info.rocc_cmd === RoCC_R, io.commit2rocc.resp.bits.data, rob_info.data))
+                                        Mux(rob_info.isSC, monitor.io.sc_ret,
+                                        Mux(rob_info.rocc_cmd === RoCC_R, io.commit2rocc.resp.bits.data, rob_info.prn_data)))
     io.commit.reg(portIdx).bits.wen := rob_info.wen
     io.commit.reg(portIdx).bits.pc := rob_info.pc
     io.commit.reg(portIdx).bits.inst := rob_info.inst
@@ -281,19 +292,19 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit.reg(portIdx).bits.fence_i_do := (rob_info.inst === ISA.fence_i) & valid
     io.commit.reg(portIdx).bits.isRocc_R := (rob_info.rocc_cmd === RoCC_R) & valid
 
-    io.commit2rename(portIdx).valid := rob_info.wen & rob_info.isPrd & valid
-    io.commit2rename(portIdx).bits.prn := rob_info.prdORaddr
-    io.commit2rename(portIdx).bits.skipWB := rob_info.csr_cmd.orR()
+    io.commit2rename(portIdx).valid := rob_info.wen & valid
+    io.commit2rename(portIdx).bits.prn := rob_info.prn
+    io.commit2rename(portIdx).bits.skipWB := rob_info.csr_cmd.orR() | rob_info.isSC
 
     io.commit2station(portIdx).valid := valid
-    io.commit2station(portIdx).bits.prn := rob_info.prdORaddr
-    io.commit2station(portIdx).bits.wen := rob_info.wen & rob_info.isPrd
+    io.commit2station(portIdx).bits.prn := rob_info.prn
+    io.commit2station(portIdx).bits.wen := rob_info.wen
   }
 
   def write_dcache(rob_info: ROBInfo, valid: Bool, commitIdx: UInt) = {
     io.commit.dcache.req.valid := valid
-    io.commit.dcache.req.bits.addr := rob_info.prdORaddr
-    io.commit.dcache.req.bits.data := rob_info.data
+    io.commit.dcache.req.bits.addr := rob_info.addr
+    io.commit.dcache.req.bits.data := rob_info.store_data
     io.commit.dcache.req.bits.mask := rob_info.mask
     io.commit.dcache.req.bits.op := 1.U // must write
   }
@@ -308,9 +319,9 @@ class ROB(implicit p: Parameters) extends Module {
     }
   }
 
-  def commit2rename(portIdx: Int, prn: UInt, wen: Bool): Unit = {
-
-  }
+//  def commit2rename(portIdx: Int, prn: UInt, wen: Bool): Unit = {
+//
+//  }
 
 //  def br_info(current_state: Vec[Bool], isHit: Bool, pTaken: Bool, cur_pc: UInt, right_pc: UInt, valid: Bool): Unit ={
 //    io.commit.br_info.valid := valid
@@ -322,14 +333,26 @@ class ROB(implicit p: Parameters) extends Module {
 //  }
 
   def out_br_info(isHit: Bool, info: ROBInfo): Unit ={
-    io.commit.br_info.valid := info.isBr
-    io.commit.br_info.bits.current_rename_state := info.current_rename_state
-    io.commit.br_info.bits.isHit                := isHit
-    io.commit.br_info.bits.isJ                  := info.isJ
-    // isTaken表示实际上跳不跳，有时跳不跳预测是对u的，但是地址不对，这个情况需要考虑到，而不是简单的通过isHit和pTaken判断
-    io.commit.br_info.bits.isTaken              := info.isTake
-    io.commit.br_info.bits.cur_pc               := info.pc
-    io.commit.br_info.bits.right_pc             := info.j_pc
+    when(info.isSC & (monitor.io.sc_ret =/= 0.U) & (info.state === S_GETDATA)){
+      // SC fail, reuse isJ pass
+      io.commit.br_info.valid := true.B
+      io.commit.br_info.bits.current_rename_state := info.current_rename_state
+      io.commit.br_info.bits.isHit                := isHit
+      io.commit.br_info.bits.isJ                  := true.B
+      io.commit.br_info.bits.isTaken              := false.B
+      io.commit.br_info.bits.cur_pc               := info.pc
+      io.commit.br_info.bits.right_pc             := info.pc + 4.U
+    }.otherwise{
+      // normal branch op
+      io.commit.br_info.valid := info.isBr
+      io.commit.br_info.bits.current_rename_state := info.current_rename_state
+      io.commit.br_info.bits.isHit                := isHit
+      io.commit.br_info.bits.isJ                  := info.isJ
+      // isTaken表示实际上跳不跳，有时跳不跳预测是对u的，但是地址不对，这个情况需要考虑到，而不是简单的通过isHit和pTaken判断
+      io.commit.br_info.bits.isTaken              := info.isTake
+      io.commit.br_info.bits.cur_pc               := info.pc
+      io.commit.br_info.bits.right_pc             := info.j_pc
+    }
   }
 
   // commit
@@ -344,6 +367,8 @@ class ROB(implicit p: Parameters) extends Module {
   val head_show = WireInit(head)
   dontTouch(head_show)
   csr_enable(head, head.state === S_GETDATA)
+  monitor_enable(head, (head.state === S_GETDATA) & io.commit.reg(0).valid)
+  // SC fail need flush pipeline
   io.kill := (head.kill & (head.state === S_GETDATA)) & io.commit.reg(0).valid
 
   val s_rocc_cmd :: s_rocc_resp :: Nil = Enum(2)
@@ -357,7 +382,7 @@ class ROB(implicit p: Parameters) extends Module {
   io.commit2rocc.resp.ready := (rocc_commit_state === s_rocc_resp) & (head.state === S_GETDATA)
 
   when(head.state === S_GETDATA){
-    when(head.isPrd & (!head.csr_cmd.orR()) & (!head.rocc_cmd.orR())){
+    when((!head.st_type.orR()) & (!head.csr_cmd.orR()) & (!head.rocc_cmd.orR())){
       // 普通指令
       when(!csr.io.expt){
         // 无中断，正常执行
@@ -405,7 +430,7 @@ class ROB(implicit p: Parameters) extends Module {
         })
         out_br_info(false.B, head)
       }
-    }.elsewhen(head.isPrd & head.csr_cmd.orR()){
+    }.elsewhen(head.csr_cmd.orR()){
       // csr操作
       when(!csr.io.expt){
         // 无中断，正常执行
@@ -436,20 +461,48 @@ class ROB(implicit p: Parameters) extends Module {
         })
         out_br_info(false.B, head)
       }
-    }.elsewhen(!head.isPrd){
-      // st指令
+    }.elsewhen(head.st_type.orR()){
+      // st指令 or amotic inst
       when(!csr.io.expt){
         // 无中断，正常执行
-        write_dcache(head, true.B, 0.U)
-        when(io.commit.dcache.req.ready){
-          commitIdx.value := commitIdx.value + 1.U
-          write_prfile(0, head, true.B)
-          head.state := S_COMMITED
-          out_br_info(true.B, head)
+        when(!head.isSC){
+          // normal store op
+          write_dcache(head, true.B, 0.U)
+          when(io.commit.dcache.req.ready){
+            commitIdx.value := commitIdx.value + 1.U
+            write_prfile(0, head, true.B)
+            head.state := S_COMMITED
+            out_br_info(true.B, head)
+          }.otherwise{
+            // dcache没有准备好，不提交
+            write_prfile(0, head, false.B)
+            out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
+          }
         }.otherwise{
-          // dcache没有准备好，不提交
-          write_prfile(0, head, false.B)
-          out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
+          // SC op
+          when(monitor.io.sc_ret === 0.U){
+            // SC success
+            write_dcache(head, true.B, 0.U)
+            when(io.commit.dcache.req.ready){
+              commitIdx.value := commitIdx.value + 1.U
+              write_prfile(0, head, true.B)
+              head.state := S_COMMITED
+              out_br_info(true.B, head)
+            }.otherwise{
+              // dcache没有准备好，不提交
+              write_prfile(0, head, false.B)
+              out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
+            }
+          }.otherwise{
+            // SC fail   reuse isJ to commit to rename
+            write_dcache(head, false.B, 0.U)
+            commitIdx.value := 0.U
+            write_prfile(0, head, true.B)
+            rob.foreach(x => {
+              x.state := S_EMPTY
+            })
+            out_br_info(false.B, head)
+          }
         }
       }.otherwise{
         // 不执行，提交中断
@@ -530,11 +583,11 @@ class ROB(implicit p: Parameters) extends Module {
     out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
   }
 
-  // station read rob in issue stage
+  // station read rob in issue stage for reg
   for (i <- 0 until 2) {
     for (j <- 0 until 2) {
-      when(io.read(i)(j).stationIdx.fire()) {
-        io.read(i)(j).data.bits := rob(io.read(i)(j).stationIdx.bits).data
+      when(io.read(i)(j).stationIdx.fire) {
+        io.read(i)(j).data.bits := rob(io.read(i)(j).stationIdx.bits).prn_data
         io.read(i)(j).data.valid := true.B
       }.otherwise{
         io.read(i)(j).data.bits := 0.U
@@ -552,16 +605,16 @@ class ROB(implicit p: Parameters) extends Module {
   for(i <- 0 until 8){
     // 每一个字节都分别查询
     val memQueryResult = rob.map(x => {
-      (x.prdORaddr(31, 3) === io.memRead.req.bits.addr(31, 3)) & (!x.isPrd) & (x.mask(i) & io.memRead.req.bits.mask(i)) & (x.state =/= S_EMPTY) // mask的第ibit都是1
+      (x.addr(31, 3) === io.memRead.req.bits.addr(31, 3)) & x.st_type.orR() & (x.mask(i) & io.memRead.req.bits.mask(i)) & (x.state =/= S_EMPTY) // mask的第ibit都是1
     })
     val memQueryResult_1 = Cat(memQueryResult).asUInt()
     val memQueryResult_2 = Wire(UInt(16.W))
     memQueryResult_2 := ((memQueryResult_1 >> (16.U - 1.U - io.memRead.req.bits.idx)).asUInt() | (memQueryResult_1 << (1.U + io.memRead.req.bits.idx)).asUInt())(15, 0).asUInt()
     val tmpIdx = PriorityEncoder(memQueryResult_2)
     val memQueryIdx = (io.memRead.req.bits.idx - tmpIdx)(3, 0).asUInt() // 往上查找
-    when(io.memRead.req.fire()){
+    when(io.memRead.req.fire){
       ret_mask(i) := Cat(memQueryResult_2).orR()
-      ret_data(i) := Mux(Cat(memQueryResult_2).orR(), rob(memQueryIdx).data((i+1)*8 - 1, i*8), 0.U)
+      ret_data(i) := Mux(Cat(memQueryResult_2).orR(), rob(memQueryIdx).store_data((i+1)*8 - 1, i*8), 0.U)
     }.otherwise{
       ret_mask(i) := false.B
       ret_data(i) := 0.U
