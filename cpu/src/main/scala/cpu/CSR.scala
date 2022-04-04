@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
 import chisel3.util.experimental.BoringUtils
+import cpu.CSR.PRV_M
 import difftest.{DifftestArchEvent, DifftestCSRState}
 
 object CSR {
@@ -15,6 +16,8 @@ object CSR {
 
   // Supports machine & user modes
   val PRV_U = 0x0.U(2.W)
+  val PRV_S = 0x1.U(2.W)
+  val PRV_H = 0x2.U(2.W)
   val PRV_M = 0x3.U(2.W)
 }
 
@@ -124,6 +127,9 @@ class CSR (implicit p: Parameters) extends Module {
   val mcause  = RegInit(0.U(p(XLen).W))
   val mcycle  = RegInit(0.U(p(XLen).W))
 
+  val sepc    = RegInit(0.U(p(XLen).W))
+  val scause  = RegInit(0.U(p(XLen).W))
+
   val medeleg = RegInit(0.U(p(XLen).W))
   val mideleg = RegInit(0.U(p(XLen).W))
 
@@ -140,6 +146,9 @@ class CSR (implicit p: Parameters) extends Module {
   mip.msip := io.interrupt.soft
   mip.meip := io.interrupt.external
 
+  val ssip = RegInit(false.B)
+  mip.ssip := ssip
+
 //  dontTouch(mstatus)
 //  dontTouch(mie)
 //  dontTouch(mip)
@@ -147,6 +156,7 @@ class CSR (implicit p: Parameters) extends Module {
   val mbadaddr = RegInit(0.U(p(XLen).W))
 
 
+  // read csr
   val csrFile = Seq(
     BitPat(CSRs.mstatus.U(12.W))  -> mstatus.asUInt(),
     BitPat(CSRs.mtvec.U(12.W))    -> mtvec,
@@ -160,7 +170,6 @@ class CSR (implicit p: Parameters) extends Module {
     BitPat(CSRs.medeleg.U(12.W))  -> medeleg,
     BitPat(CSRs.medeleg.U(12.W))  -> mideleg,
   )
-
   io.out := Lookup(csr_addr, 0.U, csrFile).asUInt()
 
   val privValid = csr_addr(9, 8) <= mstatus.prv
@@ -204,21 +213,39 @@ class CSR (implicit p: Parameters) extends Module {
   io.exvec := mtvec
   io.epc  := mepc
 
+  val isInterrupe = time_interrupt | soft_interrupt | external_interrupt
+  val cause = Mux(time_interrupt,               (1.U << (p(XLen)-1).U).asUInt() | 7.U,
+              Mux(soft_interrupt,               (1.U << (p(XLen)-1).U).asUInt() | 3.U,
+              Mux(external_interrupt,           (1.U << (p(XLen)-1).U).asUInt() | 11.U,
+              Mux(iaddrInvalid,                 Causes.misaligned_fetch.U,
+              Mux(laddrInvalid,                 Causes.misaligned_load.U,
+              Mux(saddrInvalid,                 Causes.misaligned_store.U,
+              Mux(isEcall,                      Causes.machine_ecall.U,
+              Mux(isEbreak,                     Causes.breakpoint.U,
+                                                Causes.illegal_instruction.U))))))))
+  val deleg = Mux(isInterrupe, mideleg, medeleg)
+  val delegS = deleg(cause(3,0)).asBool() & (mstatus.prv < PRV_M)
+
   when(!io.stall & io.ctrl_signal.valid) {
     when(io.expt) {
-      mepc   := io.ctrl_signal.pc >> 2 << 2
-      mcause := Mux(time_interrupt,               (1.U << (p(XLen)-1).U).asUInt() | 7.U,
-                Mux(soft_interrupt,               (1.U << (p(XLen)-1).U).asUInt() | 3.U,
-                Mux(external_interrupt,           (1.U << (p(XLen)-1).U).asUInt() | 11.U,
-                Mux(iaddrInvalid,                 Causes.misaligned_fetch.U,
-                Mux(laddrInvalid,                 Causes.misaligned_load.U,
-                Mux(saddrInvalid,                 Causes.misaligned_store.U,
-                Mux(isEcall,                      Causes.machine_ecall.U,
-                Mux(isEbreak,                     Causes.breakpoint.U,
-                                                  Causes.illegal_instruction.U))))))))
-      mstatus.mpie := mstatus.mie
-      mstatus.mie := false.B
-      when(iaddrInvalid || laddrInvalid || saddrInvalid) { mbadaddr := io.ctrl_signal.addr }
+      when(delegS){
+        // trap S mode
+        scause := cause
+        sepc   := io.ctrl_signal.pc >> 2 << 2
+        mstatus.spp := mstatus.prv
+        mstatus.spie := mstatus.sie
+        mstatus.sie := false.B
+        mstatus.prv := CSR.PRV_S
+      }.otherwise{
+        // trap M mode
+        mcause := cause
+        mepc   := io.ctrl_signal.pc >> 2 << 2
+        mstatus.mpp := PRV_M
+        mstatus.mpie := mstatus.mie
+        mstatus.mie := false.B
+        mstatus.prv := PRV_M
+        when(iaddrInvalid || laddrInvalid || saddrInvalid) { mbadaddr := io.ctrl_signal.addr }
+      }
     }
     .elsewhen(isMret) {
       mstatus.mie := mstatus.mpie
@@ -229,6 +256,7 @@ class CSR (implicit p: Parameters) extends Module {
       mstatus.mie := mstatus.mpie
       mstatus.mpie := true.B
     }
+    // write csr
     .elsewhen(wen) {
       when(csr_addr === CSRs.mstatus.U) {
         val tmp_mstatus = wdata.asTypeOf(new MStatus)
@@ -257,6 +285,9 @@ class CSR (implicit p: Parameters) extends Module {
       .elsewhen(csr_addr === CSRs.mscratch.U) { mscratch := wdata}
       .elsewhen(csr_addr === CSRs.medeleg.U)  { medeleg := wdata & "hf3ff".U}
       .elsewhen(csr_addr === CSRs.mideleg.U)  { mideleg := wdata & "h222".U}
+      .elsewhen(csr_addr === CSRs.sepc.U)     { sepc := wdata >> 2.U << 2.U }
+      .elsewhen(csr_addr === CSRs.scause.U)   { scause := wdata & (BigInt(1) << (p(XLen)-1) | 0xf).U }
+      .elsewhen(csr_addr === CSRs.sip.U)      { ssip := wdata(1)}
     }
   }
 
@@ -270,12 +301,12 @@ class CSR (implicit p: Parameters) extends Module {
     dcsr.io.mstatus        := mstatus.asUInt()// RegNext(Mux(!io.stall, mstatus.asUInt(),  RegEnable(mstatus.asUInt(), !io.stall))) // RegNext(mstatus.asUInt(), !io.stall)
     dcsr.io.mcause         := mcause          // RegNext(Mux(!io.stall, mcause,            RegEnable(mcause, !io.stall)))           // RegNext(mcause, !io.stall)
     dcsr.io.mepc           := mepc            // RegNext(Mux(!io.stall, mepc,              RegEnable(mepc, !io.stall)))             // RegNext(mepc, !io.stall)
-    dcsr.io.mip            := 0.U // RegNext(Mux(!io.stall, mip.asUInt(),      RegEnable(mip.asUInt(), !io.stall)))     // RegNext(mip.asUInt(), !io.stall)
-    dcsr.io.mie            := mie.asUInt()// RegNext(Mux(!io.stall, mie.asUInt(),      RegEnable(mie.asUInt(), !io.stall)))     // RegNext(mie.asUInt(), !io.stall)
-    dcsr.io.mtvec          := mtvec       // RegNext(Mux(!io.stall, mtvec,             RegEnable(mtvec, !io.stall)))            // RegNext(mtvec, !io.stall)
-    dcsr.io.sstatus        := sstatus     // RegNext(Mux(!io.stall, sstatus,           RegEnable(sstatus, !io.stall))) // 0.U // RegNext(0.U)
-    dcsr.io.scause         := 0.U // RegNext(0.U)
-    dcsr.io.sepc           := 0.U // RegNext(0.U)
+    dcsr.io.mip            := (mip.asUInt() & 0xf.U) // RegNext(Mux(!io.stall, mip.asUInt(),      RegEnable(mip.asUInt(), !io.stall)))     // RegNext(mip.asUInt(), !io.stall)
+    dcsr.io.mie            := mie.asUInt() // RegNext(Mux(!io.stall, mie.asUInt(),      RegEnable(mie.asUInt(), !io.stall)))     // RegNext(mie.asUInt(), !io.stall)
+    dcsr.io.mtvec          := mtvec        // RegNext(Mux(!io.stall, mtvec,             RegEnable(mtvec, !io.stall)))            // RegNext(mtvec, !io.stall)
+    dcsr.io.sstatus        := sstatus      // RegNext(Mux(!io.stall, sstatus,           RegEnable(sstatus, !io.stall))) // 0.U // RegNext(0.U)
+    dcsr.io.scause         := scause // RegNext(0.U)
+    dcsr.io.sepc           := sepc // RegNext(0.U)
     dcsr.io.satp           := 0.U // RegNext(0.U)
     dcsr.io.mscratch       := mscratch // RegNext(Mux(!io.stall, mscratch,          RegEnable(mscratch, !io.stall)))
     dcsr.io.sscratch       := 0.U // RegNext(Mux(!io.stall, sstatus,           RegEnable(sstatus, !io.stall))) // 0.U // RegNext(0.U)
