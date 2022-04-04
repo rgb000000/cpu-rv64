@@ -143,7 +143,14 @@ class Station(implicit val p: Parameters) extends Module {
 
   val which_station_ready_1 = Cat(station.map(x => {
     // alu ld/st csr, rocc(need in order like mem inst), no branch, no M extension
-    x.pr1_s & x.pr2_s & ((!x.br_type.orR()) | x.rocc_cmd.orR() | x.alu_op >= ALU.ALU_AMOADD_W) & (x.state === S_WAIT)
+    x.pr1_s & x.pr2_s & (!x.br_type.orR()) & (
+      x.rocc_cmd.orR()
+        | x.csr_op.orR()
+        | x.st_type.orR()
+        | x.ld_type.orR()
+        | (x.alu_op >= ALU.ALU_AMOADD_W)
+        | (x.alu_op <= ALU.ALU_XXX)
+      ) & (x.state === S_WAIT)
   }).reverse)
   val commit_value = commitPtr.value(3, 0).asUInt()
   val which_station_ready_1_commit = ((which_station_ready_1 >> commit_value).asUInt() | (which_station_ready_1 << (16.U - commit_value)).asUInt())(15, 0).asUInt()
