@@ -84,6 +84,11 @@ class MIP (implicit val p: Parameters) extends Bundle {
   val usip  = Bool()      // software interrupt pending
 }
 
+class SATP (implicit val p: Parameters) extends Bundle {
+  val mode = UInt(4.W)
+  val asid = UInt(16.W)
+  val ppn = UInt(44.W)
+}
 
 class CSRIO(implicit val p: Parameters) extends Bundle {
   val stall = Input(Bool())
@@ -126,12 +131,25 @@ class CSR (implicit p: Parameters) extends Module {
   val mepc    = RegInit(0.U(p(XLen).W))
   val mcause  = RegInit(0.U(p(XLen).W))
   val mcycle  = RegInit(0.U(p(XLen).W))
+  val mtval   = RegInit(0.U(p(XLen).W))
 
   val sepc    = RegInit(0.U(p(XLen).W))
   val scause  = RegInit(0.U(p(XLen).W))
+  val stval   = RegInit(0.U(p(XLen).W))
+  val satp    = RegInit(0.U.asTypeOf(new SATP))
 
   val medeleg = RegInit(0.U(p(XLen).W))
   val mideleg = RegInit(0.U(p(XLen).W))
+
+  // boring to tlb to judge vm_enable
+  BoringUtils.addSource(mstatus.mprv, "mstatus_mprv")
+  BoringUtils.addSource(mstatus.mpp, "mstatus_mpp")
+  BoringUtils.addSource(mstatus.sum, "mstatus_sum")
+  BoringUtils.addSource(mstatus.mxr, "mstatus_mxr")
+  BoringUtils.addSource(mstatus.prv, "cpu_mode")
+  BoringUtils.addSource(satp.mode, "satp_mode")
+  BoringUtils.addSource(satp.ppn, "satp_ppn")
+  BoringUtils.addSource(satp.asid, "satp_asid")
 
   mcycle := mcycle + 1.U
 
@@ -158,19 +176,22 @@ class CSR (implicit p: Parameters) extends Module {
 
   // read csr
   val csrFile = Seq(
-    BitPat(CSRs.mstatus.U(12.W))  -> mstatus.asUInt(),
+    BitPat(CSRs.mstatus.U(12.W))  -> mstatus.asUInt,
     BitPat(CSRs.mtvec.U(12.W))    -> mtvec,
     BitPat(CSRs.mepc.U(12.W))     -> mepc,
     BitPat(CSRs.mcause.U(12.W))   -> mcause,
-    BitPat(CSRs.mip.U(12.W))      -> mip.asUInt(),
-    BitPat(CSRs.mie.U(12.W))      -> mie.asUInt(),
+    BitPat(CSRs.mip.U(12.W))      -> mip.asUInt,
+    BitPat(CSRs.mie.U(12.W))      -> mie.asUInt,
     BitPat(CSRs.mcycle.U(12.W))   -> mcycle,
     BitPat(CSRs.mhartid.U(12.W))  -> mhardid,
     BitPat(CSRs.mscratch.U(12.W)) -> mscratch,
     BitPat(CSRs.medeleg.U(12.W))  -> medeleg,
     BitPat(CSRs.medeleg.U(12.W))  -> mideleg,
+    BitPat(CSRs.mtval.U(12.W))    -> mtval,
+    BitPat(CSRs.stval.U(12.W))    -> stval,
+    BitPat(CSRs.satp.U(12.W))     -> satp.asUInt,
   )
-  io.out := Lookup(csr_addr, 0.U, csrFile).asUInt()
+  io.out := Lookup(csr_addr, 0.U, csrFile).asUInt
 
   val privValid = csr_addr(9, 8) <= mstatus.prv
   val privInst  = io.cmd === CSR.P      // is privilege inst   wft mret sret
@@ -288,6 +309,9 @@ class CSR (implicit p: Parameters) extends Module {
       .elsewhen(csr_addr === CSRs.sepc.U)     { sepc := wdata >> 2.U << 2.U }
       .elsewhen(csr_addr === CSRs.scause.U)   { scause := wdata & (BigInt(1) << (p(XLen)-1) | 0xf).U }
       .elsewhen(csr_addr === CSRs.sip.U)      { ssip := wdata(1)}
+      .elsewhen(csr_addr === CSRs.mtval.U)    { mtval := wdata}
+      .elsewhen(csr_addr === CSRs.stval.U)    { stval := wdata}
+      .elsewhen(csr_addr === CSRs.satp.U)     { satp := wdata}
     }
   }
 

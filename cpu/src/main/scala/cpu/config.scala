@@ -40,7 +40,7 @@ class BaseConfig extends Config ((site, here, up)=>{
   case NWay           => 4
   case NBank          => 1
   case IDBits         => 4
-  case AddresWidth    => 32
+  case AddresWidth    => 64
   case VAddrWidth     => 32
 
   case BTBIndex       => 16
