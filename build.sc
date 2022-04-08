@@ -27,13 +27,6 @@ object `api-config-chipsalliance` extends CommonModule {
   override def millSourcePath = os.pwd / "dependency" / "api-config-chipsalliance" / "design" / "craft"
 }
 
-object difftest extends CommonModule {
-  override def millSourcePath = os.pwd / "dependency" / "difftest"
-  override def ivyDeps = super.ivyDeps() ++ Agg(
-    ivy"edu.berkeley.cs::chisel3:3.5.1",
-  )
-}
-
 object hardfloat extends SbtModule with CommonModule {
   override def millSourcePath = os.pwd / "dependency" / "berkeley-hardfloat"
   override def ivyDeps = super.ivyDeps() ++ chisel
@@ -80,6 +73,36 @@ object gcd extends SbtModule with CommonModule { m =>
   }
 }
 
+
+object difftest extends SbtModule { m =>
+  override def millSourcePath = os.pwd / "dependency" / "difftest"
+
+  override def scalaVersion = "2.13.8"
+
+  override def scalacOptions = Seq(
+    "-language:reflectiveCalls",
+    "-deprecation",
+    "-feature",
+    "-Xcheckinit",
+    "-P:chiselplugin:genBundleElements"
+  )
+
+  override def ivyDeps = Agg(
+    ivy"edu.berkeley.cs::chisel3:3.5.1",
+  )
+
+  override def scalacPluginIvyDeps = Agg(
+    ivy"edu.berkeley.cs:::chisel3-plugin:3.5.1",
+  )
+
+  object test extends Tests with ScalaTest {
+    override def ivyDeps = m.ivyDeps() ++ Agg(
+      ivy"edu.berkeley.cs::chiseltest:0.5.1"
+    )
+  }
+
+  override def forkArgs = Seq("-Xmx64G")
+}
 
 object cpu extends SbtModule { m =>
   override def millSourcePath = os.pwd / "cpu"
