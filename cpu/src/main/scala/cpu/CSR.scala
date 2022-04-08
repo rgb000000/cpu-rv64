@@ -141,15 +141,6 @@ class CSR (implicit p: Parameters) extends Module {
   val medeleg = RegInit(0.U(p(XLen).W))
   val mideleg = RegInit(0.U(p(XLen).W))
 
-  // boring to tlb to judge vm_enable
-  BoringUtils.addSource(mstatus.mprv, "mstatus_mprv")
-  BoringUtils.addSource(mstatus.mpp, "mstatus_mpp")
-  BoringUtils.addSource(mstatus.sum, "mstatus_sum")
-  BoringUtils.addSource(mstatus.mxr, "mstatus_mxr")
-  BoringUtils.addSource(mstatus.prv, "cpu_mode")
-  BoringUtils.addSource(satp.mode, "satp_mode")
-  BoringUtils.addSource(satp.ppn, "satp_ppn")
-  BoringUtils.addSource(satp.asid, "satp_asid")
 
   mcycle := mcycle + 1.U
 
@@ -172,6 +163,16 @@ class CSR (implicit p: Parameters) extends Module {
 //  dontTouch(mip)
 
   val mbadaddr = RegInit(0.U(p(XLen).W))
+
+  // boring to tlb to judge vm_enable
+  BoringUtils.addSource(mstatus.mprv, "mstatus_mprv")
+  BoringUtils.addSource(mstatus.mpp, "mstatus_mpp")
+  BoringUtils.addSource(mstatus.sum, "mstatus_sum")
+  BoringUtils.addSource(mstatus.mxr, "mstatus_mxr")
+  BoringUtils.addSource(mstatus.prv, "cpu_mode")
+  BoringUtils.addSource(satp.mode, "satp_mode")
+  BoringUtils.addSource(satp.ppn, "satp_ppn")
+  BoringUtils.addSource(satp.asid, "satp_asid")
 
 
   // read csr
@@ -311,7 +312,7 @@ class CSR (implicit p: Parameters) extends Module {
       .elsewhen(csr_addr === CSRs.sip.U)      { ssip := wdata(1)}
       .elsewhen(csr_addr === CSRs.mtval.U)    { mtval := wdata}
       .elsewhen(csr_addr === CSRs.stval.U)    { stval := wdata}
-      .elsewhen(csr_addr === CSRs.satp.U)     { satp := wdata}
+      .elsewhen(csr_addr === CSRs.satp.U)     { satp := wdata.asTypeOf(new SATP)}
     }
   }
 

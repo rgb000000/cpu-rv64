@@ -184,6 +184,10 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
   val s_idle :: s_lookup :: s_ptw :: s_refill :: s_except :: Nil = Enum(5)
   val state = RegInit(s_idle)
 
+  when(!vm_enbale){
+    assert(state === s_idle)
+  }
+
   switch(state){
     is(s_idle){
       when(vm_enbale){

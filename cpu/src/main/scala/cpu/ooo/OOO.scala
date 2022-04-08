@@ -5,6 +5,7 @@ import chisel3.util._
 import chipsalliance.rocketchip.config._
 import chisel3.util.experimental.BoringUtils
 import cpu.dsa.gemm.GEMM
+import cpu.ooo.MMU
 import difftest._
 
 class OOO(implicit p: Parameters) extends Module {
@@ -39,6 +40,8 @@ class OOO(implicit p: Parameters) extends Module {
 
   val dcacheCrossBar = Module(new CPUCacheCrossBarN21(3))
 
+  val mmu = Module(new MMU())
+
 
   // some intermediate signals
   val station_isfull = !station.io.in.head.ready // in(0).ready is the same as in(1).ready
@@ -60,7 +63,6 @@ class OOO(implicit p: Parameters) extends Module {
   io.fence_i_do := (rob.io.commit.reg(0).bits.fence_i_do) & rob.io.commit.reg(0).valid
 
   //= ifet ==================================================
-  ifet.io.icache <> io.icache
   ifet.io.pc_sel := Mux(rob.io.kill, PC_EPC, 0.U)
   ifet.io.pc_alu := 0.U
   ifet.io.pc_epc := rob.io.epc
@@ -302,7 +304,15 @@ class OOO(implicit p: Parameters) extends Module {
   dcacheCrossBar.io.in(0) <> gemm.io.rocc.dcache
   dcacheCrossBar.io.in(1) <> rob.io.commit.dcache
   dcacheCrossBar.io.in(2) <> mem.io.dcache
-  dcacheCrossBar.io.out <> io.dcache
+
+  mmu.io.from_inst <> ifet.io.icache
+  mmu.io.from_data <> dcacheCrossBar.io.out
+  mmu.io.to_icache <> io.icache
+  mmu.io.to_dcache <> io.dcache
+  mmu.io.sfence_vmca := false.B
+
+//  dcacheCrossBar.io.out <> io.dcache
+//  ifet.io.icache <> io.icache
 
   if(p(Difftest)){
     println(">>>>>>>> difftest mode!")
