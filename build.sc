@@ -39,22 +39,22 @@ object hardfloat extends SbtModule with CommonModule {
   override def ivyDeps = super.ivyDeps() ++ chisel
 }
 
-object `rocket-chip` extends SbtModule with CommonModule {
-
-  override def ivyDeps = super.ivyDeps() ++ Agg(
-    ivy"${scalaOrganization()}:scala-reflect:${scalaVersion()}",
-    // ivy"org.json4s::json4s-jackson:3.6.1"
-  ) ++ chisel
-
-  object macros extends SbtModule with CommonModule
-
-  override def millSourcePath = os.pwd / "dependency" / "rocket-chip"
-
-  override def moduleDeps = super.moduleDeps ++ Seq(
-    `api-config-chipsalliance`, macros, hardfloat
-  )
-
-}
+//object `rocket-chip` extends SbtModule with CommonModule {
+//
+//  override def ivyDeps = super.ivyDeps() ++ Agg(
+//    ivy"${scalaOrganization()}:scala-reflect:${scalaVersion()}",
+////     ivy"org.json4s::json4s-jackson:3.6.1"
+//  ) ++ chisel
+//
+//  object macros extends SbtModule with CommonModule
+//
+//  override def millSourcePath = os.pwd / "dependency" / "rocket-chip"
+//
+//  override def moduleDeps = super.moduleDeps ++ Seq(
+//    `api-config-chipsalliance`, macros, hardfloat
+//  )
+//
+//}
 
 object gcd extends SbtModule with CommonModule { m =>
   override def millSourcePath = os.pwd / "gcd"
@@ -64,7 +64,8 @@ object gcd extends SbtModule with CommonModule { m =>
   override def ivyDeps = super.ivyDeps() ++ chisel
 
   override def moduleDeps = super.moduleDeps ++ Seq(
-    `rocket-chip`
+//    `rocket-chip`
+    `api-config-chipsalliance`,
   )
 
   override def scalacPluginIvyDeps = Agg(
@@ -110,7 +111,8 @@ object cpu extends SbtModule { m =>
   override def forkArgs = Seq("-Xmx64G")
 
   override def moduleDeps = super.moduleDeps ++ Seq(
-    `rocket-chip`,
+//    `rocket-chip`,
+    `api-config-chipsalliance`,
     difftest
   )
 }

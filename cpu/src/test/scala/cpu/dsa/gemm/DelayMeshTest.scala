@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import chiseltest._
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
-import chiseltest.internal.{VerilatorBackendAnnotation, WriteVcdAnnotation}
+//import chiseltest.internal.{VerilatorBackendAnnotation, WriteVcdAnnotation}
 import org.scalatest.FreeSpec
 import firrtl.options.TargetDirAnnotation
 
