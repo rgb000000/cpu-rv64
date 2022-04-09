@@ -395,7 +395,7 @@ class ROB(implicit p: Parameters) extends Module {
   val store_req_once = RegInit(false.B)
   when(io.commit.dcache.req.fire){
     store_req_once := true.B
-  }.elsewhen(io.commit.dcache.resp.fire){
+  }.elsewhen(io.commit.dcache.resp.fire & (io.commit.dcache.resp.bits.cmd === 1.U)){
     store_req_once := false.B
   }
 
