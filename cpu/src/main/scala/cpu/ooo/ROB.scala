@@ -325,7 +325,7 @@ class ROB(implicit p: Parameters) extends Module {
     val cycleCnt = WireInit(0.asUInt(64.W))
     BoringUtils.addSink(cycleCnt, "cycleCnt")
     when(io.commit.dcache.req.fire() & (io.commit.dcache.req.bits.op === 1.U)){
-      when(io.commit.dcache.req.bits.addr === BitPat("b0000_0000_0000_0000_0000_0000_0000_0000_1000_0000_0010_0101_0101_0111_0110_????")){
+      when(io.commit.dcache.req.bits.addr === BitPat("b0000_0000_0000_0000_0000_0000_0000_0000_1000_0000_0000_0000_1000_1111_1110_????")){
         printf("addr: %x, data: %x, sd_mask: %x, time: %d \n", io.commit.dcache.req.bits.addr, io.commit.dcache.req.bits.data, io.commit.dcache.req.bits.mask, cycleCnt)
       }
     }
@@ -488,14 +488,14 @@ class ROB(implicit p: Parameters) extends Module {
         when(!head.isSC){
           // normal store op
           write_dcache(head, !store_req_once, 0.U)
-          when(io.commit.dcache.resp.fire & !io.commit.dcache.resp.bits.except){
+          when(io.commit.dcache.resp.fire & (io.commit.dcache.resp.bits.cmd === 1.U) & !io.commit.dcache.resp.bits.except){
             // dcache返回正常
             commitIdx.value := commitIdx.value + 1.U
             write_prfile(0, head, true.B)
             head.state := S_COMMITED
             out_br_info(true.B, head)
-          }.elsewhen(io.commit.dcache.resp.fire & io.commit.dcache.resp.bits.except){
-            // dcache返回出现异常  不执行提交异常
+          }.elsewhen(io.commit.dcache.resp.fire & (io.commit.dcache.resp.bits.cmd === 1.U) & io.commit.dcache.resp.bits.except){
+            // dcache返回出现异常  不执行,提交异常
             commitIdx.value := 0.U
             write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
             rob.foreach(x => {
@@ -511,12 +511,20 @@ class ROB(implicit p: Parameters) extends Module {
           // SC op
           when(monitor.io.sc_ret === 0.U){
             // SC success
-            write_dcache(head, true.B, 0.U)
-            when(io.commit.dcache.req.ready){
+            write_dcache(head, !store_req_once, 0.U)
+            when(io.commit.dcache.resp.fire & (io.commit.dcache.resp.bits.cmd === 1.U) & !io.commit.dcache.resp.bits.except){
               commitIdx.value := commitIdx.value + 1.U
               write_prfile(0, head, true.B)
               head.state := S_COMMITED
               out_br_info(true.B, head)
+            }.elsewhen(io.commit.dcache.resp.fire & (io.commit.dcache.resp.bits.cmd === 1.U) & io.commit.dcache.resp.bits.except){
+              // dcache返回出现异常  不执行,提交异常
+              commitIdx.value := 0.U
+              write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
+              rob.foreach(x => {
+                x.state := S_EMPTY
+              })
+              out_br_info(false.B, head)
             }.otherwise{
               // dcache没有准备好，不提交
               write_prfile(0, head, false.B)
