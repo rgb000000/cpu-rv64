@@ -421,7 +421,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     //    ((state === refill) & ((!req_reg.op) & refill_cnt.value === req_reg.addr.asTypeOf(infos).offset(log2Ceil(64 / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(64 / 8)).asUInt()) & io.mem.resp.valid) |
     (req_isCached & (((state === s_refill) & ((!req_reg.op) & (refill_cnt.value === 1.U) & io.mem.resp.valid)) |
                      ((state === s_refill) & ((req_reg.op) & (refill_cnt.value === 1.U) & io.mem.resp.valid)))) |
-    (!req_isCached & ((state === s_refill) & ((!req_reg.op) & io.mem.resp.valid)))
+    // FIXME: uncache write op need strict resp, now clint write resp doesn't have fire, just a valid
+    (!req_isCached & ((state === s_refill) & (req_reg.op | ((!req_reg.op) & io.mem.resp.valid))))
 
   when(state === s_lookup){
     io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
