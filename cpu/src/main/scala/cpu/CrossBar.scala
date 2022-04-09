@@ -257,6 +257,7 @@ class CPUCacheCrossBarN21(N: Int)(implicit p: Parameters) extends Module{
   io.in.foreach(x => {
     x.resp.bits.data := 0.U
     x.resp.bits.cmd := 0.U
+    x.resp.bits.except := 0.U
     x.resp.valid := 0.U
   })
   io.in(cur_idx).resp <> io.out.resp

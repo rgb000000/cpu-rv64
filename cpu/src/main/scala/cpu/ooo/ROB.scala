@@ -4,7 +4,8 @@ import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
 import chisel3.util.experimental.BoringUtils
-import Control.{RoCC_W, RoCC_R, RoCC_X}
+import Control.{RoCC_R, RoCC_W, RoCC_X}
+import cpu.ooo.ExceptType
 
 class RoCCQueueIO(implicit val p: Parameters) extends Bundle{
   val rs1 = UInt(p(XLen).W)
@@ -65,6 +66,7 @@ class ROBIO(implicit val p: Parameters) extends Bundle {
 //      val right_pc = UInt(p(AddresWidth).W)   // right_pc is the same as data
 
       val fence_i_do = Bool()
+      val sfence_vma_do = Bool()
       val isRocc_R = Bool()   // need flush pipeline
 
       // for difftest
@@ -109,8 +111,9 @@ class ROBIO(implicit val p: Parameters) extends Bundle {
   val except = Output(Bool())
   val exvec = Output(UInt(p(AddresWidth).W))    // 中断跳转到exvec执行
 
-  val kill = Output(Bool())
-  val epc = Output(UInt(p(AddresWidth).W))      // kill 跳转到epc执行
+  val kill = Output(Bool())   // 这里的kill是强制kill，例如rocc_r  sfence
+
+  val epc = Output(UInt(p(AddresWidth).W))
 }
 
 class ROBInfo(implicit val p: Parameters) extends Bundle {
@@ -159,6 +162,8 @@ class ROBInfo(implicit val p: Parameters) extends Bundle {
   val memAddr = UInt(p(AddresWidth).W) // for difftest skip when r/w clint
 
   val rocc_cmd = UInt(2.W)
+
+  val except = UInt(2.W)
 }
 
 
@@ -231,6 +236,9 @@ class ROB(implicit p: Parameters) extends Module {
       // prn
       rob(cdb.bits.idx).prn_data := cdb.bits.prn_data
 
+      // except
+      rob(cdb.bits.idx).except := cdb.bits.expt
+
       // store
       rob(cdb.bits.idx).addr := cdb.bits.addr
       rob(cdb.bits.idx).mask := cdb.bits.mask
@@ -257,6 +265,9 @@ class ROB(implicit p: Parameters) extends Module {
     csr.io.ctrl_signal.ld_type := 0.U
     csr.io.pc_check            := false.B
     csr.io.interrupt           := rob_info.interrupt
+    // 这里针对store进行了特殊处理  store op会等到dcache resp才会被提交
+    csr.io.has_except          := Mux(io.commit.dcache.resp.fire & io.commit.dcache.resp.bits.except, ExceptType.SPF, rob_info.except)
+    csr.io.except_addr         := rob_info.addr
     csr.io.stall               := false.B
     csr.io.ctrl_signal.valid   := valid
   }
@@ -290,6 +301,7 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit.reg(portIdx).bits.isRocc := rob_info.rocc_cmd.orR()
 
     io.commit.reg(portIdx).bits.fence_i_do := (rob_info.inst === ISA.fence_i) & valid
+    io.commit.reg(portIdx).bits.sfence_vma_do := (rob_info.inst === ISA.sfence_vma) & valid
     io.commit.reg(portIdx).bits.isRocc_R := (rob_info.rocc_cmd === RoCC_R) & valid
 
     io.commit2rename(portIdx).valid := rob_info.wen & valid
@@ -379,6 +391,14 @@ class ROB(implicit p: Parameters) extends Module {
   io.commit2rocc.cmd.bits.rs2 := rocc_queue.bits.rs2 // 64bit data
   rocc_queue.ready := io.commit2rocc.cmd.fire()
 
+  // 用于控制dcache req只发起一次
+  val store_req_once = RegInit(false.B)
+  when(io.commit.dcache.req.fire){
+    store_req_once := true.B
+  }.elsewhen(io.commit.dcache.resp.fire){
+    store_req_once := false.B
+  }
+
   io.commit2rocc.resp.ready := (rocc_commit_state === s_rocc_resp) & (head.state === S_GETDATA)
 
   when(head.state === S_GETDATA){
@@ -462,17 +482,26 @@ class ROB(implicit p: Parameters) extends Module {
         out_br_info(false.B, head)
       }
     }.elsewhen(head.st_type.orR()){
-      // st指令 or amotic inst
+      // st指令 or atomic inst
       when(!csr.io.expt){
         // 无中断，正常执行
         when(!head.isSC){
           // normal store op
-          write_dcache(head, true.B, 0.U)
-          when(io.commit.dcache.req.ready){
+          write_dcache(head, !store_req_once, 0.U)
+          when(io.commit.dcache.resp.fire & !io.commit.dcache.resp.bits.except){
+            // dcache返回正常
             commitIdx.value := commitIdx.value + 1.U
             write_prfile(0, head, true.B)
             head.state := S_COMMITED
             out_br_info(true.B, head)
+          }.elsewhen(io.commit.dcache.resp.fire & io.commit.dcache.resp.bits.except){
+            // dcache返回出现异常  不执行提交异常
+            commitIdx.value := 0.U
+            write_prfile(0, 0.U.asTypeOf(new ROBInfo), false.B)
+            rob.foreach(x => {
+              x.state := S_EMPTY
+            })
+            out_br_info(false.B, head)
           }.otherwise{
             // dcache没有准备好，不提交
             write_prfile(0, head, false.B)

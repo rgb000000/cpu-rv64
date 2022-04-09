@@ -4,6 +4,7 @@ import chipsalliance.rocketchip.config._
 import chisel3._
 import chisel3.util._
 import chisel3.util.experimental.{BoringUtils, loadMemoryFromFileInline}
+import cpu.ooo.ExceptType
 
 class BrInfo(implicit val p: Parameters) extends Bundle {
   val isHit = Bool()
@@ -118,6 +119,8 @@ class OOOIF (implicit p: Parameters) extends Module {
 
       val pTaken = Bool()
       val pPC = UInt(p(AddresWidth).W)
+
+      val except = UInt(2.W)
     }))
 
     val pc_alu = Input(UInt(p(AddresWidth).W))
@@ -145,7 +148,7 @@ class OOOIF (implicit p: Parameters) extends Module {
   val branch_on = WireInit(0.U)
   BoringUtils.addSink(branch_on, "branch_on")
 
-  def isCacheRet = io.icache.resp.fire() & (io.icache.resp.bits.cmd === 2.U)
+  def isCacheRet = io.icache.resp.fire & (io.icache.resp.bits.cmd === 2.U)
 
   def get_next_pc(pc: UInt): UInt = Mux(pc(2), pc + 4.U, pc + 8.U)
 
@@ -190,7 +193,7 @@ class OOOIF (implicit p: Parameters) extends Module {
     }
     is(s_release){
       // npc == pc
-      when(io.icache.req.fire()){
+      when(io.icache.req.fire){
         state := s_normal
       }
     }
@@ -220,17 +223,17 @@ class OOOIF (implicit p: Parameters) extends Module {
   val isSingleAddr = RegInit(true.B)
   val isSingleAddr_next = RegInit(true.B)
   val last_single = RegInit(false.B)
-  when(io.icache.req.fire() & (io.icache.req.bits.addr(31, 28) =/= 8.U)){
+  when(io.icache.req.fire & (io.icache.req.bits.addr(31, 28) =/= 8.U)){
     isSingleAddr_next := true.B
-  }.elsewhen(io.icache.req.fire() & (io.icache.req.bits.addr(31, 28) === 8.U)){
+  }.elsewhen(io.icache.req.fire & (io.icache.req.bits.addr(31, 28) === 8.U)){
     isSingleAddr_next := false.B
   }
 
-  when(io.icache.req.fire()){
+  when(io.icache.req.fire){
     isSingleAddr := isSingleAddr_next
   }
 
-  when(io.icache.req.fire()){
+  when(io.icache.req.fire){
     when((!isSingleAddr_next) & isSingleAddr){
       last_single := true.B
     }.otherwise{
@@ -239,20 +242,20 @@ class OOOIF (implicit p: Parameters) extends Module {
   }
 
   // br_info的isTaken在rob中已经转换了，意味着实际的跳转方向
-  right_tgt := Mux(io.br_info.fire() & !io.br_info.bits.isHit, Mux(io.br_info.bits.isTaken, io.br_info.bits.tgt, io.br_info.bits.cur_pc + 4.U), 0.U)
+  right_tgt := Mux(io.br_info.fire & !io.br_info.bits.isHit, Mux(io.br_info.bits.isTaken, io.br_info.bits.tgt, io.br_info.bits.cur_pc + 4.U), 0.U)
 
   import Control._
   pc := Mux(io.pc_except_entry.valid, io.pc_except_entry.bits,      // 中断入口
-        Mux(io.br_info.fire() & !io.br_info.bits.isHit, right_tgt,  // 跳转未命中
+        Mux(io.br_info.fire & !io.br_info.bits.isHit, right_tgt,  // 跳转未命中
         Mux(io.fence_i_do, io.fence_pc + 4.U,                       // fence_i这条指令的下一条
         Mux(io.isRocc_R, io.Rocc_R_pc + 4.U,                        // rocc_r next pc
         Mux(io.pc_sel === PC_EPC, io.pc_epc,                        // mret 返回epc执行
-        Mux(io.icache.req.fire(), io.icache.req.bits.addr,
+        Mux(io.icache.req.fire, io.icache.req.bits.addr,
                                   pc))))))
 
   val inst_valid = RegInit(VecInit(Seq.fill(2)(false.B)))
-  inst_valid(0) := Mux(io.icache.req.fire(), npc(2) === 0.U, inst_valid(0))
-  inst_valid(1) := true.B & Mux(isSingleAddr, Mux(io.icache.req.fire(), npc(2) === 1.U, inst_valid(1)), true.B)
+  inst_valid(0) := Mux(io.icache.req.fire, npc(2) === 0.U, inst_valid(0))
+  inst_valid(1) := true.B & Mux(isSingleAddr, Mux(io.icache.req.fire, npc(2) === 1.U, inst_valid(1)), true.B)
 
   // query btb
   val pnpc = Wire(Vec(2, UInt(p(AddresWidth).W)))
@@ -269,12 +272,12 @@ class OOOIF (implicit p: Parameters) extends Module {
     pTaken(i) := Mux(btb(i).io.query.res.bits.is_miss, 0.U, btb(i).io.query.res.bits.pTaken) & branch_on
   }
 
-  when(btb(0).io.query.res.fire() & pTaken(0)){
+  when(btb(0).io.query.res.fire & pTaken(0)){
     // inst_0 Taken! need cancel inst_1
     pnpc_f := btb(0).io.query.res.bits.tgt
     pTaken_f := pTaken(0)
     cancel_inst_1 := true.B
-  }.elsewhen(btb(1).io.query.res.fire() & pTaken(1)){
+  }.elsewhen(btb(1).io.query.res.fire & pTaken(1)){
     // inst_0 not Taken, inst_1 Taken
     pnpc_f := btb(1).io.query.res.bits.tgt
     pTaken_f := pTaken(1)
@@ -286,8 +289,8 @@ class OOOIF (implicit p: Parameters) extends Module {
     cancel_inst_1 := false.B
   }
 
-  inst(0) := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(31,  0), inst(0))
-  inst(1) := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(63, 32), inst(1))
+  inst(0) := Mux(io.icache.resp.fire & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(31,  0), inst(0))
+  inst(1) := Mux(io.icache.resp.fire & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(63, 32), inst(1))
   val stall_negedge = (!io.stall) & RegNext(io.stall, false.B)
   val is_valid_when_stall = RegInit(VecInit(Seq.fill(2)(false.B)))
   when(io.stall & io.out(0).valid & !io.kill){
@@ -310,28 +313,28 @@ class OOOIF (implicit p: Parameters) extends Module {
   io.icache.req.bits.data := 0.U // nerver use because op is read
 
   // update
-  btb(0).io.update.valid := io.br_info.fire() & (io.br_info.bits.cur_pc(2) === 0.U)
+  btb(0).io.update.valid := io.br_info.fire & (io.br_info.bits.cur_pc(2) === 0.U)
   btb(0).io.update.bits.pc := io.br_info.bits.cur_pc
   btb(0).io.update.bits.tgt := Mux(io.br_info.bits.isTaken, io.br_info.bits.tgt, io.br_info.bits.cur_pc + 4.U)
   btb(0).io.update.bits.isTaken := io.br_info.bits.isTaken
 
-  btb(1).io.update.valid := io.br_info.fire() & (io.br_info.bits.cur_pc(2) === 1.U)
+  btb(1).io.update.valid := io.br_info.fire & (io.br_info.bits.cur_pc(2) === 1.U)
   btb(1).io.update.bits.pc := io.br_info.bits.cur_pc
   btb(1).io.update.bits.tgt := Mux(io.br_info.bits.isTaken, io.br_info.bits.tgt, io.br_info.bits.cur_pc + 4.U)
   btb(1).io.update.bits.isTaken := io.br_info.bits.isTaken
 
   io.out(0).bits.pc := (pc >> 3.U) << 3.U
-  io.out(0).bits.inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(31, 0), inst(0))
+  io.out(0).bits.inst := Mux(io.icache.resp.fire & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(31, 0), inst(0))
   io.out(0).bits.pTaken := pTaken(0)
   io.out(0).bits.pPC := Mux(btb(0).io.query.res.bits.is_miss, 0.U, btb(0).io.query.res.bits.tgt)
-//  io.out(0).valid := (Mux(io.kill | cancel_next_data, 0.U, io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U)) | (is_valid_when_stall(0) & stall_negedge) & inst_valid(0)) & !cancel_inst_0
+  io.out(0).bits.except := Mux(io.icache.resp.bits.except, ExceptType.IPF, ExceptType.NO)
   io.out(0).valid := (isCacheRet & inst_valid(0) & (state =/= s_kill)) | (is_valid_when_stall(0) & stall_negedge)
 
   io.out(1).bits.pc := io.out(0).bits.pc | "b100".U
-  io.out(1).bits.inst := Mux(io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U), Mux((!isSingleAddr) & (!last_single), io.icache.resp.bits.data(63, 32), io.icache.resp.bits.data(31, 0)), inst(1))
+  io.out(1).bits.inst := Mux(io.icache.resp.fire & (io.icache.resp.bits.cmd =/= 0.U), Mux((!isSingleAddr) & (!last_single), io.icache.resp.bits.data(63, 32), io.icache.resp.bits.data(31, 0)), inst(1))
   io.out(1).bits.pTaken := pTaken(1)
   io.out(1).bits.pPC := Mux(btb(0).io.query.res.bits.is_miss, 0.U, btb(0).io.query.res.bits.tgt)
-//  io.out(1).valid := (Mux(io.kill | cancel_next_data, 0.U, io.icache.resp.fire() & (io.icache.resp.bits.cmd =/= 0.U)) | (is_valid_when_stall(1) & stall_negedge) & inst_valid(1)) & !cancel_inst_1
+  io.out(1).bits.except := Mux(io.icache.resp.bits.except, ExceptType.IPF, ExceptType.NO)
   io.out(1).valid := (isCacheRet & inst_valid(1) & !cancel_inst_1 & (state =/= s_kill)) | (is_valid_when_stall(1) & stall_negedge)
 
   val pTaken_when_stall = RegInit(false.B)

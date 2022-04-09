@@ -203,6 +203,8 @@ object Control {
     lr_d      -> List(PC_4,   A_RS1,  B_XXX, IMM_X,   ALU_LR_D     ,  BR_XXX, N, ST_XXX, LD_LD,  WB_ALU, Y, CSR.N, N, RoCC_X),
     sc_d      -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_SC_D     ,  BR_XXX, N, ST_SD,  LD_XXX, WB_ALU, Y, CSR.N, N, RoCC_X),
 
+  // sfence_vma
+    sfence_vma-> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX,    BR_XXX, Y, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N, RoCC_X),
 
   // custom0
     roccw_rs1_rs2 -> List(PC_4,   A_RS1,  B_RS2, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N, RoCC_W),

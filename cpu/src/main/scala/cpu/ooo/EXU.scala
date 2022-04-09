@@ -3,7 +3,7 @@ package cpu
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
-import cpu.ooo.{Divider, Multiplier, SignExt}
+import cpu.ooo.{Divider, ExceptType, Multiplier, SignExt}
 
 // 定点执行单元
 class FixPointIn(implicit val p: Parameters) extends Bundle {
@@ -22,6 +22,8 @@ class FixPointIn(implicit val p: Parameters) extends Bundle {
 
   val wb_type = UInt(2.W)
   val wen = Bool()
+
+  val except = UInt(2.W)
 
   val pc = UInt(p(AddresWidth).W)
   val inst = UInt(32.W)
@@ -101,6 +103,7 @@ class FixPointU(implicit p: Parameters) extends Module {
     io.cdb.bits.isTaken := false.B
     io.cdb.bits.pc := div_info_q.bits.pc
     io.cdb.bits.inst := div_info_q.bits.inst
+    io.cdb.bits.expt := ExceptType.NO   // todo: 被除数等于0的异常怎么判断
     io.cdb.valid := true.B
   }.elsewhen(mul.io.out.fire()){
     io.cdb.bits.idx := mul_info_q.bits.idx
@@ -111,6 +114,7 @@ class FixPointU(implicit p: Parameters) extends Module {
     io.cdb.bits.isTaken := false.B
     io.cdb.bits.pc := mul_info_q.bits.pc
     io.cdb.bits.inst := mul_info_q.bits.inst
+    io.cdb.bits.expt := ExceptType.NO
     io.cdb.valid := true.B
   }.otherwise{
     io.cdb.bits.idx := io.in.bits.idx
@@ -121,13 +125,13 @@ class FixPointU(implicit p: Parameters) extends Module {
     io.cdb.bits.isTaken := br.io.taken
     io.cdb.bits.pc := io.in.bits.pc
     io.cdb.bits.inst := io.in.bits.inst
+    io.cdb.bits.expt := io.in.bits.except  // 转发异常
     // common inst req accept and commit
     io.cdb.valid := io.in.valid & (!isDiv) & (!isMul)
   }
   io.cdb.bits.j_pc := alu_res
   io.cdb.bits.addr := 0.U
   io.cdb.bits.mask := 0.U
-  io.cdb.bits.expt := false.B // FixPointU can't generate except
   io.cdb.bits.store_data := 0.U // FixPoiuntU can't handle store inst
 
   div.io.out.ready := div.io.out.valid & RegNext(div.io.out.valid)
@@ -208,6 +212,7 @@ class LoadU(implicit val p: Parameters) extends Module {
     }))
     val resp = Decoupled(new Bundle{
       val data = UInt(p(XLen).W)
+      val except = Bool()
     })
     val dcache = Flipped(new CacheCPUIO)
     val readROB = new MemReadROBIO
@@ -235,6 +240,7 @@ class LoadU(implicit val p: Parameters) extends Module {
 
   // 最终拼凑的结果
   val ld_data = RegInit(0.U(p(XLen).W))
+  val is_except = RegInit(false.B)
 
   switch(state) {
     is(s_idle) {
@@ -256,7 +262,7 @@ class LoadU(implicit val p: Parameters) extends Module {
       }
     }
     is(s_mem) {
-      when(mem.io.l_data.valid) {
+      when(mem.io.resp.valid) {
         // get data from dcache by mem
         state := s_ret
       }
@@ -285,6 +291,7 @@ class LoadU(implicit val p: Parameters) extends Module {
     when(io.readROB.resp.fire) {
       when(io.readROB.resp.bits.meet) {
         val res = io.readROB.resp.bits.data >> (io.readROB.req.bits.addr(2, 0) << 3.U).asUInt()
+        is_except := false.B
         ld_data := MuxLookup(io.req.bits.ld_type, 0.S(p(XLen).W), Seq(
           Control.LD_LD -> res(63, 0).asSInt(),
           Control.LD_LW -> res(31, 0).asSInt(),
@@ -300,9 +307,9 @@ class LoadU(implicit val p: Parameters) extends Module {
     }.elsewhen(invalid_mem_addr) {
       ld_data := 0.U
     }
-  }.elsewhen((state === s_mem) & mem.io.l_data.valid) {
+  }.elsewhen((state === s_mem) & mem.io.resp.valid) {
     // cache返回的结果已经是>>的结果了, 需要恢复64bit对齐，st指令存储在rob中的也是64bit对齐
-    val dcache_ret_data = mem.io.l_data.bits << (addr_reg(2, 0) << 3.U)
+    val dcache_ret_data = mem.io.resp.bits.data << (addr_reg(2, 0) << 3.U)
     // 组合dcache返回的数据和rob中的数据
     val tmp = Cat(diff_mask.asBools().zipWithIndex.map(x => {
       val (valid, i) = x
@@ -310,6 +317,7 @@ class LoadU(implicit val p: Parameters) extends Module {
       res := Mux(valid, dcache_ret_data(8 * (i + 1) - 1, 8 * i), ld_data(8 * (i + 1) - 1, 8 * i))
       res
     }).reverse) >> (addr_reg(2, 0) << 3.U).asUInt()
+    is_except := mem.io.resp.bits.except
     ld_data := MuxLookup(req_reg.ld_type, 0.S(p(XLen).W), Seq(
       Control.LD_LD -> tmp(63, 0).asSInt(),
       Control.LD_LW -> tmp(31, 0).asSInt(),
@@ -325,6 +333,7 @@ class LoadU(implicit val p: Parameters) extends Module {
   // resp逻辑
   io.resp.valid := state === s_ret
   io.resp.bits.data := ld_data
+  io.resp.bits.except := is_except
 }
 
 class MemU(implicit p: Parameters) extends Module {
@@ -396,8 +405,10 @@ class MemU(implicit p: Parameters) extends Module {
   io.in.ready := (state === s_idle) & (loadU.io.req.ready)
 
   val ld_data = RegInit(0.U(p(XLen).W))
+  val is_except = RegInit(false.B)
   dontTouch(ld_data)
-  ld_data := Mux(loadU.io.resp.fire(), loadU.io.resp.bits.data, ld_data)
+  ld_data := Mux(loadU.io.resp.fire, loadU.io.resp.bits.data, ld_data)
+  is_except := Mux(loadU.io.resp.fire, loadU.io.resp.bits.except, is_except)
 
   val amo_res = RegInit(0.U(p(XLen).W))
   val amo_a = ld_data
@@ -452,7 +463,8 @@ class MemU(implicit p: Parameters) extends Module {
     }
     is(s_amoload){
       state := MuxCase(state, Seq(
-        loadU.io.resp.fire() -> s_amocal
+        (loadU.io.resp.fire() & !loadU.io.resp.bits.except) -> s_amocal,
+        (loadU.io.resp.fire() & loadU.io.resp.bits.except) -> s_idle, // 出现异常直接返回到idle
       ))
     }
     is(s_amocal){
@@ -483,7 +495,7 @@ class MemU(implicit p: Parameters) extends Module {
     io.cdb.bits.store_data := 0.U
     io.cdb.bits.wen := false.B // !! io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)  csr data not occur here
     io.cdb.bits.brHit := true.B
-    io.cdb.bits.expt := false.B
+    io.cdb.bits.expt := ExceptType.NO
     io.cdb.bits.pc := io.in.bits.pc
     io.cdb.bits.inst := io.in.bits.inst // inst里面蕴含了csr addr
     io.cdb.valid := true.B
@@ -496,7 +508,7 @@ class MemU(implicit p: Parameters) extends Module {
     io.cdb.bits.store_data := 0.U
     io.cdb.bits.wen := false.B         // !!
     io.cdb.bits.brHit := true.B
-    io.cdb.bits.expt := false.B
+    io.cdb.bits.expt := ExceptType.NO
     io.cdb.bits.pc := io.in.bits.pc
     io.cdb.bits.inst := io.in.bits.inst // rocc cmd need inst
     io.cdb.valid := true.B
@@ -508,7 +520,7 @@ class MemU(implicit p: Parameters) extends Module {
     io.cdb.bits.store_data := 0.U
     io.cdb.bits.wen := io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
     io.cdb.bits.brHit := true.B
-    io.cdb.bits.expt := false.B // FixPointU can't generate except
+    io.cdb.bits.expt := ExceptType.NO
     io.cdb.bits.pc := io.in.bits.pc
     io.cdb.bits.inst := io.in.bits.inst
     io.cdb.valid := true.B
@@ -523,7 +535,7 @@ class MemU(implicit p: Parameters) extends Module {
       io.cdb.bits.store_data := (io.in.bits.s_data << (io.cdb.bits.addr(2, 0) << 3.U).asUInt()) (63, 0) // 传递st的数据
       io.cdb.bits.wen := 0.U
       io.cdb.bits.brHit := true.B
-      io.cdb.bits.expt := false.B
+      io.cdb.bits.expt := ExceptType.NO
       io.cdb.bits.pc := io.in.bits.pc
       io.cdb.bits.inst := io.in.bits.inst
       io.cdb.valid := true.B
@@ -534,14 +546,28 @@ class MemU(implicit p: Parameters) extends Module {
         ST_SH -> ("b0000_0011".U << io.cdb.bits.addr(2, 0).asUInt()), // <<0, 2, 4, 6
         ST_SB -> ("b0000_0001".U << io.cdb.bits.addr(2, 0).asUInt()), // <<0, 1, 2, 3 ... 7
       ))(7, 0)
+    }.elsewhen((state === s_amoload) & loadU.io.resp.fire & loadU.io.resp.bits.except){
+      // amo指令load出现异常
+      io.cdb.bits.idx := in_reg.idx
+      io.cdb.bits.prn := 0.U
+      io.cdb.bits.prn_data := 0.U
+      io.cdb.bits.expt := ExceptType.SPF
+      io.cdb.bits.wen := false.B
+      io.cdb.bits.brHit := true.B
+      io.cdb.bits.pc := in_reg.pc
+      io.cdb.bits.inst := in_reg.inst
+      io.cdb.valid := true.B & !kill_reg & !io.kill
+      io.cdb.bits.addr := addr_reg
+      io.cdb.bits.store_data := 0.U
+      io.cdb.bits.mask := 0.U
     }.elsewhen(state === s_amostore){
-      // amo store
+      // amo store   只有load不出现异常状态机才能传播到store状态
       io.cdb.bits.idx := in_reg.idx
       io.cdb.bits.prn := in_reg.prd
       io.cdb.bits.prn_data := ld_data
       io.cdb.bits.wen := true.B  // amo need write back to register, it will done by csr
       io.cdb.bits.brHit := true.B
-      io.cdb.bits.expt := false.B
+      io.cdb.bits.expt := ExceptType.NO
       io.cdb.bits.pc := in_reg.pc
       io.cdb.bits.inst := in_reg.inst
       io.cdb.valid := true.B & !kill_reg & !io.kill
@@ -553,10 +579,10 @@ class MemU(implicit p: Parameters) extends Module {
       io.cdb.bits.idx := in_reg.idx
       io.cdb.bits.prn := in_reg.prd
       io.cdb.bits.prn_data := loadU.io.resp.bits.data
+      io.cdb.bits.expt := Mux(loadU.io.resp.bits.except, ExceptType.LPF, ExceptType.NO)
       io.cdb.bits.store_data := 0.U
       io.cdb.bits.wen := in_reg.wen & (io.cdb.bits.prn =/= 0.U)
       io.cdb.bits.brHit := true.B
-      io.cdb.bits.expt := false.B
       io.cdb.bits.pc := in_reg.pc
       io.cdb.bits.inst := in_reg.inst
       io.cdb.valid := ((state === s_load) & loadU.io.resp.fire()) & (!kill_reg) & !io.kill

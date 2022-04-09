@@ -42,6 +42,7 @@ class StationIn(implicit val p: Parameters) extends Bundle {
 
   // illeage
   val illeage = Bool()
+  val except = UInt(2.W)
 
   // inst
   val inst = UInt(32.W)
@@ -70,7 +71,7 @@ class CDB(implicit val p: Parameters) extends Bundle {
   val wen = Bool()
   val brHit = Bool()
   val isTaken = Bool()
-  val expt = Bool()
+  val expt = UInt(2.W)
 
   // for store inst
   val addr = UInt(p(AddresWidth).W)
@@ -137,24 +138,24 @@ class Station(implicit val p: Parameters) extends Module {
   // issue
   val which_station_ready_0 = Cat(station.map(x => {
     // alu op and branch, no ld/st, no csr, no rocc, no amo, do M extension
-    x.pr1_s & x.pr2_s & (!x.ld_type.orR()) & (!x.st_type.orR()) & (!x.csr_op.orR()) & (!x.rocc_cmd.orR()) & (x.alu_op <= ALU.ALU_REMUW) & (x.state === S_WAIT)
+    x.pr1_s & x.pr2_s & (!x.ld_type.orR) & (!x.st_type.orR) & (!x.csr_op.orR) & (!x.rocc_cmd.orR) & (x.alu_op <= ALU.ALU_REMUW) & (x.state === S_WAIT)
   }).reverse)
   val readyIdx_0 = WireInit(PriorityEncoder(which_station_ready_0))
 
   val which_station_ready_1 = Cat(station.map(x => {
-    // alu ld/st csr, rocc(need in order like mem inst), no branch, no M extension
-    x.pr1_s & x.pr2_s & (!x.br_type.orR()) & (
-      x.rocc_cmd.orR()
-        | x.csr_op.orR()
-        | x.st_type.orR()
-        | x.ld_type.orR()
+    // alu ld/st csr, rocc(need in order like mem inst), no branch, no M extension, no except(ipf)
+    x.pr1_s & x.pr2_s & (!x.br_type.orR) & (
+      x.rocc_cmd.orR
+        | x.csr_op.orR
+        | x.st_type.orR
+        | x.ld_type.orR
         | (x.alu_op >= ALU.ALU_AMOADD_W)
         | (x.alu_op <= ALU.ALU_XXX)
-      ) & (x.state === S_WAIT)
+      ) & !x.except & (x.state === S_WAIT)
   }).reverse)
-  val commit_value = commitPtr.value(3, 0).asUInt()
-  val which_station_ready_1_commit = ((which_station_ready_1 >> commit_value).asUInt() | (which_station_ready_1 << (16.U - commit_value)).asUInt())(15, 0).asUInt()
-  val readyIdx_1 = WireInit((commit_value + PriorityEncoder(which_station_ready_1_commit))(3, 0).asUInt()) // 往下查找
+  val commit_value = commitPtr.value(3, 0).asUInt
+  val which_station_ready_1_commit = ((which_station_ready_1 >> commit_value).asUInt | (which_station_ready_1 << (16.U - commit_value)).asUInt)(15, 0).asUInt
+  val readyIdx_1 = WireInit((commit_value + PriorityEncoder(which_station_ready_1_commit))(3, 0).asUInt) // 往下查找
 
   // 这部分是为了让mem指令严格的顺序 and rocc
   val which_station_isMem = Cat(station.map(x => {
@@ -268,8 +269,8 @@ class Station(implicit val p: Parameters) extends Module {
 
     // input
     def cdb_commit_forwrd(r: StationIn, s: StationIn): Unit = {
-      // r in input
-      // s in reg in station
+      // r is input
+      // s is reg in station
       s := r
       io.cdb.foreach( cdb => {
         when(cdb.fire() & cdb.bits.wen & (cdb.bits.prn =/= 0.U)){
@@ -304,16 +305,16 @@ class Station(implicit val p: Parameters) extends Module {
 
     val a = io.in(0)
     val b = io.in(1)
-    when(a.fire() & b.fire()) {
+    when(a.fire & b.fire) {
       // input a and b
       inPtr.value := inPtr.value + 2.U
       cdb_commit_forwrd(a.bits, station(inPtr.value))
       cdb_commit_forwrd(b.bits, station(inPtr.value + 1.U))
-    }.elsewhen(a.fire() & !b.fire()) {
+    }.elsewhen(a.fire & !b.fire) {
       // input a
       inPtr.inc()
       cdb_commit_forwrd(a.bits, station(inPtr.value))
-    }.elsewhen((!a.fire()) & b.fire()) {
+    }.elsewhen((!a.fire) & b.fire) {
       // input b
       inPtr.inc()
       cdb_commit_forwrd(b.bits, station(inPtr.value))

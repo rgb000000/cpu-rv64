@@ -127,6 +127,7 @@ class OOO(implicit p: Parameters) extends Module {
     station.io.in(i).bits.wb_type   := ctrl(i).wb_type
     station.io.in(i).bits.wen       := ctrl(i).wen
     station.io.in(i).bits.illeage   := ctrl(i).illegal
+    station.io.in(i).bits.except    := if_reg(i).bits.except
     station.io.in(i).bits.inst      := if_reg(i).bits.inst
     station.io.in(i).bits.br_type   := ctrl(i).br_type
     station.io.in(i).bits.pTaken    := if_reg(i).bits.pTaken
@@ -146,8 +147,8 @@ class OOO(implicit p: Parameters) extends Module {
     rob.io.in.fromID(i).bits.ld_type              := station.io.in(i).bits.ld_type
     rob.io.in.fromID(i).bits.pc                   := station.io.in(i).bits.pc
     rob.io.in.fromID(i).bits.inst                 := station.io.in(i).bits.inst
-    rob.io.in.fromID(i).valid                     := station.io.in(i).fire()          // 只有被station接受的inst才能进入rob中
-    rob.io.in.fromID(i).bits.isBr                 := station.io.in(i).bits.br_type.orR()
+    rob.io.in.fromID(i).valid                     := station.io.in(i).fire          // 只有被station接受的inst才能进入rob中
+    rob.io.in.fromID(i).bits.isBr                 := station.io.in(i).bits.br_type.orR
     rob.io.in.fromID(i).bits.isJ                  := station.io.in(i).bits.br_type === "b111".U
     rob.io.in.fromID(i).bits.pTaken               := station.io.in(i).bits.pTaken
     rob.io.in.fromID(i).bits.current_rename_state := station.io.in(i).bits.current_rename_state
@@ -213,6 +214,7 @@ class OOO(implicit p: Parameters) extends Module {
   fixPointU.io.in.bits.wen      := issue_0.info.wen
   fixPointU.io.in.bits.pc       := issue_0.info.pc
   fixPointU.io.in.bits.inst     := issue_0.info.inst
+  fixPointU.io.in.bits.except   := issue_0.info.except
   fixPointU.io.in.bits.idx      := issue_0.idx
   fixPointU.io.kill             := rob_kill
   dontTouch(fixPointU.io)
@@ -309,7 +311,7 @@ class OOO(implicit p: Parameters) extends Module {
   mmu.io.from_data <> dcacheCrossBar.io.out
   mmu.io.to_icache <> io.icache
   mmu.io.to_dcache <> io.dcache
-  mmu.io.sfence_vmca := false.B
+  mmu.io.sfence_vma := rob.io.commit.reg(0).bits.sfence_vma_do & rob.io.commit.reg(0).fire
 
 //  dcacheCrossBar.io.out <> io.dcache
 //  ifet.io.icache <> io.icache

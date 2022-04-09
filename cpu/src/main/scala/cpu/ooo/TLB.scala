@@ -59,9 +59,11 @@ class TLBWay(val depth: Int)(implicit val p: Parameters) extends Module {
       val tlbline = new TLBLine
       val isHit = Bool()
     })
+    val sfence_vma = Input(Bool())
   })
 
   val mem = SyncReadMem(depth, new TLBLine)
+  val v_tab = RegInit(VecInit(Seq.fill(depth)(0.U(1.W))))
 
   // 计算 index 来确定mem读哪一行
   val index = Wire(UInt())
@@ -81,13 +83,19 @@ class TLBWay(val depth: Int)(implicit val p: Parameters) extends Module {
 //  }
 
   val rd = Wire(new TLBLine)
+  val rd_valid = Wire(Bool())
   rd := mem.read(index, io.req.fire & !io.req.bits.op)
+  rd_valid := RegNext(v_tab(index))
   when(io.req.fire & io.req.bits.op){
     mem.write(index, io.req.bits.tlbline)
+    v_tab(index) := io.req.bits.tlbline.flags.V
+  }.elsewhen(io.sfence_vma){
+    // sfence_vma clear all v_tab
+    v_tab.foreach(_ := 0.U)
   }
 
   val tag = rd.vpns.asUInt(26, log2Ceil(depth))
-  io.resp.bits.isHit := (tag === RegNext(io.req.bits.tlbline.vpns.asUInt(26, log2Ceil(depth)))) & rd.flags.V
+  io.resp.bits.isHit := (tag === RegNext(io.req.bits.tlbline.vpns.asUInt(26, log2Ceil(depth)))) & rd.flags.V & rd_valid
   io.resp.bits.tlbline := rd
   io.resp.valid := RegNext(io.req.fire & !io.req.bits.op) // mem has a cycle delay when read
 }
@@ -98,8 +106,7 @@ class TLBIO(implicit val p: Parameters) extends Bundle {
 
   val ptw = Flipped(new PTWIO)
 
-  val except = Valid(UInt())
-  val sfence_vmca = Input(Bool())
+  val sfence_vma = Input(Bool())
 }
 
 // convert cpu vaddr req to paddr and send to cache
@@ -111,6 +118,7 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
   val except_reg = RegInit(ExceptType.NO)
 
   val ways = Seq.fill(4)(Module(new TLBWay(depth)))
+  ways.foreach(_.io.sfence_vma := io.sfence_vma)
 
   val ways_ret_pte = Wire(Vec(4, new TLBLine))
   (ways_ret_pte, ways).zipped.foreach(_ := _.io.resp.bits.tlbline)
@@ -239,7 +247,8 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
     }
     is(s_except){
       // 返回except
-      when(io.except.fire){
+      when(io.toCache.resp.fire){
+        assert(io.toCache.resp.bits.except === true.B)
         state := s_idle
       }
     }
@@ -300,7 +309,6 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
     ways.map(_.io.req.valid).foreach(_ := io.from_cpu.req.fire)
   }
 
-  io.toCache.resp <> io.from_cpu.resp
   when(!vm_enbale){
     // 不启用vm  cache 等价于直接和 cpu 连接
     io.toCache.req <> io.from_cpu.req
@@ -337,12 +345,14 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
     except_reg := io.ptw.resp.bits.except
   }
 
+  //当异常的时候会返回异常resp   否则返回cache的reso，cache的resp不会产生异常
   when(state === s_except){
-    io.except.valid := true.B
-    io.except.bits := except_reg
+    io.from_cpu.resp.valid := true.B
+    io.from_cpu.resp.bits.data := Cat("h0000_0013".U(32.W), "h0000_0013".U(32.W)).asUInt
+    io.from_cpu.resp.bits.cmd := Mux(req_reg.op === 1.U, 1.U, 2.U)
+    io.from_cpu.resp.bits.except := true.B
   }.otherwise{
-    io.except.valid := false.B
-    io.except.bits := 0.U
+    io.toCache.resp <> io.from_cpu.resp
   }
 
   io.ptw.resp.ready := state === s_ptw

@@ -29,6 +29,7 @@ class CacheReq(implicit val p: Parameters) extends Bundle {
 
 class CacheResp(implicit val p: Parameters) extends Bundle{
   val data = UInt(p(XLen).W)
+  val except = Bool()
   val cmd = UInt(4.W)
 }
 
@@ -184,6 +185,9 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     val fence_i = Input(Bool())
     val fence_i_done = Output(Bool())
   })
+
+  // cache的r/w不会产生异常
+  io.cpu.resp.bits.except := false.B
 
   val cache_size = cache_type match {
     case "i" => {println(s"ICache size is ${p(I$Size) / 8 / 1024} KB"); p(I$Size)}

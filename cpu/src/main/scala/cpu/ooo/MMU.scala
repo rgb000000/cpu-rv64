@@ -13,7 +13,7 @@ class MMUIO(implicit val p: Parameters) extends Bundle {
   // ptw and ld/st inst
   val to_dcache = Flipped(new CacheCPUIO)
 
-  val sfence_vmca = Input(Bool())
+  val sfence_vma = Input(Bool())
 }
 
 // MMU包含 ITLB DTLB和一个PTW
@@ -25,8 +25,8 @@ class MMU(implicit val p: Parameters) extends Module {
   val ptw = Module(new PTW(2))
   val xbar = Module(new CPUCacheCrossBarN21(2)) // 合并ptw的dcache访问和dtlb的dcache访问
 
-  itlb.io.sfence_vmca := io.sfence_vmca
-  dtlb.io.sfence_vmca := io.sfence_vmca
+  itlb.io.sfence_vma := io.sfence_vma
+  dtlb.io.sfence_vma := io.sfence_vma
 
   itlb.io.from_cpu <> io.from_inst
   io.to_icache <> itlb.io.toCache

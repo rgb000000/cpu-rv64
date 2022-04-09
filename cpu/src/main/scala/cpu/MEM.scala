@@ -134,7 +134,10 @@ class OOOMEM (implicit p: Parameters) extends Module {
 
     val alu_res = Input(UInt(p(XLen).W))
 
-    val l_data = Output(Valid(UInt(p(XLen).W)))
+    val resp = Output(Valid(new Bundle{
+      val data = UInt(p(XLen).W)
+      val except = Bool()
+    }))
 
     val inst_valid = Input(Bool())
   })
@@ -147,6 +150,7 @@ class OOOMEM (implicit p: Parameters) extends Module {
   val addr_reg = RegInit(0.U(p(AddresWidth).W))
   val ld_type_reg = RegInit(0.U(3.W))
   val ld_data = RegInit(0.U(p(XLen).W))
+  val is_except = RegInit(false.B)
 
   switch(state){
     is(s_idle){
@@ -169,6 +173,7 @@ class OOOMEM (implicit p: Parameters) extends Module {
       when(io.dcache.resp.fire() & (io.dcache.resp.bits.cmd === 2.U)){
         state := s_ret
         ld_data := io.dcache.resp.bits.data
+        is_except := io.dcache.resp.bits.except
       }
     }
 
@@ -177,8 +182,9 @@ class OOOMEM (implicit p: Parameters) extends Module {
     }
   }
 
-  io.l_data.bits := ld_data
-  io.l_data.valid := (state === s_ret)
+  io.resp.bits.data := ld_data
+  io.resp.bits.except := is_except
+  io.resp.valid := (state === s_ret)
 
   io.dcache.req.bits.op := 0.U   // read
   io.dcache.req.bits.data := 0.U // useless when load
