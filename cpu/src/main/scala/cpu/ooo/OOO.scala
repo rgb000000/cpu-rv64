@@ -45,6 +45,7 @@ class OOO(implicit p: Parameters) extends Module {
 
   // some intermediate signals
   val station_isfull = !station.io.in.head.ready // in(0).ready is the same as in(1).ready
+  val rob_flush = Wire(Bool())
   val rob_kill = Wire(Bool())
 
   val time_interrupt_enable = WireInit(false.B)
@@ -67,14 +68,13 @@ class OOO(implicit p: Parameters) extends Module {
   ifet.io.pc_alu := 0.U
   ifet.io.pc_epc := rob.io.epc
   ifet.io.stall := station_isfull
-  ifet.io.kill := rob_kill
+  ifet.io.flush := rob_flush
   ifet.io.fence_i_do := io.fence_i_do
   ifet.io.fence_i_done := io.fence_i_done
-  ifet.io.fence_pc := rob.io.commit.reg(0).bits.pc
+  ifet.io.kill := rob_kill
+  ifet.io.kill_pc := rob.io.commit.reg(0).bits.pc
   ifet.io.pc_except_entry.valid := rob.io.except
   ifet.io.pc_except_entry.bits := rob.io.exvec
-  ifet.io.isRocc_R := rob.io.commit.reg(0).bits.isRocc_R
-  ifet.io.Rocc_R_pc := rob.io.commit.reg(0).bits.pc
 
   ifet.io.br_info.valid        := rob.io.commit.br_info.valid
   ifet.io.br_info.bits.isHit   := rob.io.commit.br_info.bits.isHit
@@ -82,7 +82,7 @@ class OOO(implicit p: Parameters) extends Module {
   ifet.io.br_info.bits.cur_pc  := rob.io.commit.br_info.bits.cur_pc
   ifet.io.br_info.bits.tgt     := rob.io.commit.br_info.bits.right_pc
 
-  val if_reg = RegEnable(Mux(rob_kill, 0.U.asTypeOf(ifet.io.out), ifet.io.out), 0.U.asTypeOf(ifet.io.out), rob_kill | !station_isfull)
+  val if_reg = RegEnable(Mux(rob_flush, 0.U.asTypeOf(ifet.io.out), ifet.io.out), 0.U.asTypeOf(ifet.io.out), rob_flush | !station_isfull)
 
   //= decoder ==================================================
   val ctrl = Wire(Vec(2, (new ControlIO).signal))
@@ -186,13 +186,13 @@ class OOO(implicit p: Parameters) extends Module {
   }
 
   val issue_0_valid = RegInit(false.B)
-  issue_0_valid := Mux(rob_kill, false.B, Mux(station.io.out(0).fire(), true.B, Mux(fixPointU.io.in.fire(), false.B, issue_0_valid)))  // 握手信号打拍子，允许exu ready无效的时候数据还能进入reg中
+  issue_0_valid := Mux(rob_flush, false.B, Mux(station.io.out(0).fire(), true.B, Mux(fixPointU.io.in.fire(), false.B, issue_0_valid)))  // 握手信号打拍子，允许exu ready无效的时候数据还能进入reg中
   val ex_data_0 = RegEnable(tmp_ex_data(0), 0.U.asTypeOf(tmp_ex_data.head), station.io.out(0).fire())
   val issue_0 = RegEnable(station.io.out(0).bits, 0.U.asTypeOf(station.io.out(0).bits), station.io.out(0).fire())
   station.io.out(0).ready := fixPointU.io.in.ready | !issue_0_valid
 
   val issue_1_valid = RegInit(false.B)
-  issue_1_valid := Mux(rob_kill, false.B, Mux(station.io.out(1).fire(), true.B, Mux(mem.io.in.fire(), false.B, issue_1_valid)))
+  issue_1_valid := Mux(rob_flush, false.B, Mux(station.io.out(1).fire(), true.B, Mux(mem.io.in.fire(), false.B, issue_1_valid)))
   val ex_data_1 = RegEnable(tmp_ex_data(1), 0.U.asTypeOf(tmp_ex_data.head), station.io.out(1).fire())
   val issue_1 = RegEnable(station.io.out(1).bits, 0.U.asTypeOf(station.io.out(1).bits), station.io.out(1).fire())
   station.io.out(1).ready := mem.io.in.ready | !issue_1_valid
@@ -216,7 +216,7 @@ class OOO(implicit p: Parameters) extends Module {
   fixPointU.io.in.bits.inst     := issue_0.info.inst
   fixPointU.io.in.bits.except   := issue_0.info.except
   fixPointU.io.in.bits.idx      := issue_0.idx
-  fixPointU.io.kill             := rob_kill
+  fixPointU.io.kill             := rob_flush
   dontTouch(fixPointU.io)
 
   // memU
@@ -236,7 +236,7 @@ class OOO(implicit p: Parameters) extends Module {
   mem.io.in.bits.illegal   := issue_1.info.illeage
   mem.io.in.bits.rocc_cmd  := issue_1.info.rocc_cmd
   mem.io.in.bits.idx       := issue_1.idx
-  mem.io.kill := rob_kill
+  mem.io.kill := rob_flush
 
   // rocc
   rob.io.in.rocc_queue <> mem.io.rocc_queue
@@ -253,7 +253,9 @@ class OOO(implicit p: Parameters) extends Module {
   rename.io.cdb(1) <> mem.io.cdb
 
   //= commit ==================================================
-  rob_kill := (rob.io.commit.br_info.valid & !rob.io.commit.br_info.bits.isHit) | rob.io.except | rob.io.kill
+//  val flush = WireInit(io.except | io.kill | (io.commit.br_info.valid & !io.commit.br_info.bits.isHit))
+  rob_flush := (rob.io.commit.br_info.valid & !rob.io.commit.br_info.bits.isHit) | rob.io.except | rob.io.kill
+  rob_kill := rob.io.kill
 
   station.io.robCommit.except := rob.io.except
   rename.io.robCommit.except := rob.io.except

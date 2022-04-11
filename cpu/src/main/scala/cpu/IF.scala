@@ -131,16 +131,15 @@ class OOOIF (implicit p: Parameters) extends Module {
     val pc_except_entry = Flipped(Valid(UInt(p(AddresWidth).W)))
 
     val stall = Input(Bool())
-    val kill = Input(Bool())
+    val flush = Input(Bool())   //冲刷流水线
 
     val icache = Flipped(new CacheCPUIO)
 
-    val fence_i_done = Input(Bool())
-    val fence_pc = Input(UInt(p(AddresWidth).W))
-    val fence_i_do = Input(Bool())
+    val kill = Input(Bool())
+    val kill_pc = Input(UInt(p(AddresWidth).W))
 
-    val isRocc_R = Input(Bool())
-    val Rocc_R_pc = Input(UInt(32.W))
+    val fence_i_done = Input(Bool())
+    val fence_i_do = Input(Bool())
   })
 
   val btb = Seq.fill(2)(Module(new BTB)) // 0 for low, 1 for high
@@ -178,7 +177,7 @@ class OOOIF (implicit p: Parameters) extends Module {
     is(s_normal){
       when(io.fence_i_do){
         state := s_fence
-      }.elsewhen(io.kill){
+      }.elsewhen(io.flush){
         state := s_kill
       }.elsewhen(io.stall){
         state := s_stall
@@ -206,7 +205,7 @@ class OOOIF (implicit p: Parameters) extends Module {
       // 如果在stall状态下出现了kill直接跳转到kill去，station和rob在kill信号下都会清空
       when(io.fence_i_do){
         state := s_fence
-      }.elsewhen(io.kill){
+      }.elsewhen(io.flush){
         state := s_kill
       }.elsewhen(!io.stall){
         state := s_normal
@@ -247,11 +246,10 @@ class OOOIF (implicit p: Parameters) extends Module {
   import Control._
   pc := Mux(io.pc_except_entry.valid, io.pc_except_entry.bits,      // 中断入口
         Mux(io.br_info.fire & !io.br_info.bits.isHit, right_tgt,  // 跳转未命中
-        Mux(io.fence_i_do, io.fence_pc + 4.U,                       // fence_i这条指令的下一条
-        Mux(io.isRocc_R, io.Rocc_R_pc + 4.U,                        // rocc_r next pc
+        Mux(io.kill, io.kill_pc + 4.U,                       // fence_i这条指令的下一条      rocc_r next pc
         Mux(io.pc_sel === PC_EPC, io.pc_epc,                        // mret 返回epc执行
         Mux(io.icache.req.fire, io.icache.req.bits.addr,
-                                  pc))))))
+                                  pc)))))
 
   val inst_valid = RegInit(VecInit(Seq.fill(2)(false.B)))
   inst_valid(0) := Mux(io.icache.req.fire, npc(2) === 0.U, inst_valid(0))
@@ -293,20 +291,20 @@ class OOOIF (implicit p: Parameters) extends Module {
   inst(1) := Mux(io.icache.resp.fire & (io.icache.resp.bits.cmd =/= 0.U), io.icache.resp.bits.data(63, 32), inst(1))
   val stall_negedge = (!io.stall) & RegNext(io.stall, false.B)
   val is_valid_when_stall = RegInit(VecInit(Seq.fill(2)(false.B)))
-  when(io.stall & io.out(0).valid & !io.kill){
+  when(io.stall & io.out(0).valid & !io.flush){
     is_valid_when_stall(0) := true.B
-  }.elsewhen(stall_negedge | io.kill){
+  }.elsewhen(stall_negedge | io.flush){
     is_valid_when_stall(0) := false.B
   }
-  when(io.stall & io.out(1).valid & !io.kill){
+  when(io.stall & io.out(1).valid & !io.flush){
     is_valid_when_stall(1) := true.B
-  }.elsewhen(stall_negedge | io.kill){
+  }.elsewhen(stall_negedge | io.flush){
     is_valid_when_stall(1) := false.B
   }
 
 
   // always read instructions from icache
-  io.icache.req.valid := (!io.stall) & (!io.kill) & (state =/= s_kill) & (state =/= s_fence)
+  io.icache.req.valid := (!io.stall) & (!io.flush) & (state =/= s_kill) & (state =/= s_fence)
   io.icache.req.bits.op := 0.U // must read
   io.icache.req.bits.addr := Mux(!isSingleAddr, (npc >> 3.U) << 3.U, npc) // Mux(io.pc_sel === Control.PC_ALU, io.pc_alu, pc)// pc is addr
   io.icache.req.bits.mask := Mux(!isSingleAddr, "b1111_1111".U, Mux(io.icache.req.bits.addr(2) === 1.U, "b1111_0000".U, "b0000_1111".U)) // Mux(io.icache.req.bits.addr(2) === 1.U, "b1111_0000".U, "b0000_1111".U)  // need 32 bit instructions
