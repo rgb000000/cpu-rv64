@@ -64,9 +64,9 @@ class OOO(implicit p: Parameters) extends Module {
   io.fence_i_do := (rob.io.commit.reg(0).bits.fence_i_do) & rob.io.commit.reg(0).valid
 
   //= ifet ==================================================
-  ifet.io.pc_sel := Mux(rob.io.kill, PC_EPC, 0.U)
-  ifet.io.pc_alu := 0.U
+  ifet.io.pc_sel := Mux(rob.io.is_xret, PC_EPC, 0.U)    // xret has kill, but it prioruty is higher
   ifet.io.pc_epc := rob.io.epc
+  ifet.io.pc_alu := 0.U
   ifet.io.stall := station_isfull
   ifet.io.flush := rob_flush
   ifet.io.fence_i_do := io.fence_i_do
@@ -259,8 +259,8 @@ class OOO(implicit p: Parameters) extends Module {
 
   station.io.robCommit.except := rob.io.except
   rename.io.robCommit.except := rob.io.except
-  station.io.robCommit.kill := rob.io.kill
-  rename.io.robCommit.kill := rob.io.kill
+  station.io.robCommit.flush := rob_flush
+  rename.io.robCommit.kill := rob_kill      // rename need to distinguish kill, except and br
 
   rob.io.in.cdb(0) <> fixPointU.io.cdb
   rob.io.in.cdb(1) <> mem.io.cdb

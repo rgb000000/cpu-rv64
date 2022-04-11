@@ -150,7 +150,7 @@ class RenameMap(implicit p: Parameters) extends Module {
     }
   }
 
-  // 这里有个推测，我觉得64个物理寄存器中，必定每时每刻valid数目都是32,也就是每时每刻所有lr都有其唯一对应的pr
+  // 64个物理寄存器中，必定每时每刻valid数目都是32,也就是每时每刻所有lr都有其唯一对应的pr
   require(cam.length == p(PRNUM))
   val valid_64 = Wire(Vec(p(PRNUM), UInt(1.W)))
   (valid_64, cam.map(_.valid)).zipped.foreach(_ := _.asUInt())
@@ -259,6 +259,8 @@ class RenameMap(implicit p: Parameters) extends Module {
 
       port1.pr.bits := emptyIdx_1
       port1.pr.valid := false.B
+
+      assert(valid_sum === 32.U)
     }
   }
 

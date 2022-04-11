@@ -114,6 +114,7 @@ class CSRIO(implicit val p: Parameters) extends Bundle {
   val exvec = Output(UInt(p(XLen).W))
   val epc = Output(UInt(p(XLen).W))
   val w_satp = Output(Bool())  // write satp will flush pipeline
+  val is_xret = Output(Bool())
 
   val interrupt = Input(new Bundle {
     val time     = Bool()
@@ -277,6 +278,7 @@ class CSR (implicit p: Parameters) extends Module {
   val delegS = deleg(cause(3,0)).asBool & (mstatus.prv < PRV_M)
 
   io.w_satp := !io.stall & io.ctrl_signal.valid & wen & (csr_addr === CSRs.satp.U)
+  io.is_xret := !io.stall & io.ctrl_signal.valid & (isMret | isSret)
 
   when(!io.stall & io.ctrl_signal.valid) {
     when(io.expt) {

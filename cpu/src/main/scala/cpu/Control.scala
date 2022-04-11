@@ -116,7 +116,7 @@ object Control {
     ebreak -> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.P, N, RoCC_X),
     mret   -> List(PC_EPC, A_XXX,  B_XXX, IMM_X,   ALU_XXX,    BR_XXX, Y, ST_XXX, LD_XXX, WB_ALU, N, CSR.P, N, RoCC_X),
     sret   -> List(PC_EPC, A_XXX,  B_XXX, IMM_X,   ALU_XXX,    BR_XXX, Y, ST_XXX, LD_XXX, WB_ALU, N, CSR.P, N, RoCC_X),
-    wfi     -> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N, RoCC_X),
+    wfi    -> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX,    BR_XXX, N, ST_XXX, LD_XXX, WB_ALU, N, CSR.N, N, RoCC_X),
  sfence_vma-> List(PC_4,   A_XXX,  B_XXX, IMM_X,   ALU_XXX,    BR_XXX, Y, ST_XXX, LD_XXX, WB_ALU, N, CSR.P, N, RoCC_X),
     // TODO: CSR aspects need to be improved
     csrrw  -> List(PC_4,   A_RS1,  B_XXX, IMM_X,   ALU_COPY_A, BR_XXX, N, ST_XXX, LD_XXX, WB_CSR, Y, CSR.W, N, RoCC_X),

@@ -244,10 +244,10 @@ class OOOIF (implicit p: Parameters) extends Module {
   right_tgt := Mux(io.br_info.fire & !io.br_info.bits.isHit, Mux(io.br_info.bits.isTaken, io.br_info.bits.tgt, io.br_info.bits.cur_pc + 4.U), 0.U)
 
   import Control._
-  pc := Mux(io.pc_except_entry.valid, io.pc_except_entry.bits,      // 中断入口
+  pc := Mux(io.pc_except_entry.valid, io.pc_except_entry.bits,    // 中断入口
+        Mux(io.pc_sel === PC_EPC, io.pc_epc,                      // mret 返回epc执行
         Mux(io.br_info.fire & !io.br_info.bits.isHit, right_tgt,  // 跳转未命中
-        Mux(io.kill, io.kill_pc + 4.U,                       // fence_i这条指令的下一条      rocc_r next pc
-        Mux(io.pc_sel === PC_EPC, io.pc_epc,                        // mret 返回epc执行
+        Mux(io.kill, io.kill_pc + 4.U,                            // fence_i这条指令的下一条      rocc_r next pc
         Mux(io.icache.req.fire, io.icache.req.bits.addr,
                                   pc)))))
 

@@ -112,6 +112,7 @@ class ROBIO(implicit val p: Parameters) extends Bundle {
   val exvec = Output(UInt(p(AddresWidth).W))    // 中断跳转到exvec执行
 
   val kill = Output(Bool())   // 这里的kill是强制kill，例如rocc_r  sfence
+  val is_xret = Output(Bool())
 
   val epc = Output(UInt(p(AddresWidth).W))
 }
@@ -381,7 +382,8 @@ class ROB(implicit p: Parameters) extends Module {
   csr_enable(head, head.state === S_GETDATA)
   monitor_enable(head, (head.state === S_GETDATA) & io.commit.reg(0).valid)
   // SC fail need flush pipeline
-  io.kill := (head.kill | csr.io.w_satp) & (head.state === S_GETDATA) & io.commit.reg(0).valid
+  io.kill := (head.kill | csr.io.w_satp | csr.io.is_xret) & (head.state === S_GETDATA) & io.commit.reg(0).valid
+  io.is_xret := csr.io.is_xret
 
   val s_rocc_cmd :: s_rocc_resp :: Nil = Enum(2)
   val rocc_commit_state = RegInit(s_rocc_cmd)
@@ -455,12 +457,23 @@ class ROB(implicit p: Parameters) extends Module {
       when(!csr.io.expt){
         // 无中断，正常执行
         when(!head.kill){
-          // 不kill 正常执行
-          commitIdx.inc()
-          write_prfile(0, head, true.B)
-          write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
-          head.state := S_COMMITED
-          out_br_info(true.B, head)
+          when(!csr.io.w_satp){
+            // 不kill 正常执行
+            commitIdx.inc()
+            write_prfile(0, head, true.B)
+            write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+            head.state := S_COMMITED
+            out_br_info(true.B, head)
+          }.otherwise{
+            // w satp, kill
+            commitIdx.value := 0.U
+            write_prfile(0, head, true.B)
+            write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
+            rob.foreach(x => {
+              x.state := S_EMPTY
+            })
+            out_br_info(true.B, head)
+          }
         }.otherwise{
           // 触发了kill
           commitIdx.value := 0.U

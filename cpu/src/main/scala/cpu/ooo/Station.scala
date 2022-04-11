@@ -114,7 +114,7 @@ class Station(implicit val p: Parameters) extends Module {
         val isHit = Bool()
       }))
       val except = Input(Bool())
-      val kill = Input(Bool())
+      val flush = Input(Bool())
     }
   })
 
@@ -217,7 +217,7 @@ class Station(implicit val p: Parameters) extends Module {
 
   // br isMiss, need clear station, 优先级最高，写在最后
   // 分支跳转未命中清空、中断异常清空
-  when((io.robCommit.br_info.valid & !io.robCommit.br_info.bits.isHit) | io.robCommit.except | io.robCommit.kill) {
+  when((io.robCommit.br_info.valid & !io.robCommit.br_info.bits.isHit) | io.robCommit.except | io.robCommit.flush) {
     // clear station
     station.foreach(x => {
       x.state := S_INVALID
