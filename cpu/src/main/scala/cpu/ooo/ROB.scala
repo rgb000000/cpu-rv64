@@ -381,7 +381,7 @@ class ROB(implicit p: Parameters) extends Module {
   csr_enable(head, head.state === S_GETDATA)
   monitor_enable(head, (head.state === S_GETDATA) & io.commit.reg(0).valid)
   // SC fail need flush pipeline
-  io.kill := (head.kill & (head.state === S_GETDATA)) & io.commit.reg(0).valid
+  io.kill := (head.kill | csr.io.w_satp) & (head.state === S_GETDATA) & io.commit.reg(0).valid
 
   val s_rocc_cmd :: s_rocc_resp :: Nil = Enum(2)
   val rocc_commit_state = RegInit(s_rocc_cmd)

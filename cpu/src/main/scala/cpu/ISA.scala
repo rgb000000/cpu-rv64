@@ -132,6 +132,8 @@ trait RVSystem {
   def sret   = BitPat("b000100000010_00000_000_00000_1110011")
   def ecall  = BitPat("b000000000000_00000_000_00000_1110011") // RaiseException(EnvironmentCall)
   def ebreak = BitPat("b000000000001_00000_000_00000_1110011") // RaiseException(Breakpoint)
+  def sfence_vma =
+               BitPat("b0001001?????_?????_000_00000_1110011")
 
   //                       csr      rs1/zimm    rd
   def csrrw  = BitPat("b????????????_?????_001_?????_1110011") // t = CSRs[csr]; CSRs[csr] = x[rs1]; x[rd] = t
@@ -141,9 +143,6 @@ trait RVSystem {
   def csrrsi = BitPat("b????????????_?????_110_?????_1110011") // t = CSRs[csr]; CSRs[csr] = t | zimm; x[rd] = t
   def csrrci = BitPat("b????????????_?????_111_?????_1110011") // t = CSRs[csr]; CSRs[csr] = t &~zimm; x[rd] = t
   def wfi     = BitPat("b000100000101_00000_000_00000_1110011") // wait for interrupt
-
-  // sfence.vma
-  def sfence_vma = BitPat("b0001001_?????_?????_000_00000_1110011")
 }
 
 trait Custom {

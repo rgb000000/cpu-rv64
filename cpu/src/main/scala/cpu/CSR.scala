@@ -4,7 +4,7 @@ import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
 import chisel3.util.experimental.BoringUtils
-import cpu.CSR.PRV_M
+import cpu.CSR.{PRV_M, PRV_U}
 import cpu.ooo.ExceptType
 import difftest.{DifftestArchEvent, DifftestCSRState}
 
@@ -113,6 +113,7 @@ class CSRIO(implicit val p: Parameters) extends Bundle {
   val expt = Output(Bool())
   val exvec = Output(UInt(p(XLen).W))
   val epc = Output(UInt(p(XLen).W))
+  val w_satp = Output(Bool())  // write satp will flush pipeline
 
   val interrupt = Input(new Bundle {
     val time     = Bool()
@@ -232,9 +233,18 @@ class CSR (implicit p: Parameters) extends Module {
   val saddrInvalid = MuxLookup(io.ctrl_signal.st_type, false.B, Seq(  // store isvalid?
     Control.ST_SW -> io.ctrl_signal.addr(1, 0).orR,
     Control.ST_SH -> io.ctrl_signal.addr(0)))
-  io.expt := (io.ctrl_signal.illegal || iaddrInvalid || laddrInvalid || saddrInvalid ||
-    (io.cmd(1, 0).orR && (!csrValid || !privValid) && false.B) || (wen && csrRO && false.B) ||
-    (privInst && !privValid && false.B) || isEcall || isEbreak || interrupt.orR() || (io.has_except =/= ExceptType.NO)) & io.ctrl_signal.valid
+  io.expt := (io.ctrl_signal.illegal
+           || iaddrInvalid
+           || laddrInvalid
+           || saddrInvalid
+           || (io.cmd(1, 0).orR && (!csrValid || !privValid) && false.B)
+           || (wen && csrRO && false.B)
+           || (privInst && !privValid && false.B)
+           || isEcall
+           || isEbreak
+           || interrupt.orR
+           || (io.has_except =/= ExceptType.NO)
+    ) & io.ctrl_signal.valid
   io.exvec := mtvec
   io.epc  := mepc
 
@@ -266,6 +276,8 @@ class CSR (implicit p: Parameters) extends Module {
   val deleg = Mux(isInterrupe, mideleg, medeleg)
   val delegS = deleg(cause(3,0)).asBool & (mstatus.prv < PRV_M)
 
+  io.w_satp := !io.stall & io.ctrl_signal.valid & wen & (csr_addr === CSRs.satp.U)
+
   when(!io.stall & io.ctrl_signal.valid) {
     when(io.expt) {
       // 遇到非法指令就停止
@@ -296,8 +308,10 @@ class CSR (implicit p: Parameters) extends Module {
       mstatus.prv := mstatus.mpp
     }.elsewhen(isSret){
       // FIXME
-      mstatus.mie := mstatus.mpie
-      mstatus.mpie := true.B
+      mstatus.sie := mstatus.spie
+      mstatus.spie := true.B
+      mstatus.spp := PRV_U
+      mstatus.prv := mstatus.spp
     }
     // write csr
     .elsewhen(wen) {
