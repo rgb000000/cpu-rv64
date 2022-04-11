@@ -407,7 +407,8 @@ class RenameMap(implicit p: Parameters) extends Module {
   }.otherwise{
     // cdb、robCommit和allocate三者不会冲突
     io.cdb.foreach(cdb => {
-      when(cdb.fire & (cdb.bits.prn =/= 0.U)) {
+      // csr, rocc inst can't get data from cdb, need to judge wen signal
+      when(cdb.fire & (cdb.bits.prn =/= 0.U) & cdb.bits.wen) {
         assert(cam(cdb.bits.prn).state === STATECONST.MAPPED, s"${cdb.bits.pc.toString()} wb reg error, state =/= MAPPED")
         cam(cdb.bits.prn).state := STATECONST.WB
         cam(cdb.bits.prn).robIdx := cdb.bits.idx
