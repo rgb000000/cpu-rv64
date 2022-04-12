@@ -138,6 +138,7 @@ class CSR (implicit p: Parameters) extends Module {
   val mcycle  = RegInit(0.U(p(XLen).W))
   val mtval   = RegInit(0.U(p(XLen).W))
 
+  val stvec   = RegInit(0.U(p(XLen).W))
   val sepc    = RegInit(0.U(p(XLen).W))
   val scause  = RegInit(0.U(p(XLen).W))
   val stval   = RegInit(0.U(p(XLen).W))
@@ -195,6 +196,7 @@ class CSR (implicit p: Parameters) extends Module {
     BitPat(CSRs.medeleg.U(12.W))  -> mideleg,
     BitPat(CSRs.mtval.U(12.W))    -> mtval,
     BitPat(CSRs.stval.U(12.W))    -> stval,
+    BitPat(CSRs.stvec.U(12.W))    -> stvec,
     BitPat(CSRs.satp.U(12.W))     -> satp.asUInt,
   )
   io.out := Lookup(csr_addr, 0.U, csrFile).asUInt
@@ -349,6 +351,7 @@ class CSR (implicit p: Parameters) extends Module {
       .elsewhen(csr_addr === CSRs.sip.U)      { ssip := wdata(1)}
       .elsewhen(csr_addr === CSRs.mtval.U)    { mtval := wdata}
       .elsewhen(csr_addr === CSRs.stval.U)    { stval := wdata}
+      .elsewhen(csr_addr === CSRs.stvec.U)    { stvec := wdata}
       .elsewhen(csr_addr === CSRs.satp.U)     { satp := wdata.asTypeOf(new SATP)}
     }
   }
@@ -374,9 +377,9 @@ class CSR (implicit p: Parameters) extends Module {
     dcsr.io.sscratch       := 0.U                   // RegNext(Mux(!io.stall, sstatus,           RegEnable(sstatus, !io.stall))) // 0.U // RegNext(0.U)
     dcsr.io.mideleg        := mideleg               // RegNext(0.U)
     dcsr.io.medeleg        := medeleg               // RegNext(0.U)
-    dcsr.io.mtval          := 0.U                   // RegNext(0.U)
-    dcsr.io.stval          := 0.U                   // RegNext(0.U)
-    dcsr.io.stvec          := 0.U                   // RRegNextegNext(0.U)
+    dcsr.io.mtval          := mtval                 // RegNext(0.U)
+    dcsr.io.stval          := stval                 // RegNext(0.U)
+    dcsr.io.stvec          := stvec                 // RRegNextegNext(0.U)
 
     def change(value: UInt): UInt = {
       Mux(value =/= RegNext(value), value, 0.U)
