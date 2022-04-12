@@ -28,6 +28,8 @@ case object CLINTRegs extends Field[Map[String, String]]
 
 case object PRNUM extends Field[Int]
 
+case object IGNORE_AD extends Field[Boolean] // xv6 doesn't use a/d bit
+
 
 class BaseConfig extends Config ((site, here, up)=>{
   case XLen           => 64
@@ -68,6 +70,8 @@ class BaseConfig extends Config ((site, here, up)=>{
   )
 
   case PRNUM => 32+16+2
+
+  case IGNORE_AD => true
 })
 
 class DifftestEnableConfig extends Config((site, here, up)=>{

@@ -198,18 +198,20 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
 
   switch(state){
     is(s_idle){
-      when(vm_enbale){
-        // 只有vm_enable的时候状态机才工作
-        when(va_msbs_ok){
-          // vm启用且msbs_ok 查找ways
-          state := s_lookup
+      when(io.from_cpu.req.fire()){
+        when(vm_enbale){
+          // 只有vm_enable的时候状态机才工作
+          when(va_msbs_ok){
+            // vm启用且msbs_ok 查找ways
+            state := s_lookup
+          }.otherwise{
+            // vm启用但是msbs不ok  那么需要抛出异常
+            state := s_except
+          }
         }.otherwise{
-          // vm启用但是msbs不ok  那么需要抛出异常
-          state := s_except
+          // vm不启用则状态机不运行
+          state := s_idle
         }
-      }.otherwise{
-        // vm不启用则状态机不运行
-        state := s_idle
       }
     }
     is(s_lookup){
@@ -247,15 +249,15 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
     }
     is(s_except){
       // 返回except
-      when(io.toCache.resp.fire){
-        assert(io.toCache.resp.bits.except === true.B)
+      when(io.from_cpu.resp.fire){
+        assert(io.from_cpu.resp.bits.except === true.B)
         state := s_idle
       }
     }
   }
 
   // from_cpu.req.fire的时候 缓存req到req_reg中
-  io.from_cpu.req.ready := state === s_idle
+  io.from_cpu.req.ready := (state === s_idle) & io.toCache.req.ready
   when(io.from_cpu.req.fire){
     req_reg := io.from_cpu.req.bits
   }

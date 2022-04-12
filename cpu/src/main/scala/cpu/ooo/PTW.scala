@@ -5,7 +5,7 @@ import chisel3.util._
 import chipsalliance.rocketchip.config._
 import chisel3.experimental.ChiselEnum
 import chisel3.util.experimental.BoringUtils
-import cpu.{CSR, CacheCPUIO}
+import cpu.{CSR, CacheCPUIO, IGNORE_AD}
 
 object OpType {
   val LD_OP  = 0.U(2.W)
@@ -112,7 +112,7 @@ class PTW(val N: Int)(implicit val p: Parameters) extends Module {
   // 当V==1 & （R==1 | X==1） 则pte是leaf page
   val pte = io.toCache.resp.bits.data.asTypeOf(new PTE)
   illedge_page := (!pte.flags.V) | (!pte.flags.R & pte.flags.W)
-  get_leaf_ptw := pte.flags.V | (pte.flags.R | pte.flags.X)
+  get_leaf_ptw := pte.flags.V & (pte.flags.R | pte.flags.X)
 
   val pte_reg = RegInit(0.U.asTypeOf(new PTE))
   val vpn_mask_reg = RegInit(0.U(18.W))
@@ -136,15 +136,14 @@ class PTW(val N: Int)(implicit val p: Parameters) extends Module {
   BoringUtils.addSink(satp_ppn, "satp_ppn")
   val mode = Mux(mstatus_mprv & !req_data.isfetch, mstatus_mpp, cpu_mode)
   common_check := (
-    req_data.isfetch
-      & pte.flags.V
+        pte.flags.V
       & !((mode === CSR.PRV_U) & !pte.flags.U)
       & !(pte.flags.U & ((mode === CSR.PRV_S) & (!mstatus_sum | req_data.isfetch)))
     )
-  isfetch_except := common_check & pte.flags.X
-  load_except := common_check & (pte.flags.R | (mstatus_mxr & pte.flags.X))
+  isfetch_except := !(req_data.isfetch & common_check & pte.flags.X)
+  load_except    := !(!req_data.isfetch & common_check & (pte.flags.R | (mstatus_mxr & pte.flags.X)))
   // 注意: AMO指令从不出现load异常，因为不可读的page页不可能会写，如果发出load异常也会发出store异常，所以AMO指令发起的是store异常
-  store_except := common_check & pte.flags.W
+  store_except   := !(!req_data.isfetch & common_check & pte.flags.W)
 
   val pg_mask = MuxLookup(level, 0.U, Seq(
     0.U -> "h3ffff".U(18.W),
@@ -154,15 +153,15 @@ class PTW(val N: Int)(implicit val p: Parameters) extends Module {
 
   // 权限不满足产生异常，根据不同的req op_type进行不同的异常判断
   when(req_data.isfetch){
-    update_ad := !pte.flags.A
+    update_ad := {if(p(IGNORE_AD)) false.B else !pte.flags.A}
     except := isfetch_except | update_ad
   }.elsewhen((req_data.op_type === OpType.LD_OP) & !req_data.isfetch){
     // load
-    update_ad := !pte.flags.A
+    update_ad := {if(p(IGNORE_AD)) false.B else !pte.flags.A}
     except := load_except | update_ad
   }.otherwise{
     // store and amo op
-    update_ad := !pte.flags.A | !pte.flags.D
+    update_ad := {if(p(IGNORE_AD)) false.B else !pte.flags.A | !pte.flags.D}
     except := store_except | update_ad
   }
 
@@ -248,7 +247,7 @@ class PTW(val N: Int)(implicit val p: Parameters) extends Module {
   io.toCache.req.bits.data := 0.U       // TLB don't write data to cache
   io.toCache.req.bits.mask := "hff".U   // sv39 pte is 64bit
   io.toCache.req.bits.op := 0.U         // read
-  sel_in.req.ready := state === s_idle
+  sel_in.req.ready := (state === s_idle) & io.toCache.req.ready
   when(state === s_idle){
     // idle的时候如果有req 就发送cache req
     io.toCache.req.valid := sel_in.req.valid
