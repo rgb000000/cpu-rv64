@@ -180,6 +180,7 @@ class CSR (implicit p: Parameters) extends Module {
   BoringUtils.addSource(satp.ppn, "satp_ppn")
   BoringUtils.addSource(satp.asid, "satp_asid")
 
+  val sstatus_mask = ("b1" + "0"*(p(XLen) - 35) + "11" + "0"*12 + "1111111" + "0"*4 + "100110011").U(64.W)
 
   // read csr
   val csrFile = Seq(
@@ -198,6 +199,8 @@ class CSR (implicit p: Parameters) extends Module {
     BitPat(CSRs.stval.U(12.W))    -> stval,
     BitPat(CSRs.stvec.U(12.W))    -> stvec,
     BitPat(CSRs.satp.U(12.W))     -> satp.asUInt,
+    BitPat(CSRs.sie.U(12.W))      -> (mie.asUInt & 0x333.U),
+    BitPat(CSRs.sstatus.U(12.W))  -> (mstatus.asUInt & sstatus_mask),
   )
   io.out := Lookup(csr_addr, 0.U, csrFile).asUInt
 
@@ -328,6 +331,11 @@ class CSR (implicit p: Parameters) extends Module {
         mstatus.mpp := tmp_mstatus.mpp
         mstatus.sd := tmp_mstatus.xs.andR() | tmp_mstatus.fs.andR()
       }
+      when(csr_addr === CSRs.sstatus.U) {
+        val tmp_mstatus = wdata.asTypeOf(new MStatus)
+        mstatus.sie := tmp_mstatus.sie
+        mstatus.spie := tmp_mstatus.spie
+      }
       .elsewhen(csr_addr === CSRs.mip.U) {
 //        val tmp_mip = wdata.asTypeOf(new MIP)
 //        mip.mtip := tmp_mip.mtip
@@ -338,6 +346,21 @@ class CSR (implicit p: Parameters) extends Module {
         mie.mtie := tmp_mie.mtie
         mie.msie := tmp_mie.msie
         mie.meie := tmp_mie.meie
+        mie.stie := tmp_mie.stie
+        mie.ssie := tmp_mie.ssie
+        mie.seie := tmp_mie.seie
+        mie.utie := tmp_mie.utie
+        mie.usie := tmp_mie.usie
+        mie.ueie := tmp_mie.ueie
+      }
+      .elsewhen(csr_addr === CSRs.sie.U){
+        val tmp_mie = wdata.asTypeOf(new MIE)
+        mie.stie := tmp_mie.stie
+        mie.ssie := tmp_mie.ssie
+        mie.seie := tmp_mie.seie
+        mie.utie := tmp_mie.utie
+        mie.usie := tmp_mie.usie
+        mie.ueie := tmp_mie.ueie
       }
       .elsewhen(csr_addr === CSRs.mepc.U)     { mepc := wdata >> 2.U << 2.U }
       .elsewhen(csr_addr === CSRs.mcause.U)   { mcause := wdata & (BigInt(1) << (p(XLen)-1) | 0xf).U }
@@ -357,7 +380,6 @@ class CSR (implicit p: Parameters) extends Module {
   }
 
   if (p(Difftest)) {
-    val sstatus_mask = ("b1" + "0"*(p(XLen) - 35) + "11" + "0"*12 + "1101111" + "0"*13).U(64.W)
     val sstatus = sstatus_mask & mstatus.asUInt()
     val dcsr = Module(new DifftestCSRState)
     dcsr.io.clock          := clock
