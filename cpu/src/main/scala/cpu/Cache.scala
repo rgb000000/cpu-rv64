@@ -220,7 +220,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   val ways = List.fill(p(NWay))( Module(new Way(tag_width, index_width, offset_width)) )
 
   // cache main fsm logic
-  val s_idle :: s_lookup :: s_miss :: s_replace :: s_refill :: s_fence :: s_fence_wb :: s_fence_invalid :: Nil = Enum(8)
+  val s_idle :: s_lookup :: s_miss :: s_replace :: s_refill :: s_fence :: s_fence_wb :: s_fence_invalid :: s_bad_addr :: Nil = Enum(9)
   val state = RegInit(s_idle)
 
   // fence_i
@@ -417,7 +417,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
   //                              resp in lookup stage
 //  io.cpu.resp.valid := (state === idle) | ((state === lookup) & (!is_miss) & (req_reg.op === 0.U)) |
-  io.cpu.resp.valid := (state === s_idle) | ((state === s_lookup) & (!is_miss) & (!is_miss_reg)) |
+  io.cpu.resp.valid := (state === s_idle) | (state === s_bad_addr) | ((state === s_lookup) & (!is_miss) & (!is_miss_reg)) |
     //    ((state === refill) & ((!req_reg.op) & refill_cnt.value === req_reg.addr.asTypeOf(infos).offset(log2Ceil(64 / 8) + log2Ceil(p(NBank)) - 1, log2Ceil(64 / 8)).asUInt()) & io.mem.resp.valid) |
     (req_isCached & (((state === s_refill) & ((!req_reg.op) & (refill_cnt.value === 1.U) & io.mem.resp.valid)) |
                      ((state === s_refill) & ((req_reg.op) & (refill_cnt.value === 1.U) & io.mem.resp.valid)))) |
@@ -434,6 +434,8 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
       res := Mux(valid, tmp_data(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
       res
     }).reverse) >> (req_reg.addr(2, 0) << 3.U)
+  }.elsewhen(state === s_bad_addr){
+    io.cpu.resp.bits.data := 0.U
   }.otherwise{
     // 这里的逻辑是为了保证ld的结果在都refill最后一个数据来的时候来放回，目地是为了保证操作的原子性，（TODO：其实是因为太菜了，没敢及时返回。这个可以改进一下，数据到了就及时返回
     val ret = Mux(req_isCached, Mux(req_reg.addr.asTypeOf(infos).offset(log2Ceil(p(XLen) / 8)).asUInt() === 1.U, io.mem.resp.bits.data, load_ret), io.mem.resp.bits.data)
@@ -446,7 +448,10 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   }
 
 
-  io.cpu.resp.bits.cmd := Mux(state === s_idle, 0.U, Mux(req_reg.op === 1.U, 1.U, 2.U))   // op=1, return 1   op=0, return 2
+  io.cpu.resp.bits.cmd := Mux(state === s_idle, 0.U,
+                          Mux(state === s_bad_addr, 2.U,    // only load will happed bad_addr
+                          Mux(req_reg.op === 1.U, 1.U,
+                                                      2.U)))   // op=1, return 1   op=0, return 2
 
   when((state=== s_refill) & io.mem.resp.fire() & req_isCached){
     refill_cnt.inc()
@@ -617,6 +622,11 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 //    printf("state === refill & resp.fire(), get data: %x   cmd: %x   write_buffer_data: %x \n", io.mem.resp.bits.data, io.mem.resp.bits.cmd, write_buffer.bits.data);
     }
 
+  // 检测超出地址空间的无效地址
+  val addressSpace_2 = p(AddressSpace)
+  val invalid_mem_addr = !WireInit(addressSpace_2.map(x => {
+    (io.cpu.req.bits.addr >= x._1.U(p(AddresWidth).W)) & (io.cpu.req.bits.addr < (x._1.U(p(AddresWidth).W) + x._2.U(p(AddresWidth).W)))
+  }).reduce(_ | _))
 
   // fsm state
   switch(state){
@@ -627,11 +637,17 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
         }else{
           state := s_fence         // dcache
         }
-      }.elsewhen(io.cpu.req.fire() & !conflict_hit_write){
+      }.elsewhen(io.cpu.req.fire() & !conflict_hit_write & !invalid_mem_addr){
         state := s_lookup
+      }.elsewhen(io.cpu.req.fire() & invalid_mem_addr){
+        state := s_bad_addr
       }.otherwise{
         state := state
       }
+    }
+
+    is(s_bad_addr){
+      state := s_idle
     }
 
     is(s_lookup){

@@ -206,7 +206,7 @@ class LoadU(implicit val p: Parameters) extends Module {
   val addressSpace = p(AddressSpace)
   val io = IO(new Bundle{
     val req = Flipped(Decoupled(new Bundle{
-      val addr = UInt(32.W)
+      val addr = UInt(p(AddresWidth).W)
       val ld_type = UInt(3.W)
       val idx = UInt(4.W)    // 当前的指令的保留站idx，用于rob读取时候向前查找最近的一项
     }))
@@ -229,7 +229,7 @@ class LoadU(implicit val p: Parameters) extends Module {
   // 检测超出地址空间的无效地址
   val invalid_mem_addr = !WireInit(addressSpace.map(x => {
     (io.req.bits.addr >= x._1.U(p(AddresWidth).W)) & (io.req.bits.addr < (x._1.U(p(AddresWidth).W) + x._2.U(p(AddresWidth).W)))
-  }).reduce(_ | _))
+  }).reduce(_ | _)) & false.B // do it in cache
 
   // mem 封装了从cache load数据的功能
   val mem = Module(new OOOMEM)
