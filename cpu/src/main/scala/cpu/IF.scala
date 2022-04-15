@@ -219,26 +219,26 @@ class OOOIF (implicit p: Parameters) extends Module {
   val inst = RegInit(VecInit(Seq.fill(2)(BitPat.bitPatToUInt(ISA.nop))))
 
 //  val isSingleAddr = WireInit(pc(31, 28).asUInt() =/= 8.U)
-  val isSingleAddr = RegInit(true.B)
-  val isSingleAddr_next = RegInit(true.B)
+  val isSingleAddr = RegInit(false.B)
+  val isSingleAddr_next = RegInit(false.B)
   val last_single = RegInit(false.B)
-  when(io.icache.req.fire & (io.icache.req.bits.addr(31, 28) =/= 8.U)){
-    isSingleAddr_next := true.B
-  }.elsewhen(io.icache.req.fire & (io.icache.req.bits.addr(31, 28) === 8.U)){
-    isSingleAddr_next := false.B
-  }
-
-  when(io.icache.req.fire){
-    isSingleAddr := isSingleAddr_next
-  }
-
-  when(io.icache.req.fire){
-    when((!isSingleAddr_next) & isSingleAddr){
-      last_single := true.B
-    }.otherwise{
-      last_single := false.B
-    }
-  }
+//  when(io.icache.req.fire & (io.icache.req.bits.addr(31, 28) =/= 8.U)){
+//    isSingleAddr_next := true.B
+//  }.elsewhen(io.icache.req.fire & (io.icache.req.bits.addr(31, 28) === 8.U)){
+//    isSingleAddr_next := false.B
+//  }
+//
+//  when(io.icache.req.fire){
+//    isSingleAddr := isSingleAddr_next
+//  }
+//
+//  when(io.icache.req.fire){
+//    when((!isSingleAddr_next) & isSingleAddr){
+//      last_single := true.B
+//    }.otherwise{
+//      last_single := false.B
+//    }
+//  }
 
   // br_info的isTaken在rob中已经转换了，意味着实际的跳转方向
   right_tgt := Mux(io.br_info.fire & !io.br_info.bits.isHit, Mux(io.br_info.bits.isTaken, io.br_info.bits.tgt, io.br_info.bits.cur_pc + 4.U), 0.U)
@@ -326,14 +326,14 @@ class OOOIF (implicit p: Parameters) extends Module {
   io.out(0).bits.pTaken := pTaken(0)
   io.out(0).bits.pPC := Mux(btb(0).io.query.res.bits.is_miss, 0.U, btb(0).io.query.res.bits.tgt)
   io.out(0).bits.except := Mux(io.icache.resp.bits.except, ExceptType.IPF, ExceptType.NO)
-  io.out(0).valid := (isCacheRet & inst_valid(0) & (state =/= s_kill)) | (is_valid_when_stall(0) & stall_negedge)
+  io.out(0).valid := (isCacheRet & inst_valid(0) & ((state =/= s_kill) & (state =/= s_fence))) | (is_valid_when_stall(0) & stall_negedge)
 
   io.out(1).bits.pc := io.out(0).bits.pc | "b100".U
   io.out(1).bits.inst := Mux(io.icache.resp.fire & (io.icache.resp.bits.cmd =/= 0.U), Mux((!isSingleAddr) & (!last_single), io.icache.resp.bits.data(63, 32), io.icache.resp.bits.data(31, 0)), inst(1))
   io.out(1).bits.pTaken := pTaken(1)
   io.out(1).bits.pPC := Mux(btb(0).io.query.res.bits.is_miss, 0.U, btb(0).io.query.res.bits.tgt)
   io.out(1).bits.except := Mux(io.icache.resp.bits.except, ExceptType.IPF, ExceptType.NO)
-  io.out(1).valid := (isCacheRet & inst_valid(1) & !cancel_inst_1 & (state =/= s_kill)) | (is_valid_when_stall(1) & stall_negedge)
+  io.out(1).valid := (isCacheRet & inst_valid(1) & !cancel_inst_1 & ((state =/= s_kill) & (state =/= s_fence))) | (is_valid_when_stall(1) & stall_negedge)
 
   val pTaken_when_stall = RegInit(false.B)
   val pnpc_f_reg = RegInit(0.U(p(AddresWidth).W))

@@ -628,10 +628,17 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     (io.cpu.req.bits.addr >= x._1.U(p(AddresWidth).W)) & (io.cpu.req.bits.addr < (x._1.U(p(AddresWidth).W) + x._2.U(p(AddresWidth).W)))
   }).reduce(_ | _))
 
+  val fence_i_reg = RegInit(false.B)
+  when(((state =/= s_idle) & (state =/= s_lookup)) & io.fence_i){
+    fence_i_reg := true.B
+  }.elsewhen((state === s_idle) & !io.fence_i){
+    fence_i_reg := false.B
+  }
+
   // fsm state
   switch(state){
     is(s_idle){
-      when(io.fence_i){
+      when(io.fence_i | fence_i_reg){
         if(cache_type == "i"){
           state := s_fence_invalid // icache
         }else{
