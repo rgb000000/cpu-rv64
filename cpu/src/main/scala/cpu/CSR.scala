@@ -143,6 +143,7 @@ class CSR (implicit p: Parameters) extends Module {
   val scause  = RegInit(0.U(p(XLen).W))
   val stval   = RegInit(0.U(p(XLen).W))
   val satp    = RegInit(0.U.asTypeOf(new SATP))
+  val sscratch = RegInit(0.U(64.W))
 
   val medeleg = RegInit(0.U(p(XLen).W))
   val mideleg = RegInit(0.U(p(XLen).W))
@@ -157,12 +158,8 @@ class CSR (implicit p: Parameters) extends Module {
 
   val mie = RegInit(0.U.asTypeOf(new MIE))
   val mip = WireInit(0.U.asTypeOf(new MIP))
-  mip.mtip := io.interrupt.time
-  mip.msip := io.interrupt.soft
-  mip.meip := io.interrupt.external
 
   val ssip = RegInit(false.B)
-  mip.ssip := ssip
 
 //  dontTouch(mstatus)
 //  dontTouch(mie)
@@ -180,7 +177,7 @@ class CSR (implicit p: Parameters) extends Module {
   BoringUtils.addSource(satp.ppn, "satp_ppn")
   BoringUtils.addSource(satp.asid, "satp_asid")
 
-  val sstatus_mask = ("b1" + "0"*(p(XLen) - 35) + "11" + "0"*12 + "1111111" + "0"*4 + "100110011").U(64.W)
+  val sstatus_mask = ("b1" + "0"*(p(XLen) - 35) + "11" + "0"*12 + "1101111" + "0"*4 + "100110011").U(64.W)
 
   // read csr
   val csrFile = Seq(
@@ -198,9 +195,13 @@ class CSR (implicit p: Parameters) extends Module {
     BitPat(CSRs.mtval.U(12.W))    -> mtval,
     BitPat(CSRs.stval.U(12.W))    -> stval,
     BitPat(CSRs.stvec.U(12.W))    -> stvec,
+    BitPat(CSRs.sepc.U(12.W))     -> sepc,
+    BitPat(CSRs.scause.U(12.W))   -> scause,
     BitPat(CSRs.satp.U(12.W))     -> satp.asUInt,
     BitPat(CSRs.sie.U(12.W))      -> (mie.asUInt & 0x333.U),
+    BitPat(CSRs.sip.U(12.W))      -> (mip.asUInt & 0x333.U),
     BitPat(CSRs.sstatus.U(12.W))  -> (mstatus.asUInt & sstatus_mask),
+    BitPat(CSRs.sscratch.U(12.W)) -> sscratch,
   )
   io.out := Lookup(csr_addr, 0.U, csrFile).asUInt
 
@@ -219,17 +220,51 @@ class CSR (implicit p: Parameters) extends Module {
     CSR.C -> (io.out & (~io.in).asUInt())
   ))
 
-  val time_interrupt_enable = WireInit(mie.mtie & mstatus.mie)
-  val soft_interrupt_enable = WireInit(mie.msie & mstatus.mie)
-  val external_interrupt_ebale = WireInit(mie.meie & mstatus.mie)
-  BoringUtils.addSource(time_interrupt_enable, "time_interrupt_enable")
-  BoringUtils.addSource(soft_interrupt_enable, "soft_interrupt_enable")
-  BoringUtils.addSource(external_interrupt_ebale, "external_interrupt_enable")
-  val time_interrupt = mip.mtip & time_interrupt_enable
-  val soft_interrupt = mip.msip & soft_interrupt_enable
-  val external_interrupt = mip.meip & external_interrupt_ebale
+  val m_time_global_enable = Mux(!mideleg(7),
+                                      ((mstatus.prv === CSR.PRV_M) & mstatus.mie) | (mstatus.prv < CSR.PRV_M),
+                                      ((mstatus.prv === CSR.PRV_S) & mstatus.sie) | (mstatus.prv < CSR.PRV_S))
+  val m_soft_global_enable = Mux(!mideleg(3),
+                                      ((mstatus.prv === CSR.PRV_M) & mstatus.mie) | (mstatus.prv < CSR.PRV_M),
+                                      ((mstatus.prv === CSR.PRV_S) & mstatus.sie) | (mstatus.prv < CSR.PRV_S))
+  val m_ext_global_enable  = Mux(!mideleg(11),
+                                      ((mstatus.prv === CSR.PRV_M) & mstatus.mie) | (mstatus.prv < CSR.PRV_M),
+                                      ((mstatus.prv === CSR.PRV_S) & mstatus.sie) | (mstatus.prv < CSR.PRV_S))
 
-  val interrupt = WireInit(Cat(Seq(time_interrupt, soft_interrupt, external_interrupt)))
+  val s_time_global_enable = Mux(!(mideleg(5) & mstatus.prv < PRV_M),
+                                      ((mstatus.prv === CSR.PRV_M) & mstatus.mie) | (mstatus.prv < CSR.PRV_M),
+                                      ((mstatus.prv === CSR.PRV_S) & mstatus.sie) | (mstatus.prv < CSR.PRV_S))
+  val s_soft_global_enable = Mux(!(mideleg(1) & mstatus.prv < PRV_M),
+                                      ((mstatus.prv === CSR.PRV_M) & mstatus.mie) | (mstatus.prv < CSR.PRV_M),
+                                      ((mstatus.prv === CSR.PRV_S) & mstatus.sie) | (mstatus.prv < CSR.PRV_S))
+  val s_ext_global_enable  = Mux(!(mideleg(9) & mstatus.prv < PRV_M),
+                                      ((mstatus.prv === CSR.PRV_M) & mstatus.mie) | (mstatus.prv < CSR.PRV_M),
+                                      ((mstatus.prv === CSR.PRV_S) & mstatus.sie) | (mstatus.prv < CSR.PRV_S))
+
+  val m_time_interrupt_enable = WireInit(mie.mtie & m_time_global_enable)
+  val s_time_interrupt_enable = WireInit(mie.stie & s_time_global_enable)
+  val m_soft_interrupt_enable = WireInit(mie.msie & m_soft_global_enable)
+  val s_soft_interrupt_enable = WireInit(mie.ssie & s_soft_global_enable)
+  val m_ext_interrupt_enable  = WireInit(mie.meie & m_ext_global_enable)
+  val s_ext_interrupt_enable  = WireInit(mie.seie & s_ext_global_enable)
+
+
+  mip.mtip := io.interrupt.time & m_time_interrupt_enable
+  mip.msip := io.interrupt.soft
+  mip.meip := io.interrupt.external
+  mip.stip := false.B
+  mip.ssip := ssip
+  mip.seip := io.interrupt.external
+
+  val m_time_interrupt     = mip.mtip & m_time_interrupt_enable
+  val m_soft_interrupt     = mip.msip & m_soft_interrupt_enable
+  val m_external_interrupt = mip.meip & m_ext_interrupt_enable
+  val s_time_interrupt     = mip.stip & s_time_interrupt_enable
+  val s_soft_interrupt     = mip.ssip & s_soft_interrupt_enable
+  val s_external_interrupt = mip.seip & s_ext_interrupt_enable
+
+  val interrupt = WireInit(Cat(Seq(m_time_interrupt, m_soft_interrupt, m_external_interrupt,
+                                   s_time_interrupt, s_soft_interrupt, s_external_interrupt
+  )))
 
   val iaddrInvalid = io.pc_check && io.ctrl_signal.addr(1)            // pc isvalid?
   val laddrInvalid = MuxLookup(io.ctrl_signal.ld_type, false.B, Seq(  // load isvalid?
@@ -251,8 +286,6 @@ class CSR (implicit p: Parameters) extends Module {
            || interrupt.orR
            || (io.has_except =/= ExceptType.NO)
     ) & io.ctrl_signal.valid
-  io.exvec := mtvec
-  io.epc  := mepc
 
 
   when(io.expt & (io.has_except =/= ExceptType.NO) & !interrupt.orR){
@@ -264,26 +297,32 @@ class CSR (implicit p: Parameters) extends Module {
     }
   }
 
-  val isInterrupe = time_interrupt | soft_interrupt | external_interrupt
+  val isInterrupe = interrupt.orR
   val isExcept = io.has_except =/= ExceptType.NO                                             // S   M
-  val cause = Mux(time_interrupt,                   (1.U << (p(XLen)-1).U).asUInt | MuxLookup(mstatus.prv, 7.U, Seq(CSR.PRV_S -> 5.U, CSR.PRV_U -> 4.U)),
-              Mux(soft_interrupt,                   (1.U << (p(XLen)-1).U).asUInt | MuxLookup(mstatus.prv, 3.U, Seq(CSR.PRV_S -> 1.U, CSR.PRV_U -> 0.U)),
-              Mux(external_interrupt,               (1.U << (p(XLen)-1).U).asUInt | MuxLookup(mstatus.prv, 11.U, Seq(CSR.PRV_S -> 9.U, CSR.PRV_U -> 8.U)),
+  val cause = Mux(m_external_interrupt,             (1.U << (p(XLen)-1).U).asUInt | 11.U, // MuxLookup(mstatus.prv, 11.U, Seq(CSR.PRV_S -> 9.U, CSR.PRV_U -> 8.U)),
+              Mux(m_time_interrupt,                 (1.U << (p(XLen)-1).U).asUInt |  7.U, // MuxLookup(mstatus.prv,  7.U, Seq(CSR.PRV_S -> 5.U, CSR.PRV_U -> 4.U)),
+              Mux(m_soft_interrupt,                 (1.U << (p(XLen)-1).U).asUInt |  3.U, // MuxLookup(mstatus.prv,  3.U, Seq(CSR.PRV_S -> 1.U, CSR.PRV_U -> 0.U)),
+              Mux(s_external_interrupt,             (1.U << (p(XLen)-1).U).asUInt |  9.U, // MuxLookup(mstatus.prv, 11.U, Seq(CSR.PRV_S -> 9.U, CSR.PRV_U -> 8.U)),
+              Mux(s_time_interrupt,                 (1.U << (p(XLen)-1).U).asUInt |  5.U, // MuxLookup(mstatus.prv,  7.U, Seq(CSR.PRV_S -> 5.U, CSR.PRV_U -> 4.U)),
+              Mux(s_soft_interrupt,                 (1.U << (p(XLen)-1).U).asUInt |  1.U, // MuxLookup(mstatus.prv,  3.U, Seq(CSR.PRV_S -> 1.U, CSR.PRV_U -> 0.U)),
               Mux(iaddrInvalid,                     Causes.misaligned_fetch.U,
               Mux(laddrInvalid,                     Causes.misaligned_load.U,
               Mux(saddrInvalid,                     Causes.misaligned_store.U,
-              Mux(isEcall,                          Causes.machine_ecall.U,
+              Mux(isEcall,                          MuxLookup(mstatus.prv, Causes.machine_ecall.U, Seq(CSR.PRV_S -> Causes.supervisor_ecall.U, CSR.PRV_U->Causes.user_ecall.U)),
               Mux(isEbreak,                         Causes.breakpoint.U,
               Mux(io.has_except === ExceptType.IPF, Causes.fetch_page_fault.U,
               Mux(io.has_except === ExceptType.SPF, Causes.load_page_fault.U,
               Mux(io.has_except === ExceptType.LPF, Causes.store_page_fault.U,
-                                                    Causes.illegal_instruction.U)))))))))))
+                                                    Causes.illegal_instruction.U))))))))))))))
 
   val deleg = Mux(isInterrupe, mideleg, medeleg)
   val delegS = deleg(cause(3,0)).asBool & (mstatus.prv < PRV_M)
 
   io.w_satp := !io.stall & io.ctrl_signal.valid & wen & (csr_addr === CSRs.satp.U)
   io.is_xret := !io.stall & io.ctrl_signal.valid & (isMret | isSret)
+
+  io.epc  := Mux(isMret, mepc, sepc)
+  io.exvec := Mux(!delegS, mtvec, stvec)
 
   when(!io.stall & io.ctrl_signal.valid) {
     when(io.expt) {
@@ -301,7 +340,7 @@ class CSR (implicit p: Parameters) extends Module {
         // trap M mode
         mcause := cause
         mepc   := io.ctrl_signal.pc >> 2 << 2
-        mstatus.mpp := PRV_M
+        mstatus.mpp := mstatus.prv
         mstatus.mpie := mstatus.mie
         mstatus.mie := false.B
         mstatus.prv := PRV_M
@@ -311,10 +350,9 @@ class CSR (implicit p: Parameters) extends Module {
     .elsewhen(isMret) {
       mstatus.mie := mstatus.mpie
       mstatus.mpie := true.B
-      mstatus.mpp := "b11".U
+      mstatus.mpp := PRV_U
       mstatus.prv := mstatus.mpp
     }.elsewhen(isSret){
-      // FIXME
       mstatus.sie := mstatus.spie
       mstatus.spie := true.B
       mstatus.spp := PRV_U
@@ -324,17 +362,36 @@ class CSR (implicit p: Parameters) extends Module {
     .elsewhen(wen) {
       when(csr_addr === CSRs.mstatus.U) {
         val tmp_mstatus = wdata.asTypeOf(new MStatus)
-        mstatus.mie := tmp_mstatus.mie
+        mstatus.uie  := tmp_mstatus.uie
+        mstatus.sie  := tmp_mstatus.sie
+        mstatus.mie  := tmp_mstatus.mie
         mstatus.mpie := tmp_mstatus.mpie
-        mstatus.xs := tmp_mstatus.xs
-        mstatus.fs := tmp_mstatus.fs
-        mstatus.mpp := tmp_mstatus.mpp
-        mstatus.sd := tmp_mstatus.xs.andR() | tmp_mstatus.fs.andR()
+        mstatus.mpp  := tmp_mstatus.mpp
+        mstatus.spp  := tmp_mstatus.spp
+        mstatus.xs   := tmp_mstatus.xs
+        mstatus.fs   := tmp_mstatus.fs
+        mstatus.mprv := tmp_mstatus.mprv
+        mstatus.sum  := tmp_mstatus.sum
+        mstatus.mxr  := tmp_mstatus.mxr
+        mstatus.tvm  := tmp_mstatus.tvm
+        mstatus.tw   := tmp_mstatus.tw
+        mstatus.tsr  := tmp_mstatus.tsr
+        mstatus.uxl  := tmp_mstatus.uxl
+        mstatus.sxl  := tmp_mstatus.sxl
+        mstatus.sd   := tmp_mstatus.xs.andR() | tmp_mstatus.fs.andR()
+        // FIXME: add more assign
       }
       when(csr_addr === CSRs.sstatus.U) {
         val tmp_mstatus = wdata.asTypeOf(new MStatus)
         mstatus.sie := tmp_mstatus.sie
-        mstatus.spie := tmp_mstatus.spie
+        mstatus.spie:= tmp_mstatus.spie
+        mstatus.spp := tmp_mstatus.spp
+        mstatus.xs  := tmp_mstatus.xs
+        mstatus.fs  := tmp_mstatus.fs
+        mstatus.sum := tmp_mstatus.sum
+        mstatus.mxr := tmp_mstatus.mxr
+        mstatus.uxl := tmp_mstatus.uxl
+        mstatus.sd  := tmp_mstatus.xs.andR() | tmp_mstatus.fs.andR()
       }
       .elsewhen(csr_addr === CSRs.mip.U) {
 //        val tmp_mip = wdata.asTypeOf(new MIP)
@@ -376,6 +433,7 @@ class CSR (implicit p: Parameters) extends Module {
       .elsewhen(csr_addr === CSRs.stval.U)    { stval := wdata}
       .elsewhen(csr_addr === CSRs.stvec.U)    { stvec := wdata}
       .elsewhen(csr_addr === CSRs.satp.U)     { satp := wdata.asTypeOf(new SATP)}
+      .elsewhen(csr_addr === CSRs.sscratch.U) { sscratch := wdata}
     }
   }
 
@@ -396,7 +454,7 @@ class CSR (implicit p: Parameters) extends Module {
     dcsr.io.sepc           := sepc                  // RegNext(0.U)
     dcsr.io.satp           := satp.asUInt           // RegNext(0.U)
     dcsr.io.mscratch       := mscratch              // RegNext(Mux(!io.stall, mscratch,          RegEnable(mscratch, !io.stall)))
-    dcsr.io.sscratch       := 0.U                   // RegNext(Mux(!io.stall, sstatus,           RegEnable(sstatus, !io.stall))) // 0.U // RegNext(0.U)
+    dcsr.io.sscratch       := sscratch              // RegNext(Mux(!io.stall, sstatus,           RegEnable(sstatus, !io.stall))) // 0.U // RegNext(0.U)
     dcsr.io.mideleg        := mideleg               // RegNext(0.U)
     dcsr.io.medeleg        := medeleg               // RegNext(0.U)
     dcsr.io.mtval          := mtval                 // RegNext(0.U)
@@ -413,8 +471,8 @@ class CSR (implicit p: Parameters) extends Module {
     val dae = Module(new DifftestArchEvent)
     dae.io.clock := clock
     dae.io.coreid := 0.U
-    dae.io.intrNO        := Mux(except_reg, Mux(time_interrupt_reg, mcause, 0.U), 0.U)
-    dae.io.cause         := Mux(except_reg, Mux(!time_interrupt_reg, mcause, 0.U), 0.U)
+    dae.io.intrNO        := Mux(except_reg, Mux(time_interrupt_reg, Mux(mstatus.prv === CSR.PRV_M, mcause, scause), 0.U), 0.U)
+    dae.io.cause         := Mux(except_reg, Mux(!time_interrupt_reg, Mux(mstatus.prv === CSR.PRV_M, mcause, scause), 0.U), 0.U)
     dae.io.exceptionPC   := RegEnable(io.ctrl_signal.pc, !io.stall)
     dae.io.exceptionInst := RegEnable(io.ctrl_signal.inst, !io.stall)
   }
