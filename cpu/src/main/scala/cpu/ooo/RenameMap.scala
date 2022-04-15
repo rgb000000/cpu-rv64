@@ -309,20 +309,20 @@ class RenameMap(implicit p: Parameters) extends Module {
   when((io.robCommit.br_info.valid & !io.robCommit.br_info.bits.isHit) | io.robCommit.except | io.robCommit.kill){
     // 跳转错误取消的优先级最高
     // isJ表示是无条件跳转，其不用恢复valid，因为无条件跳转需要写回一个pc+4，其次该信号可以用于提交中断。
-    when(io.robCommit.except | io.robCommit.kill){
-      // branch指令跳转错误
+    when(io.robCommit.except){
+      // except restore
       for(i <- 0 until p(PRNUM)){
         cam(i).valid := io.robCommit.br_info.bits.current_rename_state(i)
         cam(i).state := Mux(io.robCommit.br_info.bits.current_rename_state(i), STATECONST.COMMIT, STATECONST.EMPRY)
       }
-    }.elsewhen(!io.robCommit.br_info.bits.isJ){
+    }.elsewhen(!io.robCommit.br_info.bits.isJ & (io.robCommit.br_info.valid & !io.robCommit.br_info.bits.isHit)){
       // branch指令跳转错误
       for(i <- 0 until p(PRNUM)){
         cam(i).valid := io.robCommit.br_info.bits.current_rename_state(i)
         cam(i).state := Mux(io.robCommit.br_info.bits.current_rename_state(i), STATECONST.COMMIT, STATECONST.EMPRY)
       }
     }.otherwise{
-      // 无条件跳转错误，不用恢复valid，commit为valid，其余状态恢复empty,本次commit提交
+      // isJ and kill，不用恢复valid，commit为valid，其余状态恢复empty,本次commit提交
       // 来自rob的提交要么reg0，reg1都有效，要么reg0有效，reg1无效，只有这两种情况
       // 这里的fire表示valid并且wen为1
       when(io.robCommit.reg(0).fire & io.robCommit.reg(1).fire){
@@ -398,6 +398,11 @@ class RenameMap(implicit p: Parameters) extends Module {
               }
               cam(i).state := STATECONST.COMMIT
             }
+          }
+        }.otherwise{
+          for(i <- 0 until p(PRNUM)){
+            cam(i).valid := io.robCommit.br_info.bits.current_rename_state(i)
+            cam(i).state := Mux(io.robCommit.br_info.bits.current_rename_state(i), STATECONST.COMMIT, STATECONST.EMPRY)
           }
         }
       }
