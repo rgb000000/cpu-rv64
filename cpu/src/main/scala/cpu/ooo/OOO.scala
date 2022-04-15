@@ -48,13 +48,6 @@ class OOO(implicit p: Parameters) extends Module {
   val rob_flush = Wire(Bool())
   val rob_kill = Wire(Bool())
 
-  val time_interrupt_enable = WireInit(false.B)
-  val soft_interrupt_enable = WireInit(false.B)
-  val external_interrupt_enable = WireInit(false.B)
-  BoringUtils.addSink(time_interrupt_enable, "time_interrupt_enable")
-  BoringUtils.addSink(soft_interrupt_enable, "soft_interrupt_enable")
-  BoringUtils.addSink(external_interrupt_enable, "external_interrupt_enable")
-
   val soft_int = WireInit(false.B)
   val external_int = WireInit(false.B)
   BoringUtils.addSink(soft_int, "soft_int")
@@ -153,9 +146,9 @@ class OOO(implicit p: Parameters) extends Module {
     rob.io.in.fromID(i).bits.pTaken               := station.io.in(i).bits.pTaken
     rob.io.in.fromID(i).bits.current_rename_state := station.io.in(i).bits.current_rename_state
     rob.io.in.fromID(i).bits.csr_cmd              := station.io.in(i).bits.csr_op
-    rob.io.in.fromID(i).bits.interrupt.time       := io.time_interrupt & time_interrupt_enable
-    rob.io.in.fromID(i).bits.interrupt.soft       := soft_int & soft_interrupt_enable
-    rob.io.in.fromID(i).bits.interrupt.external   := external_int & external_interrupt_enable
+    rob.io.in.fromID(i).bits.interrupt.time       := io.time_interrupt
+    rob.io.in.fromID(i).bits.interrupt.soft       := soft_int
+    rob.io.in.fromID(i).bits.interrupt.external   := external_int
     rob.io.in.fromID(i).bits.kill                 := ctrl(i).kill
     rob.io.in.fromID(i).bits.rocc_cmd             := ctrl(i).rocc_cmd
   }
