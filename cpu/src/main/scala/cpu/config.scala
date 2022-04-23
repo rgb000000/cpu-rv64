@@ -103,5 +103,5 @@ class GEMM_DRAM3SimConfig extends Config(
 )
 
 class FPGAConfig extends Config(
-  new BaseConfig ++ new DifftestDisableConfig
+  new BaseConfig ++ new DifftestDisableConfig ++ new GEMM4444Config
 )
