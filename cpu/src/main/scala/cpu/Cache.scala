@@ -111,9 +111,14 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
 
   val dirty_tab = RegInit(VecInit(Seq.fill(depth)(0.U(1.W))))
   // nBank * (n * 8bit)
-//  val bankn = List.fill(p(NBank))(SyncReadMem(depth, Vec((p(CacheLineSize) / p(NBank)) / 8, UInt(8.W))))
-  val bankn = Module(new S011HD1P_X32Y2D128_BW)
-  bankn.io.CLK := clock
+
+  // val bankn = List.fill(p(NBank))(SyncReadMem(depth, Vec((p(CacheLineSize) / p(NBank)) / 8, UInt(8.W))))
+
+  // val bankn = Module(new S011HD1P_X32Y2D128_BW)
+  // bankn.io.CLK := clock
+
+  val bankn = Module(new bytewrite_ram_1b(size = depth, addr_width = log2Ceil(depth)))
+  bankn.io.clk := clock
 
   val result = WireInit(0.U.asTypeOf(new WayOut(tag_width)))
 
@@ -124,7 +129,7 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
     Seq(RegNext(tag_tab(io.in.r.bits.index), 0.U)) ++
       Seq(RegNext(v_tab(io.in.r.bits.index), 0.U)) ++
       Seq(RegNext(dirty_tab(io.in.r.bits.index), 0.U)) ++
-      Seq(bankn.io.Q)
+      Seq(bankn.io._do)
   ).asUInt().asTypeOf(new WayOut(tag_width))
 
   io.out.bits := result
@@ -137,7 +142,7 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
   val w_data = WireInit(0.U(128.W))
   val w_mask = WireInit(0.U((128 / 8).W))
   bankn.idle()
-  when(io.in.w.fire()){
+  when(io.in.w.fire){
     when(io.in.w.bits.op === 1.U){
       // write tag,v
       tag_tab(io.in.w.bits.index) :=  io.in.w.bits.tag
@@ -154,7 +159,7 @@ class Way(val tag_width: Int, val index_width: Int, offset_width: Int)(implicit 
       }
       bankn.write(io.in.w.bits.index, w_data, w_mask)
     }
-  }.elsewhen(io.in.r.fire()){
+  }.elsewhen(io.in.r.fire){
     bankn.read(io.in.r.bits.index)
   }.elsewhen(io.fence_invalid){
     v_tab := VecInit(Seq.fill(depth)(0.U(1.W)))

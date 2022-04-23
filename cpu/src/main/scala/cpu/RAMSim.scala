@@ -4,6 +4,75 @@ import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
 
+class bytewrite_ram_1b(val size: Int, val addr_width: Int, val col_width: Int = 8, val nb_col: Int = 16) extends BlackBox(Map(
+  "SIZE"       -> size,
+  "ADDR_WIDTH" -> addr_width,
+  "COL_WIDTH"  -> col_width,
+  "NB_COL"     -> nb_col
+)) with HasBlackBoxInline {
+  val io = IO(new Bundle{
+    val clk  = Input(Clock())
+    val we   = Input(UInt(nb_col.W))
+    val addr = Input(UInt(addr_width.W))
+    val di   = Input(UInt((nb_col*col_width).W))
+    val _do   = Output(UInt((nb_col*col_width).W))
+  })
+
+  setInline("bytewrite_ram_1b.v",
+  """
+    |module bytewrite_ram_1b (clk, we, addr, di, _do);
+    |
+    |parameter SIZE = 1024;
+    |parameter ADDR_WIDTH = 10;
+    |parameter COL_WIDTH = 8;
+    |parameter NB_COL = 4;
+    |
+    |input clk;
+    |input [NB_COL-1:0] we;
+    |input [ADDR_WIDTH-1:0] addr;
+    |input [NB_COL*COL_WIDTH-1:0] di;
+    |output reg [NB_COL*COL_WIDTH-1:0] _do;
+    |
+    |reg [NB_COL*COL_WIDTH-1:0] RAM [SIZE-1:0];
+    |
+    |always @(posedge clk)
+    |begin
+    |    _do <= RAM[addr];
+    |end
+    |
+    |generate genvar i;
+    |for (i = 0; i < NB_COL; i = i+1)
+    |begin
+    |always @(posedge clk)
+    |begin
+    |    if (we[i])
+    |        RAM[addr][(i+1)*COL_WIDTH-1:i*COL_WIDTH] <= di[(i+1)*COL_WIDTH-1:i*COL_WIDTH];
+    |    end
+    |end
+    |endgenerate
+    |
+    |endmodule
+    |
+  """.stripMargin
+  )
+
+  def write(address: UInt, data: UInt, mask: UInt): Unit ={
+    io.we   := mask
+    io.addr := address
+    io.di   := data
+  }
+
+  def read(address: UInt): UInt ={
+    io.addr := address
+    io.di := 0.U
+    io._do
+  }
+
+  def idle() = {
+    read(0.U)
+  }
+}
+
 class S011HD1P_X32Y2D128_BW extends BlackBox(Map(
 //  "Bits"       -> 128,
 //  "Word_Depth" -> 64,
