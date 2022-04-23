@@ -18,6 +18,7 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
   val is32req = addressSpace(32).map(space => {
     (addr_in >= space._1.U(p(AddresWidth).W)) & (addr_in < (space._1.U(p(AddresWidth).W) + space._2.U(p(AddresWidth).W)))
   }).reduce(_ | _)
+  // mask(7, 0)   is (3, 0) is all zero, one must in (7, 4)
   val is32high = Mux(io.in.req.bits.mask(3, 0) === "h0".U(4.W), true.B, false.B)
 
   val s_idle :: s_read :: s_write :: s_resp :: Nil = Enum(4)
@@ -26,6 +27,8 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
 
   val is32req_reg = RegInit(false.B)
   val is32high_reg = RegInit(false.B)
+
+  // reg_mask not used in cache req
   val req_mask_reg = RegInit(0.U((p(XLen) / 8).W))
 
   switch(state){
@@ -65,7 +68,7 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
 
   when(state === s_read){
     io.in.resp.bits.id := r.bits.id
-    io.in.resp.bits.data := Mux(is32req_reg & is32high_reg, r.bits.data(31, 0) << 32.U, r.bits.data)
+    io.in.resp.bits.data := r.bits.data // Mux(is32req_reg & is32high_reg, r.bits.data(63, 32) << 32.U, r.bits.data)
     io.in.resp.valid := r.valid
     io.in.resp.bits.cmd := Mux(isBurst, Mux(r.bits.last, MemCmdConst.ReadLast, 0.U), MemCmdConst.ReadLast)
   }.elsewhen(state === s_resp){
@@ -107,8 +110,8 @@ class MemBus2AXI(implicit p: Parameters) extends Module{
   aw.bits.burst := AXI4Parameters.BURST_INCR
   aw.valid := (state === s_idle) & ((io.in.req.bits.cmd === MemCmdConst.WriteBurst) | (io.in.req.bits.cmd === MemCmdConst.WriteOnce)) & io.in.req.valid
 
-  w.bits.data := Mux(is32req_reg & is32high_reg, io.in.req.bits.data >> 32.U, io.in.req.bits.data)
-  w.bits.strb := Mux(is32req_reg & is32high_reg, req_mask_reg >> 4.U, Cat(Seq.fill(p(XLen) / 8)(1.U(1.W)))) // 0xff
+  w.bits.data := io.in.req.bits.data // Mux(is32req_reg & is32high_reg, io.in.req.bits.data >> 32.U, io.in.req.bits.data)
+  w.bits.strb := Mux(is32req_reg, req_mask_reg, Cat(Seq.fill(p(XLen) / 8)(1.U(1.W)))) // 0xff
   w.bits.last := io.in.req.bits.cmd === MemCmdConst.WriteLast
   w.valid := (state === s_write) & ((io.in.req.bits.cmd === MemCmdConst.WriteData) | (io.in.req.bits.cmd === MemCmdConst.WriteLast)) & io.in.req.valid
 
