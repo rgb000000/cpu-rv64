@@ -204,6 +204,7 @@ _verilator_compile = rule(
 
 ###################################################
 def _difftest_compile_impl(ctx):
+    chisel_gen_dir = ctx.attr.SimTop.files.to_list()[0]
     simtop = ctx.attr.SimTop.files.to_list()[1]
     difftest_dir_clone = ctx.actions.declare_directory("difftest")
     build_dir = ctx.actions.declare_directory("build")
@@ -213,7 +214,7 @@ def _difftest_compile_impl(ctx):
     cmd = ""
     if ctx.attr.mode == "SimTop":
         cmd = "echo $PWD && tree && source ~/.zshrc" + \
-              "&& cp %s %s" % (simtop.path, build_dir.path) + \
+              "&& cp %s %s" % (chisel_gen_dir.path + "/*.v", build_dir.path) + \
               "&& cp -r %s %s" % (root + "/dependency/difftest/src", difftest_dir_clone.path) + \
               "&& cp -r %s %s" % (root + "/dependency/difftest/config", difftest_dir_clone.path) + \
               "&& cp %s %s" % (root + "/dependency/difftest/Makefile", difftest_dir_clone.path) + \
@@ -223,7 +224,7 @@ def _difftest_compile_impl(ctx):
               "&& make emu EMU_TRACE=1"
     elif ctx.attr.mode == "DRAM3Sim":
         cmd = "echo $PWD && tree && source ~/.zshrc" + \
-              "&& cp %s %s" % (simtop.path, build_dir.path) + \
+              "&& cp %s %s" % (chisel_gen_dir.path + "/*.v", build_dir.path) + \
               "&& cp %s %s" % (root + "/dependency/vsrc/SimTop_wrap.v", build_dir.path + "/SimTop.v") + \
               "&& cp %s %s" % (root + "/dependency/vsrc/S011HD1P_X32Y2D128_BW.v", build_dir.path + "/S011HD1P_X32Y2D128_BW.v") + \
               "&& cp -r %s %s" % (root + "/dependency/difftest/src", difftest_dir_clone.path) + \
@@ -235,7 +236,7 @@ def _difftest_compile_impl(ctx):
               "&& make emu EMU_TRACE=1 WITH_DRAMSIM3=1"
 
     ctx.actions.run_shell(
-        inputs = [simtop],
+        inputs = [chisel_gen_dir],
         outputs = [build_dir, difftest_dir_clone],
         command = cmd,
         progress_message = "Compiling .v with .cpp",
