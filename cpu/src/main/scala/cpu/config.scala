@@ -30,6 +30,7 @@ case object PRNUM extends Field[Int]
 
 case object IGNORE_AD extends Field[Boolean] // xv6 doesn't use a/d bit
 
+case object FPGA extends Field[Boolean]
 
 class BaseConfig extends Config ((site, here, up)=>{
   case XLen           => 64
@@ -82,11 +83,13 @@ class DifftestEnableConfig extends Config((site, here, up)=>{
 class DifftestDisableConfig extends Config((site, here, up)=>{
   case Difftest       => false
   case DRAM3Sim       => false
+  case FPGA           => true
 })
 
 class DifftestEnableWithDRAM3SimConfig extends Config((site, here, up)=>{
   case Difftest       => true
   case DRAM3Sim       => true
+  case FPGA           => false
 })
 
 

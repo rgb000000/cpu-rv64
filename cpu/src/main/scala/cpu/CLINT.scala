@@ -73,7 +73,17 @@ class CLINT(implicit p: Parameters) extends Module{
 
   io.interrupt := RegNext(mtime >= mtimecmp, 0.U)
 
-  mtime := mtime + 1.U
+  if(p(FPGA)){
+    val clk_feq = 80  //80MHz       1us = 80 cycles
+    val us_cnt = Counter(128)
+    us_cnt.value := Mux(us_cnt.value < clk_feq.U, us_cnt.value + 1.U, 0.U)
+    val us = us_cnt.value === clk_feq.U
+    when(us){
+      mtime := mtime + 1.U
+    }
+  }else{
+    mtime := mtime + 1.U
+  }
 
   when((state === s_idle) & io.cpu.req.fire()) {
     op := (io.cpu.req.bits.cmd) === MemCmdConst.WriteOnce
