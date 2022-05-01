@@ -27,8 +27,8 @@ class ExIO(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameter
 class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters) extends Module {
   val io = IO(new ExIO(depth, w, nbank))
 
-  val core = Module(new DelayMesh(UInt(8.W), UInt(8.W), UInt(8.W)))
-  val transpose = Module(new Transpose(UInt(8.W)))
+  val core = Module(new DelayMesh(SInt(8.W), SInt(8.W), SInt(8.W)))
+  val transpose = Module(new Transpose(SInt(8.W)))
 
   // c = a*b + d
   // 先加载c进入pe阵列reg中，然后加载b让其经过转置，然后再加载a同时开始计算，等计算完成就读出c  todo: 在读出c的同时能不能同时加载下一轮的d?
