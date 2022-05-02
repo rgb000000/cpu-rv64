@@ -628,10 +628,26 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     }
 
   // 检测超出地址空间的无效地址
+  // If a read req address is in space, but the read req is speculate execute, and the req is uncache.
+  // In difftest sim it will be transmit to axi, and handled by difftest ram.cpp. Then the read req will be error because (ram.cpp:255 assert, not a n*64bits read)
+  // So cache need to distinguish between difftest sim and fpga.
+  // In difftest sim, because use 0x7b to print, only has ram read.
+  // This bug is discovered in running ncnn.
   val addressSpace_2 = p(AddressSpace)
-  val invalid_mem_addr = !WireInit(addressSpace_2.map(x => {
-    (io.cpu.req.bits.addr >= x._1.U(p(AddresWidth).W)) & (io.cpu.req.bits.addr < (x._1.U(p(AddresWidth).W) + x._2.U(p(AddresWidth).W)))
-  }).reduce(_ | _))
+  val invalid_mem_addr = Wire(Bool())
+  if(p(FPGA)){
+    // in fpga mode, monitor all peripheral    FIXME: how many peripherals in FPGA design?
+    // val fpga_addressSpace = Seq(addressSpace_2(0), addressSpace_2(1), addressSpace_2(4))
+    invalid_mem_addr := !WireInit(addressSpace_2.map(x => {
+      (io.cpu.req.bits.addr >= x._1.U(p(AddresWidth).W)) & (io.cpu.req.bits.addr < (x._1.U(p(AddresWidth).W) + x._2.U(p(AddresWidth).W)))
+    }).reduce(_ | _))
+  }else{
+    // in difftest sim, only monitor clint and ram
+    val sim_addressSpace = Seq(addressSpace_2(0), addressSpace_2(4))
+    invalid_mem_addr := !WireInit(sim_addressSpace.map(x => {
+      (io.cpu.req.bits.addr >= x._1.U(p(AddresWidth).W)) & (io.cpu.req.bits.addr < (x._1.U(p(AddresWidth).W) + x._2.U(p(AddresWidth).W)))
+    }).reduce(_ | _))
+  }
 
   val fence_i_reg = RegInit(false.B)
   when(((state =/= s_idle) & (state =/= s_lookup)) & io.fence_i){
