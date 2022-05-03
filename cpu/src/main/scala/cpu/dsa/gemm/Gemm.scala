@@ -37,3 +37,20 @@ class GEMM(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameter
   io.rocc.interrupt := false.B
   io.rocc.exception := false.B
 }
+
+class GEMMDummy(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters) extends Module {
+  val io = IO(new Bundle {
+    val rocc = new RoCCIO()
+  })
+
+  io.rocc.cmd.ready := true.B
+  io.rocc.resp.valid := false.B
+  io.rocc.resp.bits := 0.U.asTypeOf(io.rocc.resp.bits)
+
+  io.rocc.dcache.req.valid := false.B
+  io.rocc.dcache.req.bits := 0.U.asTypeOf(io.rocc.dcache.req.bits)
+
+  io.rocc.busy := false.B
+  io.rocc.interrupt := false.B
+  io.rocc.exception := false.B
+}
