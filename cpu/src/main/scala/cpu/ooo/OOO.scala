@@ -343,16 +343,16 @@ class OOO(implicit p: Parameters) extends Module {
 
     }
 
-    val cycleCnt = Counter(Int.MaxValue)
-    cycleCnt.inc()
-    BoringUtils.addSource(cycleCnt.value, "cycleCnt")
-    val instCnt = Counter(Int.MaxValue)
-    when(rob.io.commit.reg(0).valid & rob.io.commit.reg(0).valid){
-      instCnt.value := instCnt.value + 2.U
-    }.elsewhen((!rob.io.commit.reg(0).valid) & (!rob.io.commit.reg(0).valid)){
+    val cycleCnt = RegInit(0.U(64.W))
+    cycleCnt := cycleCnt + 1.U
+    BoringUtils.addSource(cycleCnt, "cycleCnt")
+    val instCnt = RegInit(0.U(64.W))
+    when(rob.io.commit.reg(0).valid & rob.io.commit.reg(1).valid){
+      instCnt := instCnt + 2.U
+    }.elsewhen((!rob.io.commit.reg(0).valid) & (!rob.io.commit.reg(1).valid)){
       // no commit
     }.otherwise{
-      instCnt.inc()
+      instCnt := instCnt + 1.U
     }
 
     val dte = Module(new DifftestTrapEvent)
@@ -364,8 +364,13 @@ class OOO(implicit p: Parameters) extends Module {
     )
     dte.io.code := prfile.io.difftest.get.trap_cpode.data.bits
     dte.io.pc := RegNext(Mux(rob.io.commit.reg(0).valid, rob.io.commit.reg(0).bits.pc, rob.io.commit.reg(1).bits.pc))
-    dte.io.cycleCnt := cycleCnt.value
-    dte.io.instrCnt := instCnt.value
+    dte.io.cycleCnt := cycleCnt
+    dte.io.instrCnt := instCnt
+
+    when(dte.io.valid){
+      printf("\n=== insts num = %d ===\n", instCnt)
+      printf("\n===    cycles = %d ===\n", cycleCnt)
+    }
 
     // todo: difftest uart
     val difftest_uart_valid = Wire(Bool())
