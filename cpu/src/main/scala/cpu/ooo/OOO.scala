@@ -367,10 +367,6 @@ class OOO(implicit p: Parameters) extends Module {
     dte.io.cycleCnt := cycleCnt
     dte.io.instrCnt := instCnt
 
-    when(dte.io.valid){
-      printf("\n=== insts num = %d ===\n", instCnt)
-      printf("\n===    cycles = %d ===\n", cycleCnt)
-    }
 
     // todo: difftest uart
     val difftest_uart_valid = Wire(Bool())
@@ -382,5 +378,29 @@ class OOO(implicit p: Parameters) extends Module {
 
     // arch register
     (rename.io.difftest.get.toArchReg, prfile.io.difftest.get.findArchReg).zipped.foreach(_ <> _)
+
+    // branch
+    val total_br_cnt = RegInit(0.U(64.W))
+    val hit_cnt      = RegInit(0.U(64.W))
+    val miss_cnt     = RegInit(0.U(64.W))
+    when(rob.io.commit.reg(0).fire){
+      when(rob.io.commit.reg(0).bits.isBr_J){
+        total_br_cnt := total_br_cnt + 1.U
+        when(rob.io.commit.reg(0).bits.isHit){
+          hit_cnt := hit_cnt + 1.U
+        }.otherwise{
+          miss_cnt := miss_cnt + 1.U
+        }
+      }
+    }
+
+    // end
+    when(dte.io.valid){
+      printf("\n*** insts num=%d ***\n", instCnt)
+      printf(  "***    cycles=%d ***\n", cycleCnt)
+      printf("\n***    hit br=%d ***\n", hit_cnt)
+      printf(  "***   miss br=%d ***\n", miss_cnt)
+      printf(  "***  total br=%d ***\n", total_br_cnt)
+    }
   }
 }

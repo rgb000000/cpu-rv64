@@ -76,6 +76,7 @@ class ROBIO(implicit val p: Parameters) extends Bundle {
       val isST = Bool()
       val isLD = Bool()
       val isRocc = Bool()
+      val isBr_J = Bool()
     }))
     val dcache = Flipped(new CacheCPUIO)
 
@@ -304,6 +305,7 @@ class ROB(implicit p: Parameters) extends Module {
     io.commit.reg(portIdx).bits.fence_i_do := (rob_info.inst === ISA.fence_i) & valid
     io.commit.reg(portIdx).bits.sfence_vma_do := (rob_info.inst === ISA.sfence_vma) & valid
     io.commit.reg(portIdx).bits.isRocc_R := (rob_info.rocc_cmd === RoCC_R) & valid
+    io.commit.reg(portIdx).bits.isBr_J := (rob_info.isBr | rob_info.isJ) & valid
 
     io.commit2rename(portIdx).valid := rob_info.wen & valid
     io.commit2rename(portIdx).bits.prn := rob_info.prn
@@ -680,4 +682,10 @@ class ROB(implicit p: Parameters) extends Module {
 
   io.commit.br_info.bits.valid_value := io.commit.br_info.bits.current_rename_state.asUInt()
   dontTouch(io.commit.br_info.bits.valid_value)
+
+  if(p(Difftest)){
+    val both_ready = Wire(Bool())
+    dontTouch(both_ready)
+    both_ready := (rob(commitIdx.value).state ===  S_GETDATA) & (rob(commitIdx.value + 1.U).state ===  S_GETDATA)
+  }
 }
