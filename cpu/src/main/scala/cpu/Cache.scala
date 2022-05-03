@@ -314,7 +314,12 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
   // compare ways tag, return one hot such {0,0,0,0} or {0,0,1,0}
   val ways_compare_res = Cat(ways.map((way)=>{
       (way.io.out.bits.tag === req_reg_info.tag) & (way.io.out.bits.v === 1.U)
-    }))  // Cat(high ... low)
+  }))  // Cat(high ... low)
+
+  // ways have empty cacheline in miss state
+  val ways_empty_in_miss = Cat(ways.map((way) => {
+    !way.io.out.bits.v
+  }).reverse)
 
   // ways_compare_res is all 0, {0, 0, 0, 0} means the current req is miss
   val is_miss = ((ways_compare_res.orR() === 0.U) & req_isCached) | (!req_isCached)
@@ -336,13 +341,13 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 //  (select_data_rev, select_data.reverse).zipped.foreach(_ := _)
 
   // use LFSR to generate rand in binary, need to be converted to ont-hot to use as mask
-  val rand_num = LFSR(8, seed = Some(8))(log2Ceil(p(NWay))-1 , 0).asUInt()
+  val rand_num = Mux(ways_empty_in_miss.orR, PriorityEncoder(ways_empty_in_miss)(log2Ceil(p(NWay))-1 , 0).asUInt, LFSR(8, seed = Some(8))(log2Ceil(p(NWay))-1 , 0).asUInt)  // log2ceil
   val write_buffer_conflict_with_replace = write_buffer.valid & (rand_num === OHToUInt(write_buffer.bits.replace_way))
-  val rand_way = UIntToOH(Mux(write_buffer_conflict_with_replace, (rand_num + 1.U)(log2Ceil(p(NWay))-1 , 0).asUInt(), rand_num))
-  assert(rand_way.orR() === 1.U)
+  val rand_way = UIntToOH(Mux(write_buffer_conflict_with_replace, (rand_num + 1.U)(log2Ceil(p(NWay))-1 , 0).asUInt, rand_num))
+  assert(rand_way.orR === 1.U)
   // rand way data (tag, v, d, data)
-  val rand_way_data = Mux1H(for(i <- rand_way.asBools().zipWithIndex) yield (i._1, ways_ret_datas(i._2)))
-  val rand_way_data_reg = RegEnable(rand_way_data, 0.U.asTypeOf(ways_ret_datas.head), (req_isCached & (state === s_lookup) & is_miss & RegNext(io.cpu.req.fire(), false.B)) === 1.U)
+  val rand_way_data = Mux1H(for(i <- rand_way.asBools.zipWithIndex) yield (i._1, ways_ret_datas(i._2)))
+  val rand_way_data_reg = RegEnable(rand_way_data, 0.U.asTypeOf(ways_ret_datas.head), (req_isCached & (state === s_lookup) & is_miss & RegNext(io.cpu.req.fire, false.B)) === 1.U)
 //  val rand_way_data_reg_valid = RegNext((state === s_lookup) & is_miss & req_isCached & (io.mem.req.valid & !io.mem.req.ready), false.B) // mem req not send
   val rand_way_data_reg_valid = RegInit(false.B)
   when((state === s_lookup) & is_miss & req_isCached & (io.mem.req.valid & !io.mem.req.ready)){
@@ -564,7 +569,7 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
   when((state === s_lookup) & is_miss){
     // replace info, use rand way data
-    when(RegNext(io.cpu.req.fire(), false.B)){
+    when(RegNext(io.cpu.req.fire, false.B)){
       // miss and goto miss state
       // miss info
       miss_info.addr := req_reg.addr
