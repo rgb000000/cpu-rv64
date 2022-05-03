@@ -144,17 +144,17 @@ class OOOMEM (implicit p: Parameters) extends Module {
 
   import Control._
 
-  val s_idle :: s_getReq :: s_send :: s_ret :: Nil = Enum(4)
+  val s_idle :: s_getReq :: s_send :: Nil = Enum(3)
   val state = RegInit(s_idle)
 
   val addr_reg = RegInit(0.U(p(AddresWidth).W))
   val ld_type_reg = RegInit(0.U(3.W))
-  val ld_data = RegInit(0.U(p(XLen).W))
-  val is_except = RegInit(false.B)
+
+  val getData = WireInit((state === s_send) & (io.dcache.resp.fire & (io.dcache.resp.bits.cmd === 2.U)))
 
   switch(state){
     is(s_idle){
-      when(io.dcache.req.fire()){
+      when(io.dcache.req.fire){
         state := s_send
       }.elsewhen(io.dcache.req.valid & !io.dcache.req.ready){
         state := s_getReq
@@ -164,27 +164,21 @@ class OOOMEM (implicit p: Parameters) extends Module {
     }
 
     is(s_getReq){
-      when(io.dcache.req.fire()){
+      when(io.dcache.req.fire){
         state := s_send
       }
     }
 
     is(s_send){
-      when(io.dcache.resp.fire() & (io.dcache.resp.bits.cmd === 2.U)){
-        state := s_ret
-        ld_data := io.dcache.resp.bits.data
-        is_except := io.dcache.resp.bits.except
+      when(io.dcache.resp.fire & (io.dcache.resp.bits.cmd === 2.U)){
+        state := s_idle
       }
-    }
-
-    is(s_ret){
-      state := s_idle
     }
   }
 
-  io.resp.bits.data := ld_data
-  io.resp.bits.except := is_except
-  io.resp.valid := (state === s_ret)
+  io.resp.bits.data := io.dcache.resp.bits.data
+  io.resp.bits.except := io.dcache.resp.bits.except
+  io.resp.valid := getData
 
   io.dcache.req.bits.op := 0.U   // read
   io.dcache.req.bits.data := 0.U // useless when load
@@ -213,10 +207,6 @@ class OOOMEM (implicit p: Parameters) extends Module {
       LD_LBU -> ("b0000_0001".U << io.alu_res(2,0).asUInt()), // <<0, 1, 2, 3 ... 7
     ))(7, 0)
   }.elsewhen(state === s_send){
-    io.dcache.req.valid := false.B
-    io.dcache.req.bits.addr := 0.U
-    io.dcache.req.bits.mask := 0.U
-  }.elsewhen(state === s_ret){
     io.dcache.req.valid := false.B
     io.dcache.req.bits.addr := 0.U
     io.dcache.req.bits.mask := 0.U

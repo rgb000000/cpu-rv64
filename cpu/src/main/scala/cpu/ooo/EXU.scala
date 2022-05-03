@@ -220,11 +220,11 @@ class LoadU(implicit val p: Parameters) extends Module {
   })
 
   // 如果需要的数据全在rob中就可以ret，如果不在或者不全在就需要mem load一次然后ret
-  val s_idle :: s_mem :: s_ret :: Nil = Enum(3)
+  val s_idle :: s_mem :: Nil = Enum(2)
   val state = RegInit(s_idle)
   val req_reg = RegInit(0.U.asTypeOf(io.req.bits)) // 缓存req
   val addr_reg = RegInit(0.U(32.W))   // 缓存req 地址
-  val diff_mask = RegInit(0.U(8.W))   // rob存在的数据和req需要的数据之间的差
+  val diff_mask = RegInit(0.U(8.W))   // rob存在的数据和req需要的数据之间的差, use by s_mem
 
   // 检测超出地址空间的无效地址
   val invalid_mem_addr = !WireInit(addressSpace.map(x => {
@@ -238,9 +238,21 @@ class LoadU(implicit val p: Parameters) extends Module {
   mem.io.inst_valid := (!io.kill) & io.req.fire() & (state === s_idle) & (io.readROB.resp.fire & !io.readROB.resp.bits.meet) & (!invalid_mem_addr) // idle状态，来了mem指令，并且rob中无
   mem.io.dcache <> io.dcache
 
+  // buffer rob quert result
+  val rob_data = RegInit(0.U(p(XLen).W))
   // 最终拼凑的结果
-  val ld_data = RegInit(0.U(p(XLen).W))
-  val is_except = RegInit(false.B)
+  val ld_data = WireInit(0.U(p(XLen).W))
+
+  val getData = WireInit(
+      ((state === s_idle) & (io.readROB.resp.fire & io.readROB.resp.bits.meet))
+    | ((state === s_idle) & invalid_mem_addr)
+    | ((state ===  s_mem) & mem.io.resp.valid)
+  )
+
+  // resp逻辑
+  io.resp.valid := getData
+  io.resp.bits.data   := ld_data
+  io.resp.bits.except := Mux(state === s_mem, mem.io.resp.bits.except, false.B)
 
   switch(state) {
     is(s_idle) {
@@ -249,11 +261,10 @@ class LoadU(implicit val p: Parameters) extends Module {
         addr_reg := io.req.bits.addr
         when(io.readROB.resp.fire & io.readROB.resp.bits.meet) {
           // 全部在rob中，可以直接ret
-          state := s_ret
-          diff_mask := io.readROB.resp.bits.mask ^ io.readROB.req.bits.mask
+          state := s_idle
         }.elsewhen(invalid_mem_addr) {
           // 无效的地址,由于乱须执行导致
-          state := s_ret
+          state := s_idle
         }.elsewhen(io.readROB.resp.fire & !io.readROB.resp.bits.meet) {
           // 不在或者不完全在rob中，需要向mem发送ld请求
           state := s_mem
@@ -264,12 +275,8 @@ class LoadU(implicit val p: Parameters) extends Module {
     is(s_mem) {
       when(mem.io.resp.valid) {
         // get data from dcache by mem
-        state := s_ret
+        state := s_idle
       }
-    }
-    is(s_ret) {
-      // return data
-      state := s_idle
     }
   }
 
@@ -278,31 +285,31 @@ class LoadU(implicit val p: Parameters) extends Module {
   io.readROB.req.bits.addr := io.req.bits.addr
   io.readROB.req.bits.mask := MuxLookup(io.req.bits.ld_type, 0.U, Array(
     Control.LD_LD  -> ("b1111_1111".U),
-    Control.LD_LW  -> ("b0000_1111".U << io.req.bits.addr(2, 0).asUInt()), // <<0 or << 4
-    Control.LD_LH  -> ("b0000_0011".U << io.req.bits.addr(2, 0).asUInt()), // <<0, 2, 4, 6
-    Control.LD_LB  -> ("b0000_0001".U << io.req.bits.addr(2, 0).asUInt()), // <<0, 1, 2, 3 ... 7
-    Control.LD_LWU -> ("b0000_1111".U << io.req.bits.addr(2, 0).asUInt()), // <<0 or << 4
-    Control.LD_LHU -> ("b0000_0011".U << io.req.bits.addr(2, 0).asUInt()), // <<0, 2, 4, 6
-    Control.LD_LBU -> ("b0000_0001".U << io.req.bits.addr(2, 0).asUInt()), // <<0, 1, 2, 3 ... 7
+    Control.LD_LW  -> ("b0000_1111".U << io.req.bits.addr(2, 0).asUInt), // <<0 or << 4
+    Control.LD_LH  -> ("b0000_0011".U << io.req.bits.addr(2, 0).asUInt), // <<0, 2, 4, 6
+    Control.LD_LB  -> ("b0000_0001".U << io.req.bits.addr(2, 0).asUInt), // <<0, 1, 2, 3 ... 7
+    Control.LD_LWU -> ("b0000_1111".U << io.req.bits.addr(2, 0).asUInt), // <<0 or << 4
+    Control.LD_LHU -> ("b0000_0011".U << io.req.bits.addr(2, 0).asUInt), // <<0, 2, 4, 6
+    Control.LD_LBU -> ("b0000_0001".U << io.req.bits.addr(2, 0).asUInt), // <<0, 1, 2, 3 ... 7
   ))(7, 0)
   io.readROB.req.bits.idx := io.req.bits.idx
 
   when(state === s_idle) {
     when(io.readROB.resp.fire) {
       when(io.readROB.resp.bits.meet) {
-        val res = io.readROB.resp.bits.data >> (io.readROB.req.bits.addr(2, 0) << 3.U).asUInt()
-        is_except := false.B
+        rob_data := 0.U
+        val res = io.readROB.resp.bits.data >> (io.readROB.req.bits.addr(2, 0) << 3.U).asUInt
         ld_data := MuxLookup(io.req.bits.ld_type, 0.S(p(XLen).W), Seq(
-          Control.LD_LD -> res(63, 0).asSInt(),
-          Control.LD_LW -> res(31, 0).asSInt(),
-          Control.LD_LH -> res(15, 0).asSInt(),
-          Control.LD_LB -> res(7, 0).asSInt(),
-          Control.LD_LWU -> res(31, 0).zext(),
-          Control.LD_LHU -> res(15, 0).zext(),
-          Control.LD_LBU -> res(7, 0).zext(),
-        )).asUInt()
+          Control.LD_LD -> res(63, 0).asSInt,
+          Control.LD_LW -> res(31, 0).asSInt,
+          Control.LD_LH -> res(15, 0).asSInt,
+          Control.LD_LB ->  res(7, 0).asSInt,
+          Control.LD_LWU ->  res(31, 0).zext,
+          Control.LD_LHU ->  res(15, 0).zext,
+          Control.LD_LBU ->   res(7, 0).zext,
+        )).asUInt
       }.otherwise{
-        ld_data := io.readROB.resp.bits.data
+        rob_data := io.readROB.resp.bits.data
       }
     }.elsewhen(invalid_mem_addr) {
       ld_data := 0.U
@@ -311,29 +318,24 @@ class LoadU(implicit val p: Parameters) extends Module {
     // cache返回的结果已经是>>的结果了, 需要恢复64bit对齐，st指令存储在rob中的也是64bit对齐
     val dcache_ret_data = mem.io.resp.bits.data << (addr_reg(2, 0) << 3.U)
     // 组合dcache返回的数据和rob中的数据
-    val tmp = Cat(diff_mask.asBools().zipWithIndex.map(x => {
+    val tmp = Cat(diff_mask.asBools.zipWithIndex.map(x => {
       val (valid, i) = x
       val res = Wire(UInt(8.W))
-      res := Mux(valid, dcache_ret_data(8 * (i + 1) - 1, 8 * i), ld_data(8 * (i + 1) - 1, 8 * i))
+      res := Mux(valid, dcache_ret_data(8 * (i + 1) - 1, 8 * i), rob_data(8 * (i + 1) - 1, 8 * i))
       res
-    }).reverse) >> (addr_reg(2, 0) << 3.U).asUInt()
-    is_except := mem.io.resp.bits.except
+    }).reverse) >> (addr_reg(2, 0) << 3.U).asUInt
     ld_data := MuxLookup(req_reg.ld_type, 0.S(p(XLen).W), Seq(
-      Control.LD_LD -> tmp(63, 0).asSInt(),
-      Control.LD_LW -> tmp(31, 0).asSInt(),
-      Control.LD_LH -> tmp(15, 0).asSInt(),
-      Control.LD_LB -> tmp(7, 0).asSInt(),
-      Control.LD_LWU -> tmp(31, 0).zext(),
-      Control.LD_LHU -> tmp(15, 0).zext(),
-      Control.LD_LBU -> tmp(7, 0).zext(),
+      Control.LD_LD -> tmp(63, 0).asSInt,
+      Control.LD_LW -> tmp(31, 0).asSInt,
+      Control.LD_LH -> tmp(15, 0).asSInt,
+      Control.LD_LB ->  tmp(7, 0).asSInt,
+      Control.LD_LWU ->  tmp(31, 0).zext,
+      Control.LD_LHU ->  tmp(15, 0).zext,
+      Control.LD_LBU ->   tmp(7, 0).zext,
     )).asUInt()
   }
 
   io.req.ready := state === s_idle
-  // resp逻辑
-  io.resp.valid := state === s_ret
-  io.resp.bits.data := ld_data
-  io.resp.bits.except := is_except
 }
 
 class MemU(implicit p: Parameters) extends Module {
@@ -360,16 +362,16 @@ class MemU(implicit p: Parameters) extends Module {
   alu.io.alu_op := io.in.bits.alu_op
   val alu_res = alu.io.out
 
-  val isCSR = io.in.bits.csr_cmd.orR()
+  val isCSR  = io.in.bits.csr_cmd.orR()
   val isRoCC = io.in.bits.rocc_cmd.orR()
-  val isLD = (io.in.bits.ld_type.orR()) & !isCSR
-  val isST = (io.in.bits.st_type.orR()) & !isCSR
+  val isLD   = (io.in.bits.ld_type.orR()) & !isCSR
+  val isST   = (io.in.bits.st_type.orR()) & !isCSR
   val isAMOW = (io.in.bits.alu_op >= ALU.ALU_AMOADD_W) & (io.in.bits.alu_op <= ALU.ALU_AMOSWAP_W)
   val isAMOD = (io.in.bits.alu_op >= ALU.ALU_AMOADD_D) & (io.in.bits.alu_op <= ALU.ALU_AMOSWAP_D)
-  val isAMO = isAMOW | isAMOD
-  val isLR = (io.in.bits.alu_op === ALU.ALU_LR_W) | (io.in.bits.alu_op === ALU.ALU_LR_D)
-  val isSC = (io.in.bits.alu_op === ALU.ALU_SC_W) | (io.in.bits.alu_op === ALU.ALU_SC_D)
-  val isALU = (!isCSR) & (!isLD) & (!isST) & (!isRoCC) & (!isAMO) & (!isLR) & (!isSC)
+  val isAMO  = isAMOW | isAMOD
+  val isLR   = (io.in.bits.alu_op === ALU.ALU_LR_W) | (io.in.bits.alu_op === ALU.ALU_LR_D)
+  val isSC   = (io.in.bits.alu_op === ALU.ALU_SC_W) | (io.in.bits.alu_op === ALU.ALU_SC_D)
+  val isALU  = (!isCSR) & (!isLD) & (!isST) & (!isRoCC) & (!isAMO) & (!isLR) & (!isSC)
 
   val in_reg = RegInit(0.U.asTypeOf(io.in.bits))
   val isAMOW_reg = RegInit(false.B)
@@ -379,7 +381,7 @@ class MemU(implicit p: Parameters) extends Module {
   val s_idle :: s_load :: s_amoload :: s_amocal :: s_amostore :: Nil = Enum(5)
   val state = RegInit(s_idle)
 
-  when(io.in.fire() & (isLD | isAMO)){
+  when(io.in.fire & (isLD | isAMO)){
     in_reg := io.in.bits
     addr_reg := Mux(isAMO | isLR, io.in.bits.A, alu_res)  // amoop addr is rs1, not alu_res
     isAMOW_reg := isAMOW
@@ -398,7 +400,7 @@ class MemU(implicit p: Parameters) extends Module {
   loadU.io.req.bits.addr := Mux(isLD & !isLR, alu_res, io.in.bits.A)
   loadU.io.req.bits.ld_type := Mux(isLD & !isLR, io.in.bits.ld_type, Mux(isAMOW, Control.LD_LW, Control.LD_LD))
   loadU.io.req.bits.idx := io.in.bits.idx
-  loadU.io.resp.ready := (state === s_load) | (state === s_amoload)
+  loadU.io.resp.ready := (state === s_load) | (state === s_amoload) | (state === s_idle)
 
 
   // idle 并且 loadU也idle才可以接受 req  todo: 是否可以让直接转发的req直接通过?
@@ -452,19 +454,22 @@ class MemU(implicit p: Parameters) extends Module {
   switch(state){
     is(s_idle){
       state := MuxCase(state, Seq(
-        (io.in.fire() & isLD & !io.kill) -> s_load,
-        (io.in.fire() & isAMO & !io.kill) -> s_amoload
+        (io.in.fire & isLD  & !loadU.io.resp.fire & !io.kill) -> s_load,
+        (io.in.fire & isLD  &  loadU.io.resp.fire & !io.kill) -> s_idle,
+        (io.in.fire & isAMO & !loadU.io.resp.fire & !io.kill) -> s_amoload,
+        (io.in.fire & isAMO &  loadU.io.resp.fire & !loadU.io.resp.bits.except & !io.kill) -> s_amocal,
+        (io.in.fire & isAMO &  loadU.io.resp.fire &  loadU.io.resp.bits.except & !io.kill) -> s_idle
       ))
     }
     is(s_load){
       state := MuxCase(state, Seq(
-        loadU.io.resp.fire() -> s_idle
+        loadU.io.resp.fire -> s_idle
       ))
     }
     is(s_amoload){
       state := MuxCase(state, Seq(
-        (loadU.io.resp.fire() & !loadU.io.resp.bits.except) -> s_amocal,
-        (loadU.io.resp.fire() & loadU.io.resp.bits.except) -> s_idle, // 出现异常直接返回到idle
+        (loadU.io.resp.fire & !loadU.io.resp.bits.except) -> s_amocal,
+        (loadU.io.resp.fire & loadU.io.resp.bits.except) -> s_idle, // 出现异常直接返回到idle
       ))
     }
     is(s_amocal){
@@ -482,11 +487,11 @@ class MemU(implicit p: Parameters) extends Module {
   io.cdb.bits.mask := 0.U
 
   // valid can't depend on ready
-  io.rocc_queue.valid := io.in.fire() & io.in.bits.rocc_cmd.orR()
+  io.rocc_queue.valid := io.in.fire & io.in.bits.rocc_cmd.orR
   io.rocc_queue.bits.rs1 := io.in.bits.A
   io.rocc_queue.bits.rs2 := io.in.bits.B
 
-  when(io.in.fire() & isCSR) {
+  when(io.in.fire & isCSR) {
     // csr op
     // csr读数只通过commit端口，cdb处不会改变rename和station状态，因为csr放在了rob里面，当前还没有读csr
     io.cdb.bits.idx := io.in.bits.idx
@@ -499,7 +504,7 @@ class MemU(implicit p: Parameters) extends Module {
     io.cdb.bits.pc := io.in.bits.pc
     io.cdb.bits.inst := io.in.bits.inst // inst里面蕴含了csr addr
     io.cdb.valid := true.B
-  }.elsewhen(io.in.fire() & isRoCC){
+  }.elsewhen(io.in.fire & isRoCC){
     // rocc inst also need to execute in order!
     // and its result is return in commit stage
     io.cdb.bits.idx := io.in.bits.idx
@@ -512,7 +517,7 @@ class MemU(implicit p: Parameters) extends Module {
     io.cdb.bits.pc := io.in.bits.pc
     io.cdb.bits.inst := io.in.bits.inst // rocc cmd need inst
     io.cdb.valid := true.B
-  }.elsewhen(io.in.fire() & isALU) {
+  }.elsewhen(io.in.fire & isALU) {
     // fix point op (NOT including branch)
     io.cdb.bits.idx := io.in.bits.idx
     io.cdb.bits.prn := io.in.bits.prd
@@ -526,7 +531,7 @@ class MemU(implicit p: Parameters) extends Module {
     io.cdb.valid := true.B
   }.otherwise {
     // mem op
-    when(io.in.fire() & (io.in.bits.st_type.orR() & !isAMO)) {
+    when(io.in.fire & (io.in.bits.st_type.orR & !isAMO)) {
       // store inst
       io.cdb.bits.idx := io.in.bits.idx
       io.cdb.bits.prn := 0.U
@@ -576,17 +581,27 @@ class MemU(implicit p: Parameters) extends Module {
       io.cdb.bits.mask := Mux(isAMOW_reg, "b0000_1111".U << io.cdb.bits.addr(2, 0).asUInt(), "b1111_1111".U)
     }.otherwise {
       // load inst
-      io.cdb.bits.idx := in_reg.idx
-      io.cdb.bits.prn := in_reg.prd
-      io.cdb.bits.prn_data := loadU.io.resp.bits.data
-      io.cdb.bits.expt := Mux(loadU.io.resp.bits.except, ExceptType.LPF, ExceptType.NO)
-      io.cdb.bits.store_data := 0.U
-      io.cdb.bits.wen := in_reg.wen & (io.cdb.bits.prn =/= 0.U)
-      io.cdb.bits.brHit := true.B
-      io.cdb.bits.pc := in_reg.pc
-      io.cdb.bits.inst := in_reg.inst
-      io.cdb.valid := ((state === s_load) & loadU.io.resp.fire()) & (!kill_reg) & !io.kill
-      io.cdb.bits.addr := addr_reg
+      when(state === s_load){
+        // use in_reg
+        io.cdb.bits.idx  := in_reg.idx
+        io.cdb.bits.prn  := in_reg.prd
+        io.cdb.bits.wen  := in_reg.wen & (io.cdb.bits.prn =/= 0.U)
+        io.cdb.bits.pc   := in_reg.pc
+        io.cdb.bits.inst := in_reg.inst
+      }.otherwise{
+        // use io_in
+        io.cdb.bits.idx  := io.in.bits.idx
+        io.cdb.bits.prn  := io.in.bits.prd
+        io.cdb.bits.wen  := io.in.bits.wen & (io.cdb.bits.prn =/= 0.U)
+        io.cdb.bits.pc   := io.in.bits.pc
+        io.cdb.bits.inst := io.in.bits.inst
+      }
+      io.cdb.bits.prn_data   := loadU.io.resp.bits.data
+      io.cdb.bits.expt       := Mux(loadU.io.resp.bits.except, ExceptType.LPF, ExceptType.NO)
+      io.cdb.bits.brHit      := true.B
+      io.cdb.bits.store_data := 0.U     //                                    v  here distinguish with load in amo
+      io.cdb.valid           := (((state === s_idle) & loadU.io.resp.fire & isLD) | ((state === s_load) & loadU.io.resp.fire)) & (!kill_reg) & !io.kill
+      io.cdb.bits.addr       := addr_reg
     }
   }
 
