@@ -331,7 +331,7 @@ class OOOIF (implicit p: Parameters) extends Module {
   io.out(1).bits.pc := io.out(0).bits.pc | "b100".U
   io.out(1).bits.inst := Mux(io.icache.resp.fire & (io.icache.resp.bits.cmd =/= 0.U), Mux((!isSingleAddr) & (!last_single), io.icache.resp.bits.data(63, 32), io.icache.resp.bits.data(31, 0)), inst(1))
   io.out(1).bits.pTaken := pTaken(1)
-  io.out(1).bits.pPC := Mux(btb(0).io.query.res.bits.is_miss, 0.U, btb(0).io.query.res.bits.tgt)
+  io.out(1).bits.pPC := Mux(btb(1).io.query.res.bits.is_miss, 0.U, btb(1).io.query.res.bits.tgt)
   io.out(1).bits.except := Mux(io.icache.resp.bits.except, ExceptType.IPF, ExceptType.NO)
   io.out(1).valid := (isCacheRet & inst_valid(1) & !cancel_inst_1 & ((state =/= s_kill) & (state =/= s_fence))) | (is_valid_when_stall(1) & stall_negedge)
 
