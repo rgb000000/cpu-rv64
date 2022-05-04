@@ -141,7 +141,6 @@ class ROBInfo(implicit val p: Parameters) extends Bundle {
 
   val brHit = Bool()
   val isTake = Bool()
-  val expt = Bool()
 
   val isBr = Bool()
   val isJ = Bool()
@@ -230,30 +229,6 @@ class ROB(implicit p: Parameters) extends Module {
     // none
   }
 
-  // getData
-  io.in.cdb.foreach(cdb => {
-    when(cdb.fire) {
-      rob(cdb.bits.idx).state := S_GETDATA
-
-      // prn
-      rob(cdb.bits.idx).prn_data := cdb.bits.prn_data
-
-      // except
-      rob(cdb.bits.idx).except := cdb.bits.expt
-
-      // store
-      rob(cdb.bits.idx).addr := cdb.bits.addr
-      rob(cdb.bits.idx).mask := cdb.bits.mask
-      rob(cdb.bits.idx).store_data := cdb.bits.store_data
-
-      rob(cdb.bits.idx).isTake := cdb.bits.isTaken
-      rob(cdb.bits.idx).brHit := cdb.bits.brHit
-      rob(cdb.bits.idx).expt := cdb.bits.expt
-      rob(cdb.bits.idx).j_pc := cdb.bits.j_pc
-
-      rob(cdb.bits.idx).memAddr := cdb.bits.addr
-    }
-  })
 
   val csr = Module(new CSR)
   def csr_enable(rob_info: ROBInfo, valid: Bool): Unit = {
@@ -262,7 +237,7 @@ class ROB(implicit p: Parameters) extends Module {
     csr.io.ctrl_signal.pc      := rob_info.pc
     csr.io.ctrl_signal.addr    := 0.U
     csr.io.ctrl_signal.inst    := rob_info.inst
-    csr.io.ctrl_signal.illegal := false.B
+    csr.io.ctrl_signal.illegal := false.B         // FIXME: need to consider illegal inst!
     csr.io.ctrl_signal.st_type := 0.U
     csr.io.ctrl_signal.ld_type := 0.U
     csr.io.pc_check            := false.B
@@ -376,9 +351,9 @@ class ROB(implicit p: Parameters) extends Module {
   io.epc := csr.io.epc
   io.exvec := csr.io.exvec
   dontTouch(io.epc)
-  // todo： 考虑到两条指令之间的关联比较复杂，这一版本先做单指令提交
-  write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
+
   val head = rob(commitIdx.value)
+  val next_head = rob(commitIdx.value + 1.U)
   val head_show = WireInit(head)
   dontTouch(head_show)
   csr_enable(head, head.state === S_GETDATA)
@@ -405,18 +380,35 @@ class ROB(implicit p: Parameters) extends Module {
 
   io.commit2rocc.resp.ready := (rocc_commit_state === s_rocc_resp) & (head.state === S_GETDATA)
 
+  // the second commit channel, only when 1st commit channle is commit and 2rd channel is a normal inst
+  val next_head_can_commit = (
+    (next_head.state === S_GETDATA)
+      &(!next_head.st_type.orR)
+      &(!next_head.isLR.orR)
+      &(!next_head.csr_cmd.orR)
+      &(!next_head.rocc_cmd.orR)
+      &(!next_head.isBr & !next_head.isJ & !next_head.kill)
+      &(!next_head.except.orR)
+      &(!next_head.interrupt.asUInt.orR)
+    )
+
+  write_prfile(1, 0.U.asTypeOf(new ROBInfo), false.B)
+
+  // the first commit channel
   when(head.state === S_GETDATA){
-    when((!head.st_type.orR()) & (!head.csr_cmd.orR()) & (!head.rocc_cmd.orR())){
+    when((!head.st_type.orR) & (!head.csr_cmd.orR) & (!head.rocc_cmd.orR)){
       // 普通指令
       when(!csr.io.expt){
         // 无中断，正常执行
         when(head.brHit){
           // 跳转预测成功
           when(!head.kill){
-            commitIdx.inc()
-            write_prfile(0, head, true.B)
+            commitIdx.value := Mux(next_head_can_commit, commitIdx.value + 2.U, commitIdx.value + 1.U)
+            write_prfile(0, head,      true.B)
+            write_prfile(1, Mux(next_head_can_commit, next_head, 0.U.asTypeOf(next_head)), next_head_can_commit)
             write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
             head.state := S_COMMITED
+            next_head.state := Mux(next_head_can_commit, S_COMMITED, next_head.state)
             out_br_info(true.B, head)
           }.otherwise{
             // 触发了kill 只有fence_i会走到这里，需要在dcacahe idle时候执行
@@ -461,10 +453,12 @@ class ROB(implicit p: Parameters) extends Module {
         when(!head.kill){
           when(!csr.io.w_satp){
             // 不kill 正常执行
-            commitIdx.inc()
-            write_prfile(0, head, true.B)
+            commitIdx.value := Mux(next_head_can_commit, commitIdx.value + 2.U, commitIdx.value + 1.U)
+            write_prfile(0, head,      true.B)
+            write_prfile(1, Mux(next_head_can_commit, next_head, 0.U.asTypeOf(next_head)), next_head_can_commit)
             write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
             head.state := S_COMMITED
+            next_head.state := Mux(next_head_can_commit, S_COMMITED, next_head.state)
             out_br_info(true.B, head)
           }.otherwise{
             // w satp, kill
@@ -505,9 +499,11 @@ class ROB(implicit p: Parameters) extends Module {
           write_dcache(head, !store_req_once, 0.U)
           when(io.commit.dcache.resp.fire & (io.commit.dcache.resp.bits.cmd === 1.U) & !io.commit.dcache.resp.bits.except){
             // dcache返回正常
-            commitIdx.value := commitIdx.value + 1.U
-            write_prfile(0, head, true.B)
+            commitIdx.value := Mux(next_head_can_commit, commitIdx.value + 2.U, commitIdx.value + 1.U)
+            write_prfile(0, head,      true.B)
+            write_prfile(1, Mux(next_head_can_commit, next_head, 0.U.asTypeOf(next_head)), next_head_can_commit)
             head.state := S_COMMITED
+            next_head.state := Mux(next_head_can_commit, S_COMMITED, next_head.state)
             out_br_info(true.B, head)
           }.elsewhen(io.commit.dcache.resp.fire & (io.commit.dcache.resp.bits.cmd === 1.U) & io.commit.dcache.resp.bits.except){
             // dcache返回出现异常  不执行,提交异常
@@ -528,9 +524,11 @@ class ROB(implicit p: Parameters) extends Module {
             // SC success
             write_dcache(head, !store_req_once, 0.U)
             when(io.commit.dcache.resp.fire & (io.commit.dcache.resp.bits.cmd === 1.U) & !io.commit.dcache.resp.bits.except){
-              commitIdx.value := commitIdx.value + 1.U
-              write_prfile(0, head, true.B)
+              commitIdx.value := Mux(next_head_can_commit, commitIdx.value + 2.U, commitIdx.value + 1.U)
+              write_prfile(0, head,      true.B)
+              write_prfile(1, Mux(next_head_can_commit, next_head, 0.U.asTypeOf(next_head)), next_head_can_commit)
               head.state := S_COMMITED
+              next_head.state := Mux(next_head_can_commit, S_COMMITED, next_head.state)
               out_br_info(true.B, head)
             }.elsewhen(io.commit.dcache.resp.fire & (io.commit.dcache.resp.bits.cmd === 1.U) & io.commit.dcache.resp.bits.except){
               // dcache返回出现异常  不执行,提交异常
@@ -635,6 +633,30 @@ class ROB(implicit p: Parameters) extends Module {
     out_br_info(true.B, 0.U.asTypeOf(new ROBInfo))
   }
 
+  // getData
+  io.in.cdb.foreach(cdb => {
+    when(cdb.fire & !flush) {
+      rob(cdb.bits.idx).state := S_GETDATA
+
+      // prn
+      rob(cdb.bits.idx).prn_data := cdb.bits.prn_data
+
+      // except
+      rob(cdb.bits.idx).except := cdb.bits.expt
+
+      // store
+      rob(cdb.bits.idx).addr := cdb.bits.addr
+      rob(cdb.bits.idx).mask := cdb.bits.mask
+      rob(cdb.bits.idx).store_data := cdb.bits.store_data
+
+      rob(cdb.bits.idx).isTake := cdb.bits.isTaken
+      rob(cdb.bits.idx).brHit := cdb.bits.brHit
+      rob(cdb.bits.idx).j_pc := cdb.bits.j_pc
+
+      rob(cdb.bits.idx).memAddr := cdb.bits.addr
+    }
+  })
+
   // station read rob in issue stage for reg
   for (i <- 0 until 2) {
     for (j <- 0 until 2) {
@@ -687,5 +709,9 @@ class ROB(implicit p: Parameters) extends Module {
     val both_ready = Wire(Bool())
     dontTouch(both_ready)
     both_ready := (rob(commitIdx.value).state ===  S_GETDATA) & (rob(commitIdx.value + 1.U).state ===  S_GETDATA)
+
+    val ready_num = Wire(UInt(8.W))
+    dontTouch(ready_num)
+    ready_num := rob.map(_.state === S_GETDATA).map(_.asUInt).reduce(_ +& _)
   }
 }

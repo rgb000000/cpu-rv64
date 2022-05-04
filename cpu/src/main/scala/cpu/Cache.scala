@@ -784,4 +784,17 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
 
 //  io.fence_i_done := (((io.mem.req.bits.cmd === MemCmdConst.WriteLast) & io.mem.req.fire()) | !io.mem.req.valid) & (fence_cnt.value === (cacheline_num -1).asUInt()) & (state === s_fence_wb)
   io.fence_i_done := (state === s_idle) & (RegNext(state, 0.U) === s_fence_wb)
+
+  if(p(Difftest)){
+    val req_num = RegInit(0.U(64.W))
+    val miss_num = RegInit(0.U(64.W))
+    BoringUtils.addSource(req_num, cache_type + "_req_num")
+    BoringUtils.addSource(miss_num, cache_type + "_miss_num")
+    when(io.cpu.req.fire){
+      req_num := req_num + 1.U
+    }
+    when(RegNext(io.cpu.req.fire) & is_miss){
+      miss_num := miss_num + 1.U
+    }
+  }
 }

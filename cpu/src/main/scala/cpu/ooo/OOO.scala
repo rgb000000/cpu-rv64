@@ -98,6 +98,13 @@ class OOO(implicit p: Parameters) extends Module {
     rename.io.port(i).allocate_c.lr.valid := (control(i).io.signal.wen & (id(i).io.rd_addr =/= 0.U)) & if_reg(i).valid & !station_isfull
   }
 
+  val mark_time_interrupt = WireInit(false.B)
+  val mark_soft_interrupt = WireInit(false.B)
+  val mark_ext_interrupt  = WireInit(false.B)
+  BoringUtils.addSink(mark_time_interrupt, "mark_time_interrupt")
+  BoringUtils.addSink(mark_soft_interrupt, "mark_soft_interrupt")
+  BoringUtils.addSink(mark_ext_interrupt, "mark_ext_interrupt")
+
   for(i <- 0 until 2){
     // write to station
     station.io.in(i).bits.pr1       := rename.io.port(i).query_a.pr.bits.idx
@@ -146,9 +153,9 @@ class OOO(implicit p: Parameters) extends Module {
     rob.io.in.fromID(i).bits.pTaken               := station.io.in(i).bits.pTaken
     rob.io.in.fromID(i).bits.current_rename_state := station.io.in(i).bits.current_rename_state
     rob.io.in.fromID(i).bits.csr_cmd              := station.io.in(i).bits.csr_op
-    rob.io.in.fromID(i).bits.interrupt.time       := io.time_interrupt
-    rob.io.in.fromID(i).bits.interrupt.soft       := soft_int
-    rob.io.in.fromID(i).bits.interrupt.external   := external_int
+    rob.io.in.fromID(i).bits.interrupt.time       := io.time_interrupt & mark_time_interrupt
+    rob.io.in.fromID(i).bits.interrupt.soft       := soft_int          & mark_soft_interrupt
+    rob.io.in.fromID(i).bits.interrupt.external   := external_int      & mark_ext_interrupt
     rob.io.in.fromID(i).bits.kill                 := ctrl(i).kill
     rob.io.in.fromID(i).bits.rocc_cmd             := ctrl(i).rocc_cmd
   }
@@ -394,13 +401,29 @@ class OOO(implicit p: Parameters) extends Module {
       }
     }
 
+    val i_req_num  = WireInit(0.U(64.W))
+    val i_miss_num = WireInit(0.U(64.W))
+    val d_req_num  = WireInit(0.U(64.W))
+    val d_miss_num = WireInit(0.U(64.W))
+    BoringUtils.addSink(i_req_num,  "i_req_num")
+    BoringUtils.addSink(i_miss_num, "i_miss_num")
+    BoringUtils.addSink(d_req_num,  "d_req_num")
+    BoringUtils.addSink(d_miss_num, "d_miss_num")
+
     // end
     when(dte.io.valid){
       printf("\n*** insts num=%d ***\n", instCnt)
       printf(  "***    cycles=%d ***\n", cycleCnt)
+
       printf("\n***    hit br=%d ***\n", hit_cnt)
       printf(  "***   miss br=%d ***\n", miss_cnt)
       printf(  "***  total br=%d ***\n", total_br_cnt)
+
+      printf("\n*** i_req num=%d ***\n", i_req_num)
+      printf(  "***i_miss num=%d ***\n", i_miss_num)
+
+      printf("\n*** d_req num=%d ***\n", d_req_num)
+      printf(  "***d_miss num=%d ***\n", d_miss_num)
     }
   }
 }

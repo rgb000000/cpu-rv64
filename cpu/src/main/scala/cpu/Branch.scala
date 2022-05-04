@@ -67,7 +67,7 @@ class BTB(implicit p: Parameters) extends Module{
 
   // query
   val query_compare_res = Cat(cam.map(_.pc).map(_ === io.query.pc.bits).reverse)
-  val query_is_miss = query_compare_res.orR() === 0.U
+  val query_is_miss = query_compare_res.orR === 0.U
   val query_select_data = Mux1H(for(i <- query_compare_res.asBools().zipWithIndex) yield (i._1, cam(i._2)))
   io.query.res.valid := io.query.pc.valid
   io.query.res.bits.tgt := query_select_data.tgt
@@ -76,7 +76,7 @@ class BTB(implicit p: Parameters) extends Module{
 
   // update
   val update_compare_res = Cat(cam.map(_.pc).map(_ === io.update.bits.pc))
-  val update_is_miss = update_compare_res.orR() === 0.U
+  val update_is_miss = update_compare_res.orR === 0.U
   val update_index = PriorityEncoder(Cat(update_compare_res.asBools()))
   when(io.update.valid & !update_is_miss){
     // update and hit

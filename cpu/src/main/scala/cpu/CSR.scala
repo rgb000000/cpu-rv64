@@ -247,6 +247,12 @@ class CSR (implicit p: Parameters) extends Module {
   val m_ext_interrupt_enable  = WireInit(mie.meie & m_ext_global_enable)
   val s_ext_interrupt_enable  = WireInit(mie.seie & s_ext_global_enable)
 
+  val mark_time_interrupt = WireInit(m_time_interrupt_enable | s_time_interrupt_enable)
+  val mark_soft_interrupt = WireInit(m_soft_interrupt_enable | s_soft_interrupt_enable)
+  val mark_ext_interrupt  = WireInit(m_ext_interrupt_enable  | s_ext_interrupt_enable)
+  BoringUtils.addSource(mark_time_interrupt, "mark_time_interrupt")
+  BoringUtils.addSource(mark_soft_interrupt, "mark_soft_interrupt")
+  BoringUtils.addSource(mark_ext_interrupt, "mark_ext_interrupt")
 
   mip.mtip := io.interrupt.time & m_time_interrupt_enable
   mip.msip := io.interrupt.soft
