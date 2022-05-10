@@ -3,7 +3,7 @@ package cpu.dsa.gemm
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
-import cpu.{RoCCCommand, RoCCIO, RoCCRespone}
+import cpu.{RoCCCommand, RoCCIO, RoCCRespone, XLen}
 
 class CtrlIO(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters) extends Bundle {
   val rocc_cmd = Flipped(Decoupled(new RoCCCommand))
@@ -74,7 +74,8 @@ class Ctrl(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameter
 
   io.dmaCtrl.cmd.valid := state === s_dma
   io.dmaCtrl.cmd.bits.op := Mux(req.inst.funct === MVIN_OP, 1.U, 0.U)
-  io.dmaCtrl.cmd.bits.addr_local := req.rs1
+  io.dmaCtrl.cmd.bits.addr_local := req.rs1 & "b111".U
+  io.dmaCtrl.cmd.bits.step := req.rs1(p(XLen)-1, 3).asUInt
   io.dmaCtrl.cmd.bits.addr_mem := req.rs2
   io.dmaCtrl.cmd.bits.len := 16.U    // todo: len是否需要起作用，还是说dma操作就是固定16次?
 
