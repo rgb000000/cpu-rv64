@@ -124,8 +124,8 @@ class ScratchPad(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Par
 
   val tmp_req = Wire(Decoupled(new ScratchPadReq(depth, w, nbank)))
   val tmp_resp = Wire(Decoupled(new ScratchPadResp(depth, w, nbank)))
-  val req_q = Queue(tmp_req, 4)
-  val resp_q = Queue(tmp_resp, 4)
+  val req_q = Queue(tmp_req, 4, flow=true)
+  val resp_q = Queue(tmp_resp, 4, flow=true)
 
   io.toDMA.req.ready := tmp_req.ready & !io.toArray.req.valid
   io.toArray.req.ready := tmp_req.ready

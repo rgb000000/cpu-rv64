@@ -33,7 +33,7 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
   // c = a*b + d
   // 先加载c进入pe阵列reg中，然后加载b让其经过转置，然后再加载a同时开始计算，等计算完成就读出c  todo: 在读出c的同时能不能同时加载下一轮的d?
 //  val s_idle :: s_load_d :: s_load_b :: s_wait_a :: s_load_a :: s_wait_run :: s_store_c :: s_done :: Nil = Enum(8)
-  val s_idle :: s_load_DA :: s_wait_B :: s_load_B :: s_wait_run :: s_store_C :: s_done :: Nil = Enum(7)
+  val s_idle :: s_load_DA :: s_wait_B :: s_load_B :: s_wait_run :: s_store_C :: Nil = Enum(6)
   val state = RegInit(s_idle)
 
   val OP_TIMES = p(MeshRow) * p(TileRow)
@@ -56,27 +56,27 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
     }
 
     is(s_load_DA){
+      // read 16
       state := Mux(read_cnt_meet, s_wait_B, state)
     }
 
     is(s_wait_B){
+      // wait B, because scratchpad latency
       state := Mux(io.toSPad.resp.valid, s_load_B, state)
     }
 
     is(s_load_B){
+      // read 16, and mesh start running
       state := Mux(read_cnt_meet, s_wait_run, state)
     }
 
     is(s_wait_run){
-      state := Mux(run_cnt_meet, Mux(addrs.writeC, s_store_C, s_done), state)
+      // wait mesh done
+      state := Mux(run_cnt_meet, Mux(addrs.writeC, s_store_C, s_idle), state)
     }
 
     is(s_store_C){
-      state := Mux(write_cnt_meet, s_done, state)
-    }
-
-    is(s_done){
-      state := s_idle
+      state := Mux(write_cnt_meet, s_idle, state)
     }
   }
 
@@ -111,7 +111,8 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
   }
 
   io.ctrl.cmd.ready := state === s_idle
-  io.ctrl.done := state === s_done
+  val done = ((state === s_wait_run) & run_cnt_meet & !addrs.writeC) | ((state === s_store_C) & write_cnt_meet)
+  io.ctrl.done := done
 
 
   // toSpad
