@@ -3,7 +3,7 @@ package cpu.dsa.gemm
 import chisel3._
 import chisel3.util._
 import chipsalliance.rocketchip.config._
-import cpu.{CacheCPUIO, MemCmdConst, XLen}
+import cpu.{CacheCPUIO, CacheLineSize, MemCmdConst, XLen}
 
 class DMAReq(val depth: Int, val w: Int, val nbank: Int) extends Bundle {
   val addr = UInt(log2Ceil(depth*nbank).W)
@@ -57,11 +57,12 @@ class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) ex
   }
 
   // todo: 参数化这个8
-  val CACHE_CNT_VALUE = (((p(MeshRow) * p(TileRow)) * (p(MeshRow) * p(TileRow)) * 8) / p(XLen)).toInt
+  val CACHE_CNT_VALUE = (((p(MeshRow) * p(TileRow)) * (p(MeshRow) * p(TileRow)) * 8) / p(CacheLineSize)).toInt
   val SPAD_CNT_VALUE = p(MeshRow) * p(TileRow)
   // 目前现在 16*16的pe整列上做尝试
-  require(CACHE_CNT_VALUE == 32)
-  require(CACHE_CNT_VALUE > SPAD_CNT_VALUE)
+  require(CACHE_CNT_VALUE == 16)
+  // require(CACHE_CNT_VALUE > SPAD_CNT_VALUE)
+
   // 计数器都在目的端进行计数
   val wcnt = Counter(CACHE_CNT_VALUE * 2)  // 统计写入端次数
   val rcnt = Counter(CACHE_CNT_VALUE * 2)  // 统计读取端次数
@@ -71,8 +72,8 @@ class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) ex
   val r_addr = RegInit(0.U(32.W))
 
   // 读写均对于spad而言
-  val rfifo = Module(new FIFOw2w(w, 64, 4))
-  val wfifo = Module(new FIFOw2w(64, w, 4))
+  val rfifo = Module(new FIFOw2w(w, 128, 4))
+  val wfifo = Module(new FIFOw2w(128, w, 4))
 
   switch(state){
     is(s_idle){
@@ -118,8 +119,8 @@ class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) ex
         wcnt.value := 0.U
         w_addr := 0.U
       }.otherwise{
-        wcnt.inc()                //                                                 V step the number of 128bit
-        w_addr := Mux(w_addr(0) === 0.U, w_addr + 1.U, (w_addr & "hffff_fffe".U) + (step<<1.U))
+        wcnt.inc()
+        w_addr := w_addr + step
       }
     }
   }
@@ -132,7 +133,7 @@ class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) ex
   }.elsewhen(state === s_write){
     when(io.toCache.req.fire() & (io.toCache.req.bits.op === 0.U)){
       rcnt.inc()  // stop when rcnt === CACHE_CNT_VALUE
-      r_addr := Mux(r_addr(0) === 0.U, r_addr + 1.U, (r_addr & "hffff_fffe".U) + (step<<1.U))
+      r_addr := r_addr + step
     }
   }.elsewhen(state === s_done){
     rcnt.value := 0.U
@@ -147,9 +148,9 @@ class DMA(val depth: Int, val w: Int, val nbank: Int)(implicit p: Parameters) ex
   // Cache
   // s_write需要从Cache读数据到wfifo
   // s_read_req和s_read_resp状态需要将rfifo中的数据写入Cache
-  io.toCache.req.bits.addr := addr_mem + (Mux(!op, w_addr, r_addr) << log2Ceil(64 / 8))
+  io.toCache.req.bits.addr := addr_mem + (Mux(!op, w_addr, r_addr) << log2Ceil(128 / 8))
   io.toCache.req.bits.op := !op
-  io.toCache.req.bits.mask := "hff".U
+  io.toCache.req.bits.mask := "hffff".U
   io.toCache.req.bits.data := rfifo.io.deq.bits
   io.toCache.req.valid := Mux(state === s_write, wfifo.io.enq.ready & (rcnt.value =/= CACHE_CNT_VALUE.U), (state === s_read) & rfifo.io.deq.valid)
   dontTouch(io.toCache)

@@ -50,7 +50,7 @@ class PE[T<:Data:Arithmetic](inType: T, outType: T, accType: T)(implicit ev: Ari
     // output C, need clipped!
     reg := io.d_in
   }.elsewhen(io.ctrl_in.mode === M_RUN){
-    reg := reg.mac(io.a_in, io.b_in)
+    reg := reg.mac(io.a_in, io.b_in).clipped2witdhOf(outType)
   }.otherwise{
     reg := reg
   }

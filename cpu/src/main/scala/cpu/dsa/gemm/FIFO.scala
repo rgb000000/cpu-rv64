@@ -73,7 +73,9 @@ class FIFOw2w(val inW: Int, val outW: Int, val entries: Int) extends Module {
 
   }else{
     require(outW == inW)
-    println("Please use Queue instead of FIFO")
-    require(false)
+    val q = Module(new Queue(UInt(inW.W), entries, flow=true))
+    q.io.enq <> io.enq
+    io.deq <> q.io.deq
+    io.count := q.io.count
   }
 }

@@ -22,13 +22,13 @@ class CacheReq(implicit val p: Parameters) extends Bundle {
   //    |--------- tag ---------|---index---|--offset--|
   //
   val addr = UInt(p(AddresWidth).W)
-  val data = UInt(p(XLen).W)
-  val mask = UInt((p(XLen)/8).W)
+  val data = UInt(p(CacheLineSize).W)
+  val mask = UInt((p(CacheLineSize)/8).W)
   val op = UInt(1.W)  // 0: rd   1: wr
 }
 
 class CacheResp(implicit val p: Parameters) extends Bundle{
-  val data = UInt(p(XLen).W)
+  val data = UInt(p(CacheLineSize).W)
   val except = Bool()
   val cmd = UInt(4.W)
 }
@@ -79,8 +79,8 @@ class WayIn (val tag_width: Int, val index_width: Int, val offset_width: Int)(im
     val offset = UInt(offset_width.W)
     val v = UInt(1.W)
     val d = UInt(1.W)
-    val mask = UInt((p(XLen) / 8).W)
-    val data = UInt(p(XLen).W)
+    val mask = UInt((p(CacheLineSize) / 8).W)
+    val data = UInt(p(CacheLineSize).W)
     val op = UInt(1.W) // must 1
   })
   val r = Valid(new Bundle{
@@ -251,9 +251,9 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     val offset = UInt(offset_width.W)
     val v = UInt(1.W)
     val d = UInt(1.W)
-    val data = UInt(p(XLen).W)
+    val data = UInt(p(CacheLineSize).W)
     val replace_way = UInt(p(NWay).W)
-    val wmask = UInt((64 / 8).W)
+    val wmask = UInt((128 / 8).W)
   })))
 
   // conflict check (conflict with hit write)
@@ -438,9 +438,9 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
       val (valid, i) = x
       val res = Wire(UInt(8.W))
-      val tmp_data = Wire(UInt(64.W))
+      val tmp_data = Wire(UInt(p(CacheLineSize).W))
       val isHigh = req_reg.addr(log2Ceil(64 / 8))
-      tmp_data := Mux(isHigh, select_data(127, 64).asUInt(), select_data(63, 0).asUInt())
+      tmp_data := Mux(isHigh, select_data(127, 64).asUInt(), select_data)
       res := Mux(valid, tmp_data(8*(i+1)-1, 8*i).asUInt(), 0.U(8.W))
       res
     }).reverse) >> (req_reg.addr(2, 0) << 3.U)
@@ -448,7 +448,10 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     io.cpu.resp.bits.data := 0.U
   }.otherwise{
     // 这里的逻辑是为了保证ld的结果在都refill最后一个数据来的时候来放回，目地是为了保证操作的原子性，（TODO：其实是因为太菜了，没敢及时返回。这个可以改进一下，数据到了就及时返回
-    val ret = Mux(req_isCached, Mux(req_reg.addr.asTypeOf(infos).offset(log2Ceil(p(XLen) / 8)).asUInt() === 1.U, io.mem.resp.bits.data, load_ret), io.mem.resp.bits.data)
+//    val ret = Mux(req_isCached, Mux(req_reg.addr.asTypeOf(infos).offset(log2Ceil(p(XLen) / 8)).asUInt() === 1.U, io.mem.resp.bits.data, load_ret), io.mem.resp.bits.data)
+    val isHigh = req_reg.addr(log2Ceil(64 / 8))
+    val tmp_data = Mux(req_isCached, Cat(io.mem.resp.bits.data, load_ret), Cat(io.mem.resp.bits.data, io.mem.resp.bits.data))
+    val ret = Mux(isHigh, tmp_data(127, 64).asUInt, tmp_data)
     io.cpu.resp.bits.data := Cat(req_reg.mask.asBools().zipWithIndex.map(x => {
       val (valid, i) = x
       val res = Wire(UInt(8.W))
@@ -602,16 +605,34 @@ class Cache(val cache_type: String)(implicit p: Parameters) extends Module {
     }.elsewhen((state === s_refill) & io.mem.resp.fire()){
       when(req_isCached === 1.U){
         when(req_reg.op === 1.U){
-          write_buffer.bits.data := Mux(refill_cnt.value === miss_info.addr.asTypeOf(infos).offset(log2Ceil(64 / 8)).asUInt(),
-            (io.mem.resp.bits.data & (~Cat(req_reg.mask.asBools().reverse.map(x => {
+          when(req_reg.mask === "hffff".U){
+            // 128bit   only gemm will reach here
+            assert(miss_info.addr.asTypeOf(infos).offset === 0.U)
+            val tmp_mask = Mux(refill_cnt.value === 1.U, req_reg.mask(15, 8), req_reg.mask(7, 0))
+            val tmp_data = Mux(refill_cnt.value === 1.U, req_reg.data(127, 64), req_reg.data(63, 0))
+            write_buffer.bits.data := (io.mem.resp.bits.data & (~Cat(tmp_mask.asBools().reverse.map(x => {
               val res = Wire(UInt(8.W))
               res := Mux(x, "hff".U(8.W), 0.U(8.W))
               res
-            }))).asUInt()) | (req_reg.data & Cat(req_reg.mask.asBools().reverse.map(x => {
+            })) >> (refill_cnt.value << 3.U).asUInt).asUInt()) | (tmp_data & Cat(tmp_mask.asBools().reverse.map(x => {
               val res = Wire(UInt(8.W))
               res := Mux(x, "hff".U(8.W), 0.U(8.W))
               res
-            }))), io.mem.resp.bits.data)
+            })))
+          }.otherwise{
+            // 64bit or less
+            assert(req_reg.mask === BitPat("b0000_0000_????_????"))
+            write_buffer.bits.data := Mux(refill_cnt.value === miss_info.addr.asTypeOf(infos).offset(log2Ceil(64 / 8)).asUInt(),
+              (io.mem.resp.bits.data & (~Cat(req_reg.mask.asBools().reverse.map(x => {
+                val res = Wire(UInt(8.W))
+                res := Mux(x, "hff".U(8.W), 0.U(8.W))
+                res
+              }))).asUInt()) | (req_reg.data & Cat(req_reg.mask.asBools().reverse.map(x => {
+                val res = Wire(UInt(8.W))
+                res := Mux(x, "hff".U(8.W), 0.U(8.W))
+                res
+              }))), io.mem.resp.bits.data)
+          }
         }.otherwise{
           write_buffer.bits.data := io.mem.resp.bits.data
         }

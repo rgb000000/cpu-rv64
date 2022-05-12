@@ -300,7 +300,7 @@ class OOO(implicit p: Parameters) extends Module {
   station.io.robCommit.br_info.bits.isHit := rob.io.commit.br_info.bits.isHit
 
 //  val rocc_add = Module(new RoCCAdder)
-  val gemm = Module(new GEMMDummy(32, 16*8, 4))
+  val gemm = Module(new GEMM(32, 16*8, 4))
   //rob <> rocc
   rob.io.commit2rocc.cmd <> gemm.io.rocc.cmd
   rob.io.commit2rocc.resp <> gemm.io.rocc.resp
