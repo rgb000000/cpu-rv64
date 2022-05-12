@@ -34,11 +34,10 @@ case object FPGA extends Field[Boolean]
 
 class BaseConfig extends Config ((site, here, up)=>{
   case XLen           => 64
-  case PCStart        => "h8000_0000"
   case PCEVec         => "h9000_0000"
   case L2$Size        => -1
-  case I$Size         => here(CacheLineSize) * here(NWay) * 64
-  case D$Size         => here(CacheLineSize) * here(NWay) * 64
+  case I$Size         => here(CacheLineSize) * here(NWay) * 64 * 4
+  case D$Size         => here(CacheLineSize) * here(NWay) * 64 * 4
   case CacheLineSize  => 128
   case NWay           => 4
   case NBank          => 1
@@ -47,16 +46,6 @@ class BaseConfig extends Config ((site, here, up)=>{
   case VAddrWidth     => 32
 
   case BTBIndex       => 16
-
-  case AddressSpace   => Seq(
-    // 0 is innerInterface     1 is AXI
-    //   start       range   isCache? port_type,  width
-    ("h02000000", "h0000ffff", false,   0,         64), // 0- CLINT
-    ("h10000000", "h00000fff", false,   1,         32), // 1- UART16550
-    ("h10001000", "h00000fff", false,   1,         32), // 2- SPI Controller
-    ("h30000000", "h0fffffff", false,   1,         32), // 3- SPI Flash XIP mode
-    ("h80000000", "h7fffffff", true ,   1,         64), // 4- MEM
-  )
 
   case CLINTRegs => Map(
     "mtime"     -> "h0200_bff8",
@@ -84,18 +73,32 @@ class DifftestDisableConfig extends Config((site, here, up)=>{
   case Difftest       => false
   case DRAM3Sim       => false
   case FPGA           => true
+  case PCStart        => "hc000_0000"
+  case AddressSpace   => Seq(
+    // 0 is innerInterface     1 is AXI
+    //   start       range   isCache? port_type,  width
+    ("h02000000", "h0000ffff", false,   0,         64), // 0- CLINT
+    ("h03000000", "h0000ffff", false,   1,         32), // 1- UART16550
+    ("h40000000", "h3fffffff", true,    1,         64), // 2- DDR in PS
+    ("hc0000000", "h03ffffff", true,    1,         64), // 3- QSPI in PS
+  )
 })
 
 class DifftestEnableWithDRAM3SimConfig extends Config((site, here, up)=>{
   case Difftest       => true
   case DRAM3Sim       => true
   case FPGA           => false
+  case PCStart        => "h8000_0000"
+  case AddressSpace   => Seq(
+    // 0 is innerInterface     1 is AXI
+    //   start       range   isCache? port_type,  width
+    ("h02000000", "h0000ffff", false,   0,         64), // 0- CLINT
+    ("h03000000", "h0000ffff", false,   1,         32), // 1- UART16550
+    ("h04000000", "h0000ffff", false,   1,         32), // 2- SPI Controller
+    ("h30000000", "h00400000", true,    1,         64), // 3- SPI Flash XIP mode, convert by axi-width-convert ip
+    ("h80000000", "h7fffffff", true ,   1,         64), // 4- MEM
+  )
 })
-
-
-class DefaultConfig extends Config (
-  new BaseConfig ++ new DifftestEnableConfig
-)
 
 class DRAM3SimConfig extends Config(
   new BaseConfig ++ new DifftestEnableWithDRAM3SimConfig
