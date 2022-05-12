@@ -86,7 +86,7 @@ class BTB(implicit p: Parameters) extends Module{
     }.elsewhen(!io.update.bits.isTaken & (cam(update_index).bht =/= "b00".U)){
       cam(update_index).bht := cam(update_index).bht - 1.U
     }
-  }.elsewhen(io.update.valid & update_is_miss){
+  }.elsewhen(io.update.valid & update_is_miss & (cam(ptr.value).pc =/= io.query.pc.bits)){ // when update BTB entry is in used will cause error!
     // update and miss
     cam(ptr.value).pc := io.update.bits.pc
     cam(ptr.value).tgt := io.update.bits.tgt

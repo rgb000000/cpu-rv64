@@ -147,7 +147,7 @@ class OOOIF (implicit p: Parameters) extends Module {
   val branch_on = WireInit(0.U)
   BoringUtils.addSink(branch_on, "branch_on")
 
-  def isCacheRet = io.icache.resp.fire & (io.icache.resp.bits.cmd === 2.U)
+  val isCacheRet = WireInit(io.icache.resp.fire & (io.icache.resp.bits.cmd === 2.U))
 
   def get_next_pc(pc: UInt): UInt = Mux(pc(2), pc + 4.U, pc + 8.U)
 
