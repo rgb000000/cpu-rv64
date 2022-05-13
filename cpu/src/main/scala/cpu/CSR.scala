@@ -317,8 +317,8 @@ class CSR (implicit p: Parameters) extends Module {
               Mux(isEcall,                          MuxLookup(mstatus.prv, Causes.machine_ecall.U, Seq(CSR.PRV_S -> Causes.supervisor_ecall.U, CSR.PRV_U->Causes.user_ecall.U)),
               Mux(isEbreak,                         Causes.breakpoint.U,
               Mux(io.has_except === ExceptType.IPF, Causes.fetch_page_fault.U,
-              Mux(io.has_except === ExceptType.SPF, Causes.load_page_fault.U,
-              Mux(io.has_except === ExceptType.LPF, Causes.store_page_fault.U,
+              Mux(io.has_except === ExceptType.SPF, Causes.store_page_fault.U,
+              Mux(io.has_except === ExceptType.LPF, Causes.load_page_fault.U,
                                                     Causes.illegal_instruction.U))))))))))))))
 
   val deleg = Mux(isInterrupe, mideleg, medeleg)
