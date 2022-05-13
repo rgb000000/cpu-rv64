@@ -153,7 +153,7 @@ class OOOIF (implicit p: Parameters) extends Module {
 
   def get_pc_4(pc: UInt): UInt = {pc + 4.U}
 
-  val req_state =  RegInit(0.U(1.W))
+  val req_state =  RegInit(0.U(2.W))
   dontTouch(req_state)
 
   // s_kill 用来处理需要被kill的icache req
@@ -184,7 +184,7 @@ class OOOIF (implicit p: Parameters) extends Module {
       }
     }
     is(s_kill){
-      when(!req_state){
+      when(req_state === 0.U){
         state := s_release
       }.elsewhen(isCacheRet){
         state := s_release

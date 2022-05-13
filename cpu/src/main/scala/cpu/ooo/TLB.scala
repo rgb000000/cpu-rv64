@@ -62,7 +62,7 @@ class TLBWay(val depth: Int)(implicit val p: Parameters) extends Module {
     val sfence_vma = Input(Bool())
   })
 
-  val mem = SyncReadMem(depth, new TLBLine)
+  val mem = Mem(depth, new TLBLine)
   val v_tab = RegInit(VecInit(Seq.fill(depth)(0.U(1.W))))
 
   // 计算 index 来确定mem读哪一行
@@ -84,8 +84,9 @@ class TLBWay(val depth: Int)(implicit val p: Parameters) extends Module {
 
   val rd = Wire(new TLBLine)
   val rd_valid = Wire(Bool())
-  rd := mem.read(index, io.req.fire & !io.req.bits.op)
-  rd_valid := RegNext(v_tab(index))
+  rd := mem.read(index)
+  rd_valid := v_tab(index)
+
   when(io.req.fire & io.req.bits.op){
     mem.write(index, io.req.bits.tlbline)
     v_tab(index) := io.req.bits.tlbline.flags.V
@@ -95,10 +96,10 @@ class TLBWay(val depth: Int)(implicit val p: Parameters) extends Module {
   }
 
   val tag = rd.vpns.asUInt(26, log2Ceil(depth))
-  val req_tag = RegNext(io.req.bits.tlbline.vpns.asUInt(26, log2Ceil(depth)))
+  val req_tag = io.req.bits.tlbline.vpns.asUInt(26, log2Ceil(depth))
   io.resp.bits.isHit := (tag === req_tag) & rd.flags.V & rd_valid
   io.resp.bits.tlbline := rd
-  io.resp.valid := RegNext(io.req.fire & !io.req.bits.op) // mem has a cycle delay when read
+  io.resp.valid := io.req.fire & !io.req.bits.op
 }
 
 class TLBIO(implicit val p: Parameters) extends Bundle {
@@ -129,7 +130,7 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
     for(i <- ways.map(_.io.resp.bits.isHit).zipWithIndex) yield
       (i._1, ways_ret_pte(i._2))
   )
-  val isHit = ways.map(_.io.resp.bits.isHit).reduce(_ | _) & ways.head.io.resp.fire
+  val isHit = ways.map(_.io.resp.bits.isHit).reduce(_ | _)
 
   // 判断是否启用vm  以及vaddr是否合法
   val isifetch = ifetch.B
@@ -176,7 +177,7 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
   when(isifetch){
     update_ad := {if(p(IGNORE_AD)) false.B else !sel_pte.flags.A}
     except := isfetch_except | update_ad
-  }.elsewhen((req_reg.op === 0.U) & !isifetch){  // todo: 需要在memU里面判断amo的load1属于store异常
+  }.elsewhen((io.from_cpu.req.bits.op === 0.U) & !isifetch){  // todo: 需要在memU里面判断amo的load1属于store异常
     // load
     update_ad := {if(p(IGNORE_AD)) false.B else !sel_pte.flags.A}
     except := load_except | update_ad
@@ -185,6 +186,7 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
     update_ad := {if(p(IGNORE_AD)) false.B else !sel_pte.flags.A | !sel_pte.flags.D}
     except := store_except | update_ad
   }
+  dontTouch(update_ad)
 
 
   val vm_enbale = (Mux(mstatus_mprv & !isifetch, mstatus_mpp, cpu_mode) < CSR.PRV_M) & (satp_mode === 8.U)
@@ -192,25 +194,31 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
   val req_addr = io.from_cpu.req.bits.addr
   val va_msbs_ok = ((Mux(req_addr(38), Cat(Seq.fill(63-39+1)(1.U(1.W))), 0.U) === req_addr(63, 39)) & vm_enbale) | !vm_enbale
 
-  val s_idle :: s_lookup :: s_ptw :: s_refill :: s_except :: Nil = Enum(5)
+  val s_idle :: s_need_ptw :: s_ptw :: s_refill :: s_except :: Nil = Enum(5)
   val state = RegInit(s_idle)
 
   when(!vm_enbale){
     // assert(state === s_idle)
   }
 
-  // hit but cache is busy, need reg hit info
-  val hit_but_wait = RegInit(false.B)
-  val hit_ppn = RegInit(0.U.asTypeOf(sel_pte.ppns))
-
   switch(state){
     is(s_idle){
-      when(io.from_cpu.req.fire()){
+      when(io.from_cpu.req.fire){
         when(vm_enbale){
           // 只有vm_enable的时候状态机才工作
           when(va_msbs_ok){
             // vm启用且msbs_ok 查找ways
-            state := s_lookup
+            when(isHit & !io.sfence_vma){
+              // ptw会过滤掉不合法的page，所以只要way命中那么肯定是合法的page，不需要判
+              when(except | !bigpage_check){
+                state := s_except
+              }.otherwise{
+                state := s_idle
+              }
+            }.otherwise{
+              // 没命中  need_ptw
+              state := s_need_ptw
+            }
           }.otherwise{
             // vm启用但是msbs不ok  那么需要抛出异常
             state := s_except
@@ -221,27 +229,9 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
         }
       }
     }
-    is(s_lookup){
-      when(isHit){
-        // ptw会过滤掉不合法的page，所以只要way命中那么肯定是合法的page，不需要判
-        when(except | !bigpage_check){
-          state := s_except
-        }.otherwise{
-          // todo: 当lookup并且isHit的时候可以接受下一个req 而不用跳回idle
-          when(io.toCache.req.fire){
-            state := s_idle
-          }
-        }
-      }.elsewhen(hit_but_wait){
-        // hit but cache is busy, so delay send req
-        when(io.toCache.req.fire){
-          state := s_idle
-        }
-      }.otherwise{
-        // 没命中，发送ptw req
-        when(io.ptw.req.fire){
-          state := s_ptw
-        }
+    is(s_need_ptw){
+      when(io.ptw.req.fire){
+        state := s_ptw
       }
     }
     is(s_ptw){
@@ -277,7 +267,7 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
   }
 
   // lookup且miss的时候发送ptw的req
-  when((state === s_lookup) & !isHit & !hit_but_wait){
+  when(state === s_need_ptw){
     io.ptw.req.valid := true.B
     io.ptw.req.bits.vaddr := req_reg.addr
     io.ptw.req.bits.op_type := req_reg.op  // todo: op如何映射成op_type 主要是amo的映射，需要额外的信息，也可以在memU中处理
@@ -323,14 +313,7 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
         x.io.req.bits.tlbline      := 0.U.asTypeOf(new TLBLine)
         x.io.req.bits.tlbline.vpns := io.from_cpu.req.bits.addr(38, 12).asTypeOf(new VPNBundle)
     })
-    ways.map(_.io.req.valid).foreach(_ := io.from_cpu.req.fire)
-  }
-
-  when((state === s_lookup) & isHit & !except & bigpage_check & !hit_but_wait & !io.toCache.req.fire){
-    hit_but_wait := true.B
-    hit_ppn := sel_pte.ppns
-  }.elsewhen((state === s_lookup) & hit_but_wait & io.toCache.req.fire){
-    hit_but_wait := false.B
+    ways.map(_.io.req.valid).foreach(_ := io.from_cpu.req.valid)
   }
 
   when((state === s_idle) & !vm_enbale){
@@ -339,18 +322,12 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
   }.otherwise{
     // 当lookup 并且 isHit的时候发送cache req
     // 或者 miss了进入refill之后拿到了pte  再发送cache req
-    when((state === s_lookup) & isHit & !except & bigpage_check & !hit_but_wait){
-      io.toCache.req.valid := true.B
-      io.toCache.req.bits.op := req_reg.op
-      io.toCache.req.bits.addr := Cat(sel_pte.ppns.asUInt, req_reg.addr(11, 0).asUInt).asUInt
-      io.toCache.req.bits.data := req_reg.data
-      io.toCache.req.bits.mask := req_reg.mask
-    }.elsewhen((state === s_lookup) & hit_but_wait){
-      io.toCache.req.valid := true.B
-      io.toCache.req.bits.op := req_reg.op
-      io.toCache.req.bits.addr := Cat(hit_ppn.asUInt, req_reg.addr(11, 0).asUInt).asUInt
-      io.toCache.req.bits.data := req_reg.data
-      io.toCache.req.bits.mask := req_reg.mask
+    when((state === s_idle) & isHit & !except & bigpage_check){
+      io.toCache.req.valid := io.from_cpu.req.valid
+      io.toCache.req.bits.op := io.from_cpu.req.bits.op
+      io.toCache.req.bits.addr := Cat(sel_pte.ppns.asUInt, io.from_cpu.req.bits.addr(11, 0).asUInt).asUInt
+      io.toCache.req.bits.data := io.from_cpu.req.bits.data
+      io.toCache.req.bits.mask := io.from_cpu.req.bits.mask
     }.elsewhen(state === s_refill){
       io.toCache.req.valid := true.B
       io.toCache.req.bits.op := req_reg.op
@@ -367,7 +344,7 @@ class TLB(val ifetch: Boolean, val depth: Int)(implicit val p: Parameters) exten
   }
 
   // except logic
-  when((state === s_lookup) & isHit & except){
+  when((state === s_idle) & isHit & except){
     except_reg := MuxLookup(req_reg.op, ExceptType.SPF, Seq(
       0.U -> ExceptType.LPF
     ))

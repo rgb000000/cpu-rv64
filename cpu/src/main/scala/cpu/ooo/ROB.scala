@@ -411,7 +411,7 @@ class ROB(implicit p: Parameters) extends Module {
             next_head.state := Mux(next_head_can_commit, S_COMMITED, next_head.state)
             out_br_info(true.B, head)
           }.otherwise{
-            // 触发了kill 只有fence_i会走到这里，需要在dcacahe idle时候执行
+            // 触发了kill fence_i需要在dcacahe idle时候执行   todo: sfence_vma not need dcache idle
             write_dcache(0.U.asTypeOf(new ROBInfo), false.B, 0.U)
             when(io.commit.dcache.req.ready){
               commitIdx.value := 0.U
