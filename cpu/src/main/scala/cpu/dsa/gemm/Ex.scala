@@ -45,7 +45,7 @@ class Ex(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameters)
   val read_cnt_meet = io.toSPad.resp.fire() & (read_cnt.value === (OP_TIMES - 1).U)
   val write_cnt_meet = io.toSPad.req.fire() & (io.toSPad.req.bits.op === 1.U) & (req_cnt.value === (OP_TIMES - 1).U)
   val req_cnt_meet = req_cnt.value === OP_TIMES.U
-  val run_cnt_meet = run_cnt.value === (p(MeshRow)*2).U
+  val run_cnt_meet = run_cnt.value === p(MeshRow).U
 
   val addrs = RegInit(0.U.asTypeOf(io.ctrl.cmd.bits))
 
