@@ -122,36 +122,75 @@ class ScratchPad(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Par
 
   val banks = Seq.fill(nbank)(Module(new ScratchPadBank(depth, w)))
 
-  val tmp_req = Wire(Decoupled(new ScratchPadReq(depth, w, nbank)))
+  val dma_tmp_req = Wire(Decoupled(new ScratchPadReq(depth, w, nbank)))
+  val array_tmp_req = Wire(Decoupled(new ScratchPadReq(depth, w, nbank)))
+
+  val dma_req_q = Queue(dma_tmp_req, 4, flow=true)
+  val array_req_q = Queue(array_tmp_req, 4, flow=true)
+
   val tmp_resp = Wire(Decoupled(new ScratchPadResp(depth, w, nbank)))
-  val req_q = Queue(tmp_req, 4, flow=true)
   val resp_q = Queue(tmp_resp, 4, flow=true)
 
-  io.toDMA.req.ready := tmp_req.ready & !io.toArray.req.valid
-  io.toArray.req.ready := tmp_req.ready
+  io.toDMA.req.ready := dma_tmp_req.ready
+  dma_tmp_req.valid := io.toDMA.req.valid
+  dma_tmp_req.bits := io.toDMA.req.bits
 
-  tmp_req.valid := io.toDMA.req.valid | io.toArray.req.valid
-  tmp_req.bits := Mux(io.toDMA.req.valid, io.toDMA.req.bits, io.toArray.req.bits)
+  io.toArray.req.ready := array_tmp_req.ready
+  array_tmp_req.valid := io.toArray.req.valid
+  array_tmp_req.bits := io.toArray.req.bits
 
-  val which_bank = req_q.bits.addr(log2Ceil(depth*nbank) - 1, log2Ceil(depth)).asUInt()
-  val which_op = req_q.bits.op
+  val dma_which_bank = dma_req_q.bits.addr(log2Ceil(depth*nbank) - 1, log2Ceil(depth)).asUInt()
+  val dma_which_op = dma_req_q.bits.op
+
+  val array_which_bank = array_req_q.bits.addr(log2Ceil(depth*nbank) - 1, log2Ceil(depth)).asUInt()
+  val array_which_op = array_req_q.bits.op
+
+  // when both req is valid, their bank must different
+  when((dma_which_bank === array_which_bank) & dma_req_q.valid & array_req_q.valid){
+    assert(false.B)
+  }
+  when((dma_req_q.bits.op === array_req_q.bits.op) & dma_req_q.valid & array_req_q.valid){
+    assert(false.B)
+  }
+
   val read_ready_map = banks.zipWithIndex.map({
       case (bank, index) => index.U -> bank.io.read.req.ready
   })
+
   // write op 必定ready，scratchpad中是写优先于读的
-  req_q.ready := Mux(which_op === 1.U, true.B,
-                                       MuxLookup(which_bank, false.B, read_ready_map))
+  dma_req_q.ready := Mux(dma_which_op === 1.U, true.B,
+                                       MuxLookup(dma_which_bank, false.B, read_ready_map))
+
+  array_req_q.ready := Mux(dma_which_op === 1.U, true.B,
+                                       MuxLookup(dma_which_bank, false.B, read_ready_map))
+
   banks.zipWithIndex.foreach({
     case (bank, index) => {
-      bank.io.read.req.valid := (req_q.valid & (req_q.bits.addr(log2Ceil(depth*nbank)-1, log2Ceil(depth)).asUInt() === index.U) & (req_q.bits.op === 0.U)) |
-                                (req_q.valid & ((req_q.bits.addr(log2Ceil(depth*nbank)-1, log2Ceil(depth)).asUInt()+1.U) === index.U) & (req_q.bits.op === 0.U) & (req_q.bits.isTwins === true.B))
-      bank.io.read.req.bits.addr := req_q.bits.addr
-      bank.io.read.req.bits.id := req_q.bits.id
+      val is_dma_req = (dma_req_q.valid & (dma_req_q.bits.addr(log2Ceil(depth*nbank)-1, log2Ceil(depth)).asUInt === index.U)) |
+                       (dma_req_q.valid & ((dma_req_q.bits.addr(log2Ceil(depth*nbank)-1, log2Ceil(depth)).asUInt + 1.U) === index.U) & (dma_req_q.bits.op === 0.U) & (dma_req_q.bits.isTwins === true.B))
 
-      bank.io.write.en := req_q.valid & (req_q.bits.addr(log2Ceil(depth*nbank)-1, log2Ceil(depth)).asUInt() === index.U) & (req_q.bits.op === 1.U)
-      bank.io.write.addr := req_q.bits.addr
-      bank.io.write.mask := req_q.bits.mask
-      bank.io.write.data := req_q.bits.data
+      val is_array_req = (array_req_q.valid & (array_req_q.bits.addr(log2Ceil(depth*nbank)-1, log2Ceil(depth)).asUInt() === index.U)) |
+                       (array_req_q.valid & ((array_req_q.bits.addr(log2Ceil(depth*nbank)-1, log2Ceil(depth)).asUInt()+1.U) === index.U) & (array_req_q.bits.op === 0.U) & (array_req_q.bits.isTwins === true.B))
+
+      when(is_dma_req){
+        bank.io.read.req.valid := is_dma_req
+        bank.io.read.req.bits.addr := dma_req_q.bits.addr
+        bank.io.read.req.bits.id := dma_req_q.bits.id
+
+        bank.io.write.en := dma_req_q.valid & (dma_req_q.bits.addr(log2Ceil(depth*nbank)-1, log2Ceil(depth)).asUInt() === index.U) & (dma_req_q.bits.op === 1.U)
+        bank.io.write.addr := dma_req_q.bits.addr
+        bank.io.write.mask := dma_req_q.bits.mask
+        bank.io.write.data := dma_req_q.bits.data
+      }.otherwise{
+        bank.io.read.req.valid := is_array_req
+        bank.io.read.req.bits.addr := array_req_q.bits.addr
+        bank.io.read.req.bits.id := array_req_q.bits.id
+
+        bank.io.write.en := array_req_q.valid & (array_req_q.bits.addr(log2Ceil(depth*nbank)-1, log2Ceil(depth)).asUInt() === index.U) & (array_req_q.bits.op === 1.U)
+        bank.io.write.addr := array_req_q.bits.addr
+        bank.io.write.mask := array_req_q.bits.mask
+        bank.io.write.data := array_req_q.bits.data
+      }
     }
   })
 
@@ -161,12 +200,23 @@ class ScratchPad(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Par
     val isTwins = Bool()
   }))
   val order_queue = Queue(tmp_order, 16) // todo: order目前设置的足够大来保证order_queue绝对不会满
-  tmp_order.valid := req_q.fire() & (req_q.bits.op === 0.U) // only for read op
-  tmp_order.bits.order := which_bank
-  tmp_order.bits.isTwins := req_q.bits.isTwins
+
+  // only for read op
+  val dma_req_is_read = dma_req_q.fire & (dma_req_q.bits.op === 0.U)
+  val array_req_is_read = array_req_q.fire & (array_req_q.bits.op === 0.U)
+  when(dma_req_is_read){
+    tmp_order.valid := dma_req_is_read
+    tmp_order.bits.order := dma_which_bank
+    tmp_order.bits.isTwins := dma_req_q.bits.isTwins
+  }.otherwise{
+    tmp_order.valid := array_req_is_read
+    tmp_order.bits.order := array_which_bank
+    tmp_order.bits.isTwins := array_req_q.bits.isTwins
+  }
+
 
   // 连接 tmp_resp信号
-  tmp_resp.valid := Cat(banks.map(_.io.read.resp.valid)).orR()
+  tmp_resp.valid := Cat(banks.map(_.io.read.resp.valid)).orR
   val resp_data_map = banks.zipWithIndex.map({
     case (bank, index) => {
       index.U -> bank.io.read.resp.bits.data
