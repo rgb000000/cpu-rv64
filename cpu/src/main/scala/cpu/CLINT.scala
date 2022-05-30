@@ -83,6 +83,13 @@ class CLINT(implicit p: Parameters) extends Module{
     }
   }else{
     mtime := mtime + 1.U
+//    val clk_feq = 40
+//    val us_cnt = Counter(128)
+//    us_cnt.value := Mux(us_cnt.value < clk_feq.U, us_cnt.value + 1.U, 0.U)
+//    val us = us_cnt.value === clk_feq.U
+//    when(us){
+//      mtime := mtime + 1.U
+//    }
   }
 
   when((state === s_idle) & io.cpu.req.fire()) {
