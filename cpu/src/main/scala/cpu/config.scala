@@ -73,14 +73,14 @@ class DifftestDisableConfig extends Config((site, here, up)=>{
   case Difftest       => false
   case DRAM3Sim       => false
   case FPGA           => true
-  case PCStart        => "hc000_0000"
+  case PCStart        => "h3000_0000"
   case AddressSpace   => Seq(
     // 0 is innerInterface     1 is AXI
     //   start       range   isCache? port_type,  width
     ("h02000000", "h0000ffff", false,   0,         64), // 0- CLINT
     ("h03000000", "h0000ffff", false,   1,         32), // 1- UART16550
-    ("h40000000", "h3fffffff", true,    1,         64), // 2- DDR in PS
-    ("hc0000000", "h03ffffff", true,    1,         64), // 3- QSPI in PS
+    ("h30000000", "h3fffffff", true,    1,         64), // 2- QSPI/SDCard
+    ("h80000000", "h03ffffff", true,    1,         64), // 3- DDR
   )
 })
 
