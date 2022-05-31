@@ -5,6 +5,8 @@ import firrtl.AnnotationSeq
 
 object BazelRunner {
   def main(args: Array[String]): Unit = {
+    val max_mem = Runtime.getRuntime.maxMemory() / (1024.0*1024.0)
+    println(s"maxMem = $max_mem MB")
     var module_name: Option[String] = None
     def theThingUnderTest = {
       val module = {
