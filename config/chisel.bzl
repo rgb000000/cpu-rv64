@@ -21,7 +21,8 @@ _scalacopts = [
     "-deprecation",
     "-feature",
     "-Xcheckinit",
-    "-P:chiselplugin:genBundleElements"
+    "-P:chiselplugin:genBundleElements",
+#    "-J-Xmx16g -J-Xss256m"
 ]
 
 def chisel_library(name, srcs, deps = [], resources = [], visibility = None):
@@ -32,6 +33,8 @@ def chisel_library(name, srcs, deps = [], resources = [], visibility = None):
         plugins = _chisel_plugins,
         scalacopts = _scalacopts,
         resources = resources,
+#        scalac_jvm_flags = ["-Xmx16g", "-Xss256m"],
+#        javac_jvm_flags = ["-Xmx16g", "-Xss256m"],
         visibility = visibility,
     )
 
@@ -84,6 +87,9 @@ def _chisel_verilog_run_generator_impl(ctx):
             out.path,
             ctx.attr.module_name,
         ],
+#        env = {
+#            "_JAVA_OPTIONS": "-Xmx16g -Xss256m"
+#        },
         progress_message = "Emitting verilog for %s" % ctx.label.name,
     )
     return [
@@ -320,6 +326,7 @@ def difftest(
         ],
         deps = deps + _chisel_deps,
         plugins = _chisel_plugins,
+        jvm_flags = ["-Xmx16g", "-Xss256m"],
         visibility = ["//visibility:private"],
     )
     _chisel_verilog_run_generator(
@@ -358,6 +365,7 @@ def getVerilog(
         ],
         deps = deps + _chisel_deps,
         plugins = _chisel_plugins,
+        jvm_flags = ["-Xmx16g", "-Xss256m"],
         visibility = ["//visibility:private"],
     )
     _chisel_verilog_run_generator(
