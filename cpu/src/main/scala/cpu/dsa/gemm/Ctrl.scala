@@ -108,9 +108,9 @@ class Ctrl(val depth: Int, val w: Int, val nbank: Int)(implicit val p: Parameter
   val is_dma = task_q.bits.op =/= GEMMX
   val is_gemm = task_q.bits.op === GEMMX
   val can_issue = (
-     (task_q.valid & is_gemm & io.dmaCtrl.cmd.ready)                 // gemm need dma idle
-    |(task_q.valid & (task_q.bits.op===MVIN) & io.dmaCtrl.cmd.ready) // MVIN need dma idle
-    |(task_q.valid & (task_q.bits.op===MVOUT) & io.dmaCtrl.cmd.ready & io.exCtrl.cmd.ready) // MVOUT need dma and gemm idle
+     (task_q.valid & is_gemm & io.dmaCtrl.cmd.ready & io.exCtrl.cmd.ready)                 // gemm need dma idle
+    |(task_q.valid & is_dma  & (task_q.bits.op===MVIN) & io.dmaCtrl.cmd.ready) // MVIN need dma idle
+    |(task_q.valid & is_dma  & (task_q.bits.op===MVOUT) & io.dmaCtrl.cmd.ready & io.exCtrl.cmd.ready) // MVOUT need dma and gemm idle
     )
 
   // dma
